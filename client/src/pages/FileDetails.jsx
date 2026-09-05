@@ -10,6 +10,7 @@ import PdfViewer from '../components/PdfViewer.jsx';
 import ImageViewer from '../components/ImageViewer.jsx';
 import FileIcon from '../components/FileIcon.jsx';
 import FileCard from '../components/FileCard.jsx';
+import AttachmentItem from '../components/AttachmentItem.jsx';
 
 export default function FileDetails() {
   const { id } = useParams();
@@ -41,6 +42,19 @@ export default function FileDetails() {
   }
 
   const url = resolveFileUrl(file.fileUrl);
+  const attachments = file.attachments?.length ? file.attachments : [];
+  const multi = attachments.length > 1;
+
+  const downloadAttachment = (attachment) =>
+    download({
+      _id: file._id,
+      title: file.title,
+      courseName: file.courseName,
+      courseId: file.courseId,
+      departmentCode: file.departmentCode,
+      fileUrl: attachment.fileUrl,
+      originalName: attachment.originalName,
+    });
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -54,41 +68,52 @@ export default function FileDetails() {
         </div>
       </div>
 
-      <div className="mb-6">
-        {file.fileType === 'pdf' ? (
-          <PdfViewer fileUrl={url} onDownload={() => download(file)} />
-        ) : file.fileType === 'image' ? (
-          <ImageViewer fileUrl={url} title={file.title} onDownload={() => download(file)} />
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center text-center gap-3">
-            <FileWarning className="text-slate-300" size={48} />
-            <p className="text-slate-500">Preview unavailable for this file type.</p>
+      {multi ? (
+        <div className="mb-6 space-y-2">
+          <p className="text-sm font-medium text-slate-500 mb-2">{attachments.length} files in this upload</p>
+          {attachments.map((a) => (
+            <AttachmentItem key={a._id} attachment={a} onDownload={downloadAttachment} />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            {file.fileType === 'pdf' ? (
+              <PdfViewer fileUrl={url} onDownload={() => download(file)} />
+            ) : file.fileType === 'image' ? (
+              <ImageViewer fileUrl={url} title={file.title} onDownload={() => download(file)} />
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center text-center gap-3">
+                <FileWarning className="text-slate-300" size={48} />
+                <p className="text-slate-500">Preview unavailable for this file type.</p>
+                <button
+                  onClick={() => download(file)}
+                  className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
+                >
+                  <Download size={18} /> Download File
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 mb-8">
             <button
               onClick={() => download(file)}
-              className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
             >
-              <Download size={18} /> Download File
+              <Download size={18} /> Download
             </button>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <ExternalLink size={18} /> Open in new tab
+            </a>
           </div>
-        )}
-      </div>
-
-      <div className="flex gap-3 mb-8">
-        <button
-          onClick={() => download(file)}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
-        >
-          <Download size={18} /> Download
-        </button>
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <ExternalLink size={18} /> Open in new tab
-        </a>
-      </div>
+        </>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 bg-white border border-slate-200 rounded-xl p-5 mb-10 text-sm">
         <Detail label="Batch" value={file.allBatches ? 'All Batches' : file.batchCodes?.join(', ') || '-'} />

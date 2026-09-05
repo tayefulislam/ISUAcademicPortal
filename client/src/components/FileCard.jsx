@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Eye, Download } from 'lucide-react';
+import { Eye, Download, Files } from 'lucide-react';
 import FileIcon from './FileIcon.jsx';
 import { formatBytes, formatDate } from '../utils/format.js';
 
 export default function FileCard({ file, onDownload }) {
+  const multi = (file.fileCount ?? 1) > 1;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:border-brand-300 hover:shadow-md transition-all p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3">
@@ -21,6 +23,12 @@ export default function FileCard({ file, onDownload }) {
           </p>
         </div>
       </div>
+
+      {multi && (
+        <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 text-xs font-medium">
+          <Files size={12} /> {file.fileCount} files
+        </span>
+      )}
 
       <div className="flex flex-wrap gap-1.5 text-xs">
         {file.batchCodes?.length ? (
@@ -61,12 +69,21 @@ export default function FileCard({ file, onDownload }) {
           >
             View
           </Link>
-          <button
-            onClick={() => onDownload?.(file)}
-            className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
-          >
-            Download
-          </button>
+          {multi ? (
+            <Link
+              to={`/files/${file._id}`}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+            >
+              View files
+            </Link>
+          ) : (
+            <button
+              onClick={() => onDownload?.(file)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+            >
+              Download
+            </button>
+          )}
         </div>
       </div>
     </div>

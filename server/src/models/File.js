@@ -14,20 +14,48 @@ export const FILE_TYPES = [
   'other',
 ];
 
-const fileSchema = new mongoose.Schema(
+// One physical file within a File entry. A single upload with a shared
+// title can bundle several of these (e.g. a lecture note PDF plus its
+// diagram images) under one searchable, one-titled record.
+const attachmentSchema = new mongoose.Schema(
   {
-    title: { type: String, required: true, trim: true },
     originalName: { type: String, required: true },
     fileName: { type: String, required: true }, // safe generated name on disk (local provider only)
-
     fileType: { type: String, enum: FILE_TYPES, required: true },
     mimeType: { type: String, required: true },
     fileSize: { type: Number, required: true }, // bytes
-
     fileUrl: { type: String, required: true },
     storageProvider: { type: String, enum: ['local', 'imgbb', 's3'], required: true },
     // ImgBB delete token, or S3 object key — used for clean deletion. Never exposed to the client.
     storageRef: { type: String, default: '' },
+  },
+  { _id: true }
+);
+
+const fileSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+
+    // Mirror of attachments[0] — kept at the top level so single-attachment
+    // entries (the common case) work with existing card/viewer/filter code
+    // without reaching into the attachments array.
+    originalName: { type: String, required: true },
+    fileName: { type: String, required: true },
+    fileType: { type: String, enum: FILE_TYPES, required: true },
+    mimeType: { type: String, required: true },
+    fileSize: { type: Number, required: true }, // bytes, summed across all attachments
+    fileUrl: { type: String, required: true },
+    storageProvider: { type: String, enum: ['local', 'imgbb', 's3'], required: true },
+    storageRef: { type: String, default: '' },
+
+    attachments: {
+      type: [attachmentSchema],
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length > 0,
+        message: 'At least one attachment is required',
+      },
+    },
+    fileCount: { type: Number, default: 1 },
 
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: true },
     departmentCode: { type: String, required: true, uppercase: true },

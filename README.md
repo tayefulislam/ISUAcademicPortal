@@ -150,11 +150,16 @@ link regardless of where it points.
 - **Course** — name, courseId, department (ref), credit, semester, status.
 - **Batch** — name, code, department (ref, optional), year, status.
 - **Category** — name, slug, description, status.
-- **File** — title, originalName, fileName, fileType, mimeType, fileSize,
-  fileUrl, storageProvider, storageRef, department/course/batches (refs +
-  denormalized code/name fields for fast search without `$lookup`),
-  semester, academicYear, category, description, keywords[], uploadedBy,
-  views, downloads.
+- **File** — one searchable entry under one title. title, department/course/
+  batches (refs + denormalized code/name fields for fast search without
+  `$lookup`), semester, academicYear, category, description, keywords[],
+  uploadedBy, views, downloads, `fileCount`, and `attachments[]` — one or
+  more physical files (each with its own fileType, mimeType, fileSize,
+  fileUrl, storageProvider, storageRef). The top-level originalName/
+  fileName/fileType/mimeType/fileSize/fileUrl/storageProvider/storageRef
+  mirror `attachments[0]` (fileSize is the sum across all attachments) so
+  single-attachment entries — the common case — work with card/filter/
+  viewer code without reaching into the array.
 
 `File` has a weighted **text index** (title, courseName, courseId,
 departmentCode, categoryName, keywords) plus single-field indexes on
@@ -238,9 +243,18 @@ requires an admin-role account.
 | POST🔒admin | `/files/bulk-delete` | Body: `{ ids: [...] }` |
 
 **Upload body** (`multipart/form-data`):
-`file` (binary), `title`, `description?`, `departmentId`, `courseIdRef`,
-`categoryId`, `semester?`, `academicYear?`, `keywords?` (comma-separated),
-`batches?` (repeat the field per batch id), `allBatches?` (`true`/`false`).
+`files` (one or more binaries — repeat the field, up to 10 per request),
+`title?`, `description?`, `departmentId`, `courseIdRef`, `categoryId`,
+`semester?`, `academicYear?`, `keywords?` (comma-separated), `batches?`
+(repeat the field per batch id), `allBatches?` (`true`/`false`).
+
+All files sent in one request are grouped into a **single** File entry
+(one title, one search result, one details page) rather than one entry
+per file — `title` applies to the whole group; if omitted, the first
+file's name (without extension) is used. Mix documents and images freely
+in the same request — each is routed to the right storage provider
+automatically. See the `File` model above for how `attachments[]` holds
+each individual file.
 
 ### Search — `/search`
 | Method | Path | Description |

@@ -101,7 +101,9 @@ export default function AdminFiles() {
                 <tr key={f._id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="p-3"><input type="checkbox" checked={selected.includes(f._id)} onChange={() => toggleOne(f._id)} /></td>
                   <td className="p-3 max-w-[220px]">
-                    <p className="font-medium text-slate-700 truncate">{f.title}</p>
+                    <p className="font-medium text-slate-700 truncate">
+                      {f.title} {f.fileCount > 1 && <span className="text-brand-600 font-normal">({f.fileCount} files)</span>}
+                    </p>
                     <p className="text-xs text-slate-400">{f.fileType.toUpperCase()} &middot; {formatBytes(f.fileSize)}</p>
                   </td>
                   <td className="p-3">{f.departmentCode}</td>

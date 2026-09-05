@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { UploadCloud } from 'lucide-react';
+import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
 import { departmentApi, courseApi, batchApi, categoryApi, fileApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { formatBytes } from '../../utils/format.js';
 
 const initialState = {
   title: '',
@@ -17,9 +18,11 @@ const initialState = {
   batches: [],
 };
 
+const MAX_FILES = 10;
+
 export default function AdminUpload() {
   const [form, setForm] = useState(initialState);
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [progress, setProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
@@ -42,12 +45,36 @@ export default function AdminUpload() {
     }));
   };
 
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList || []);
+    if (!incoming.length) return;
+
+    setFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.name}_${f.size}`));
+      const merged = [...prev];
+      for (const f of incoming) {
+        const key = `${f.name}_${f.size}`;
+        if (!existingKeys.has(key)) {
+          merged.push(f);
+          existingKeys.add(key);
+        }
+      }
+      if (merged.length > MAX_FILES) {
+        toast(`You can upload up to ${MAX_FILES} files at once`, 'error');
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
+    });
+  };
+
+  const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
   const submit = async (e) => {
     e.preventDefault();
-    if (!file) return toast('Please select a file', 'error');
+    if (!files.length) return toast('Please select at least one file or image', 'error');
 
     const fd = new FormData();
-    fd.append('file', file);
+    files.forEach((f) => fd.append('files', f));
     Object.entries(form).forEach(([k, v]) => {
       if (k === 'batches') v.forEach((b) => fd.append('batches', b));
       else fd.append(k, v);
@@ -56,10 +83,17 @@ export default function AdminUpload() {
     setSubmitting(true);
     setProgress(0);
     try {
-      await fileApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
-      toast('File uploaded successfully', 'success');
+      const res = await fileApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
+      const count = res.data?.fileCount || 1;
+      toast(
+        count > 1 ? `Uploaded — ${count} files grouped under "${res.data.title}"` : 'File uploaded successfully',
+        'success'
+      );
+      if (res.failed?.length) {
+        toast(`${res.failed.length} file(s) failed to upload`, 'error');
+      }
       setForm(initialState);
-      setFile(null);
+      setFiles([]);
     } catch (err) {
       toast(err.response?.data?.message || 'Upload failed', 'error');
     } finally {
@@ -69,15 +103,41 @@ export default function AdminUpload() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload File</h1>
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload Files</h1>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-        <label className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400">
-          <input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <label
+          className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            addFiles(e.dataTransfer.files);
+          }}
+        >
+          <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
           <UploadCloud className="mx-auto text-slate-400 mb-2" size={32} />
-          <p className="text-sm text-slate-600">{file ? file.name : 'Click to choose a file, or drag and drop'}</p>
-          <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP</p>
+          <p className="text-sm text-slate-600">
+            {files.length ? `${files.length} file(s) selected — click to add more` : 'Click to choose files/images, or drag and drop'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP &middot; up to {MAX_FILES} at once</p>
         </label>
+
+        {files.length > 0 && (
+          <ul className="space-y-1.5">
+            {files.map((f, idx) => (
+              <li key={`${f.name}_${f.size}`} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                <span className="flex items-center gap-2 min-w-0">
+                  <FileIconLucide size={16} className="text-slate-400 shrink-0" />
+                  <span className="truncate">{f.name}</span>
+                  <span className="text-xs text-slate-400 shrink-0">{formatBytes(f.size)}</span>
+                </span>
+                <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0">
+                  <X size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {submitting && (
           <div className="w-full bg-slate-100 rounded-full h-2">
@@ -85,8 +145,20 @@ export default function AdminUpload() {
           </div>
         )}
 
-        <Field label="Title">
-          <input value={form.title} onChange={(e) => set('title')(e.target.value)} className="input" placeholder="e.g. Discrete Mathematics Lecture 05" />
+        <Field
+          label="Title"
+          hint={
+            files.length > 1
+              ? `All ${files.length} files will be grouped under this one title as a single entry`
+              : 'Leave blank to use the file name'
+          }
+        >
+          <input
+            value={form.title}
+            onChange={(e) => set('title')(e.target.value)}
+            className="input"
+            placeholder="e.g. Discrete Mathematics Lecture 05"
+          />
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -157,24 +229,30 @@ export default function AdminUpload() {
         </Field>
 
         <button disabled={submitting} className="w-full h-11 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700 disabled:opacity-60">
-          {submitting ? `Uploading... ${progress}%` : 'Upload File'}
+          {submitting
+            ? `Uploading... ${progress}%`
+            : files.length > 1
+            ? `Upload ${files.length} Files`
+            : 'Upload File'}
         </button>
       </form>
 
       <style>{`.input { width: 100%; height: 2.75rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; padding: 0 0.75rem; font-size: 0.875rem; }
       textarea.input { height: auto; padding: 0.6rem 0.75rem; }
-      .input:focus { outline: none; box-shadow: 0 0 0 2px #3a66f5; border-color: transparent; }`}</style>
+      .input:focus { outline: none; box-shadow: 0 0 0 2px #3a66f5; border-color: transparent; }
+      .input:disabled { background-color: #f1f5f9; color: #94a3b8; }`}</style>
     </div>
   );
 }
 
-function Field({ label, required, children }) {
+function Field({ label, required, hint, children }) {
   return (
     <div>
       <label className="block text-sm font-medium text-slate-700 mb-1">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
+      {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
     </div>
   );
 }

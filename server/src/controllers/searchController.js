@@ -10,6 +10,7 @@ const LIST_FIELDS = [
   'mimeType',
   'fileSize',
   'fileUrl',
+  'fileCount',
   'departmentCode',
   'courseName',
   'courseId',

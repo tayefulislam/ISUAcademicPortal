@@ -15,6 +15,7 @@ const LIST_FIELDS = [
   'mimeType',
   'fileSize',
   'fileUrl',
+  'fileCount',
   'departmentCode',
   'courseName',
   'courseId',
@@ -35,8 +36,14 @@ function listProjection(withScore) {
   return projection;
 }
 
-export const uploadFile = asyncHandler(async (req, res) => {
-  if (!req.file) throw new ApiError(400, 'A file is required');
+// Accepts one or more files (req.files) uploaded together under one shared
+// title and metadata (department/course/batch/category/etc). All of them
+// become a single File document — its `attachments` array holds each
+// physical file, so the entry shows up once in search/listings under one
+// title instead of once per uploaded file.
+export const uploadFiles = asyncHandler(async (req, res) => {
+  const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
+  if (!files.length) throw new ApiError(400, 'At least one file is required');
 
   const { title, description, semester, academicYear, keywords } = req.body;
   const { departmentId, courseIdRef, categoryId } = req.body;
@@ -60,18 +67,48 @@ export const uploadFile = asyncHandler(async (req, res) => {
     batches = batches.map((b) => b._id);
   }
 
-  const stored = await storeUploadedFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+  const keywordList = keywords ? String(keywords).split(',').map((k) => k.trim()).filter(Boolean) : [];
+
+  const attachments = [];
+  const failed = [];
+
+  for (const uploadedFile of files) {
+    try {
+      const stored = await storeUploadedFile(uploadedFile.buffer, uploadedFile.originalname, uploadedFile.mimetype);
+      attachments.push({
+        originalName: uploadedFile.originalname,
+        fileName: stored.fileName,
+        fileType: stored.fileType,
+        mimeType: uploadedFile.mimetype,
+        fileSize: uploadedFile.size,
+        fileUrl: stored.fileUrl,
+        storageProvider: stored.storageProvider,
+        storageRef: stored.storageRef,
+      });
+    } catch (err) {
+      failed.push({ fileName: uploadedFile.originalname, message: err.message });
+    }
+  }
+
+  if (!attachments.length) {
+    throw new ApiError(502, 'All uploads failed', failed);
+  }
+
+  const primary = attachments[0];
+  const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
 
   const file = await File.create({
-    title: title || req.file.originalname,
-    originalName: req.file.originalname,
-    fileName: stored.fileName,
-    fileType: stored.fileType,
-    mimeType: req.file.mimetype,
-    fileSize: req.file.size,
-    fileUrl: stored.fileUrl,
-    storageProvider: stored.storageProvider,
-    storageRef: stored.storageRef,
+    title: title || stripExtension(primary.originalName),
+    originalName: primary.originalName,
+    fileName: primary.fileName,
+    fileType: primary.fileType,
+    mimeType: primary.mimeType,
+    fileSize: totalSize,
+    fileUrl: primary.fileUrl,
+    storageProvider: primary.storageProvider,
+    storageRef: primary.storageRef,
+    attachments,
+    fileCount: attachments.length,
     department: department._id,
     departmentCode: department.code,
     course: course._id,
@@ -85,12 +122,16 @@ export const uploadFile = asyncHandler(async (req, res) => {
     category: category._id,
     categoryName: category.name,
     description: description || '',
-    keywords: keywords ? String(keywords).split(',').map((k) => k.trim()).filter(Boolean) : [],
+    keywords: keywordList,
     uploadedBy: req.user._id,
   });
 
-  res.status(201).json({ success: true, data: file });
+  res.status(201).json({ success: true, data: file, failed: failed.length ? failed : undefined });
 });
+
+function stripExtension(name) {
+  return name.replace(/\.[^/.]+$/, '');
+}
 
 export const listFiles = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, sort, q } = req.query;
@@ -157,11 +198,16 @@ export const updateFile = asyncHandler(async (req, res) => {
   res.json({ success: true, data: file });
 });
 
+async function deleteAllAttachments(file) {
+  const attachments = file.attachments?.length ? file.attachments : [file];
+  await Promise.all(attachments.map((a) => deleteStoredFile(a).catch(() => null)));
+}
+
 export const deleteFile = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'File not found');
 
-  await deleteStoredFile(file);
+  await deleteAllAttachments(file);
   await file.deleteOne();
 
   res.json({ success: true, message: 'File deleted' });
@@ -172,7 +218,7 @@ export const bulkDeleteFiles = asyncHandler(async (req, res) => {
   if (!Array.isArray(ids) || !ids.length) throw new ApiError(400, 'ids array is required');
 
   const files = await File.find({ _id: { $in: ids } });
-  await Promise.all(files.map((f) => deleteStoredFile(f).catch(() => null)));
+  await Promise.all(files.map((f) => deleteAllAttachments(f)));
   await File.deleteMany({ _id: { $in: ids } });
 
   res.json({ success: true, message: `${files.length} file(s) deleted` });

@@ -12,8 +12,10 @@ function fileFilter(req, file, cb) {
   cb(null, true);
 }
 
+export const MAX_FILES_PER_UPLOAD = 10;
+
 export const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: env.maxFileSizeMb * 1024 * 1024 },
+  limits: { fileSize: env.maxFileSizeMb * 1024 * 1024, files: MAX_FILES_PER_UPLOAD },
 });

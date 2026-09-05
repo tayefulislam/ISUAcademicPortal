@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import {
-  uploadFile,
+  uploadFiles,
   listFiles,
   getFile,
   recordDownload,
@@ -15,7 +15,7 @@ import {
 } from '../controllers/fileController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { upload } from '../middleware/upload.js';
+import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -31,14 +31,14 @@ router.post(
   '/',
   authenticate,
   requireRole('admin'),
-  upload.single('file'),
+  upload.array('files', MAX_FILES_PER_UPLOAD),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
     body('categoryId').notEmpty().withMessage('Category is required'),
   ],
   validate,
-  uploadFile
+  uploadFiles
 );
 
 router.put('/:id', authenticate, requireRole('admin'), updateFile);
