@@ -1,29 +1,52 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { register, login, me } from '../controllers/authController.js';
+import rateLimit from 'express-rate-limit';
+import { register, login, me, changePassword } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+// Auth endpoints are brute-force targets, so they get a tighter limit than
+// the general API rate limiter applied in app.js.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts, please try again later', code: 'TOO_MANY_REQUESTS' },
+});
+
 router.post(
   '/register',
+  authLimiter,
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('department').notEmpty().withMessage('Department is required'),
+    body('batch').notEmpty().withMessage('Batch is required'),
+    body('semester').notEmpty().withMessage('Semester is required'),
+    body('rollNo').trim().notEmpty().withMessage('Roll No is required'),
   ],
   validate,
   register
 );
 
-router.post(
-  '/login',
-  [body('email').isEmail(), body('password').notEmpty()],
-  validate,
-  login
-);
+router.post('/login', authLimiter, [body('email').isEmail(), body('password').notEmpty()], validate, login);
 
 router.get('/me', authenticate, me);
+
+router.post(
+  '/change-password',
+  authenticate,
+  [
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
+    body('confirmNewPassword').notEmpty().withMessage('Please confirm the new password'),
+  ],
+  validate,
+  changePassword
+);
 
 export default router;

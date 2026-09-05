@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Download, ExternalLink, FileWarning } from 'lucide-react';
+import { Download, ExternalLink, FileWarning, Heart } from 'lucide-react';
 import { fileApi } from '../api/endpoints.js';
 import { useDownloadFile } from '../hooks/useDownloadFile.js';
+import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { resolveFileUrl, formatBytes, formatDate, formatTime } from '../utils/format.js';
 import { trackEvent } from '../utils/analytics.js';
 import PdfViewer from '../components/PdfViewer.jsx';
@@ -15,6 +17,9 @@ import AttachmentItem from '../components/AttachmentItem.jsx';
 export default function FileDetails() {
   const { id } = useParams();
   const download = useDownloadFile();
+  const { user } = useAuth();
+  const bookmarkedIds = useBookmarkedIds();
+  const toggleBookmark = useToggleBookmark();
 
   const { data, isLoading } = useQuery({ queryKey: ['file', id], queryFn: () => fileApi.get(id) });
   const { data: related } = useQuery({ queryKey: ['related', id], queryFn: () => fileApi.related(id), enabled: !!id });
@@ -66,6 +71,16 @@ export default function FileDetails() {
             {file.department?.name} ({file.departmentCode}) &middot; {file.courseName} ({file.courseId})
           </p>
         </div>
+        {user && (
+          <button
+            onClick={() => toggleBookmark(file)}
+            title={bookmarkedIds.has(file._id) ? 'Remove from Favorites' : 'Add to Favorites'}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
+          >
+            <Heart size={16} fill={bookmarkedIds.has(file._id) ? 'currentColor' : 'none'} className={bookmarkedIds.has(file._id) ? 'text-red-500' : 'text-slate-400'} />
+            {bookmarkedIds.has(file._id) ? 'Bookmarked' : 'Add to Favorites'}
+          </button>
+        )}
       </div>
 
       {multi ? (

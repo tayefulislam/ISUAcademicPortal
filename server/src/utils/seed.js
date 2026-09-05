@@ -2,6 +2,7 @@ import { connectDB } from '../config/db.js';
 import Department from '../models/Department.js';
 import Course from '../models/Course.js';
 import Batch from '../models/Batch.js';
+import Semester from '../models/Semester.js';
 import Category from '../models/Category.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
@@ -28,6 +29,8 @@ const DEPARTMENTS = [
   { name: 'English', code: 'ENG' },
   { name: 'Civil Engineering', code: 'CE' },
 ];
+
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 
 async function seed() {
   await connectDB();
@@ -56,11 +59,36 @@ async function seed() {
     await Batch.findOneAndUpdate({ code }, { name: code, code }, { upsert: true, new: true });
   }
 
+  for (let i = 0; i < ORDINALS.length; i += 1) {
+    const code = `SEM-${i + 1}`;
+    await Semester.findOneAndUpdate({ code }, { name: `${ORDINALS[i]} Semester`, code }, { upsert: true, new: true });
+  }
+
   for (const name of CATEGORIES) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     await Category.findOneAndUpdate({ slug }, { name, slug }, { upsert: true, new: true });
   }
 
+  // Super Admin — the only role with full system access. Deliberately not
+  // creatable through any API; this seed script is the one protected
+  // mechanism for provisioning it.
+  const superAdminEmail = process.env.SEED_SUPER_ADMIN_EMAIL || 'superadmin@university.edu';
+  const existingSuperAdmin = await User.findOne({ email: superAdminEmail });
+  if (!existingSuperAdmin) {
+    await User.create({
+      name: 'Super Admin',
+      email: superAdminEmail,
+      password: process.env.SEED_SUPER_ADMIN_PASSWORD || 'SuperAdmin@12345',
+      role: 'super_admin',
+    });
+    console.log(
+      `[seed] super_admin created: ${superAdminEmail} / ${process.env.SEED_SUPER_ADMIN_PASSWORD || 'SuperAdmin@12345'}`
+    );
+  } else {
+    console.log('[seed] super_admin already exists, skipped');
+  }
+
+  // A regular Admin test account (own-uploads-only scope).
   const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@university.edu';
   const existingAdmin = await User.findOne({ email: adminEmail });
   if (!existingAdmin) {

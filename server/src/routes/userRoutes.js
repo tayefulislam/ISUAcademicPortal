@@ -1,20 +1,13 @@
 import { Router } from 'express';
-import {
-  listUsers,
-  updateUserRole,
-  setUserActive,
-  toggleFavorite,
-  listFavorites,
-} from '../controllers/userController.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { listBookmarks, toggleBookmark } from '../controllers/bookmarkController.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
-router.get('/', authenticate, requireRole('admin'), listUsers);
-router.put('/:id/role', authenticate, requireRole('admin'), updateUserRole);
-router.put('/:id/active', authenticate, requireRole('admin'), setUserActive);
-
-router.get('/me/favorites', authenticate, listFavorites);
-router.post('/me/favorites/:fileId', authenticate, toggleFavorite);
+// Legacy paths kept for backward compatibility with existing frontend calls
+// — now backed by the Bookmark collection (see /api/bookmarks for the
+// spec-named equivalents) instead of the old User.favorites array.
+router.get('/me/favorites', authenticate, listBookmarks);
+router.post('/me/favorites/:fileId', authenticate, toggleBookmark);
 
 export default router;

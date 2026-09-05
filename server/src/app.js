@@ -9,6 +9,7 @@ import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
+import Course from './models/Course.js';
 
 const app = express();
 
@@ -57,6 +58,18 @@ app.use(errorHandler);
 
 async function start() {
   await connectDB();
+
+  // Self-heals a legacy bug: courseId used to be globally unique, so the
+  // same course code (e.g. ENG-101) could not be offered by more than one
+  // department. The schema now enforces uniqueness per department instead —
+  // syncIndexes drops the old global-unique index and creates the new
+  // compound one on any deployment/database that still has it.
+  try {
+    await Course.syncIndexes();
+  } catch (err) {
+    console.error('[db] Course.syncIndexes failed:', err.message);
+  }
+
   app.listen(env.port, () => {
     console.log(`[server] listening on port ${env.port} (${env.nodeEnv})`);
   });

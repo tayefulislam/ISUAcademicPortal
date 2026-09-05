@@ -56,8 +56,26 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // Applying a fresh token (e.g. after a password change) without a full
+  // login round-trip.
+  const applyToken = useCallback((token) => {
+    localStorage.setItem('token', token);
+  }, []);
+
+  // Updates the cached user (e.g. after editing the profile) and keeps
+  // localStorage in sync so a page refresh doesn't briefly show stale data.
+  const updateUser = useCallback((next) => {
+    setUser(next);
+    localStorage.setItem('user', JSON.stringify(next));
+  }, []);
+
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin' || isSuperAdmin;
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, isAdmin: user?.role === 'admin' }}>
+    <AuthContext.Provider
+      value={{ user, updateUser, loading, login, register, logout, applyToken, isAdmin, isSuperAdmin }}
+    >
       {children}
     </AuthContext.Provider>
   );

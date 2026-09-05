@@ -4,26 +4,30 @@ import { ApiError } from '../utils/ApiError.js';
 import { signToken } from '../utils/jwt.js';
 
 export const register = asyncHandler(async (req, res) => {
-  const { name, email, password, department, batch } = req.body;
+  // Only these fields are ever read from the request — role/status/tokenVersion
+  // are never accepted from the client, no matter what the body contains.
+  const { name, email, password, department, batch, semester, rollNo } = req.body;
 
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) {
     throw new ApiError(409, 'An account with this email already exists');
   }
 
-  // Public registration always creates a student account; admins are
-  // provisioned via the seed script or by an existing admin.
+  // Public registration always creates a student account; admin/super_admin
+  // are provisioned via the seed script or by an existing Super Admin.
   const user = await User.create({
     name,
     email,
     password,
     department: department || null,
     batch: batch || null,
+    semester: semester || null,
+    rollNo: rollNo || '',
     role: 'student',
   });
 
   const token = signToken(user);
-  res.status(201).json({ success: true, data: { user: user.toSafeObject(), token } });
+  res.status(201).json({ success: true, message: 'Account created', data: { user: user.toSafeObject(), token } });
 });
 
 export const login = asyncHandler(async (req, res) => {
@@ -33,14 +37,37 @@ export const login = asyncHandler(async (req, res) => {
   if (!user || !(await user.comparePassword(password))) {
     throw new ApiError(401, 'Invalid email or password');
   }
-  if (!user.isActive) {
-    throw new ApiError(403, 'Account is deactivated');
+  if (user.status === 'blocked') {
+    throw new ApiError(403, 'Your account has been blocked', null, 'FORBIDDEN');
   }
 
+  user.lastLogin = new Date();
+  await user.save({ validateBeforeSave: false });
+
   const token = signToken(user);
-  res.json({ success: true, data: { user: user.toSafeObject(), token } });
+  res.json({ success: true, message: 'Signed in', data: { user: user.toSafeObject(), token } });
 });
 
 export const me = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { user: req.user.toSafeObject() } });
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+  if (newPassword !== confirmNewPassword) {
+    throw new ApiError(422, 'New password and confirmation do not match', null, 'VALIDATION_ERROR');
+  }
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.comparePassword(currentPassword))) {
+    throw new ApiError(401, 'Current password is incorrect');
+  }
+
+  user.password = newPassword;
+  user.tokenVersion += 1; // invalidates every token issued before this change
+  await user.save();
+
+  const token = signToken(user);
+  res.json({ success: true, message: 'Password changed successfully', data: { token } });
 });

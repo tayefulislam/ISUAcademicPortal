@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Trash2, Eye, Download, Search } from 'lucide-react';
-import { fileApi } from '../../api/endpoints.js';
+import { adminApi } from '../../api/endpoints.js';
 import { formatBytes, formatDate } from '../../utils/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Pagination from '../../components/Pagination.jsx';
@@ -15,8 +15,8 @@ export default function AdminFiles() {
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-files', q, page],
-    queryFn: () => fileApi.list({ q: q || undefined, page, limit: 15, sort: 'newest' }),
+    queryKey: ['admin-my-files', q, page],
+    queryFn: () => adminApi.myFiles({ q: q || undefined, page, limit: 15 }),
   });
 
   const files = data?.data || [];
@@ -28,9 +28,9 @@ export default function AdminFiles() {
   const deleteOne = async (id) => {
     if (!confirm('Delete this file permanently? This cannot be undone.')) return;
     try {
-      await fileApi.remove(id);
+      await adminApi.removeFile(id);
       toast('File deleted', 'success');
-      qc.invalidateQueries({ queryKey: ['admin-files'] });
+      qc.invalidateQueries({ queryKey: ['admin-my-files'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Delete failed', 'error');
     }
@@ -40,10 +40,10 @@ export default function AdminFiles() {
     if (!selected.length) return;
     if (!confirm(`Delete ${selected.length} selected file(s) permanently?`)) return;
     try {
-      await fileApi.bulkRemove(selected);
+      await adminApi.bulkRemoveFiles(selected);
       toast(`${selected.length} file(s) deleted`, 'success');
       setSelected([]);
-      qc.invalidateQueries({ queryKey: ['admin-files'] });
+      qc.invalidateQueries({ queryKey: ['admin-my-files'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Bulk delete failed', 'error');
     }
@@ -52,7 +52,7 @@ export default function AdminFiles() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-2xl font-bold text-slate-800">Manage Files</h1>
+        <h1 className="text-2xl font-bold text-slate-800">My Files</h1>
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input

@@ -13,8 +13,8 @@ const router = Router();
 
 router.get('/', listCategories);
 
-router.post('/', authenticate, requireRole('admin'), [body('name').notEmpty()], validate, createCategory);
-router.put('/:id', authenticate, requireRole('admin'), updateCategory);
-router.delete('/:id', authenticate, requireRole('admin'), deleteCategory);
+router.post('/', authenticate, requireRole('super_admin'), [body('name').notEmpty()], validate, createCategory);
+router.put('/:id', authenticate, requireRole('super_admin'), updateCategory);
+router.delete('/:id', authenticate, requireRole('super_admin'), deleteCategory);
 
 export default router;

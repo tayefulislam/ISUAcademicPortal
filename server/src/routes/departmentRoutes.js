@@ -20,12 +20,12 @@ router.get('/:id/courses', getDepartmentCourses);
 router.post(
   '/',
   authenticate,
-  requireRole('admin'),
+  requireRole('super_admin'),
   [body('name').notEmpty(), body('code').notEmpty()],
   validate,
   createDepartment
 );
-router.put('/:id', authenticate, requireRole('admin'), updateDepartment);
-router.delete('/:id', authenticate, requireRole('admin'), deleteDepartment);
+router.put('/:id', authenticate, requireRole('super_admin'), updateDepartment);
+router.delete('/:id', authenticate, requireRole('super_admin'), deleteDepartment);
 
 export default router;

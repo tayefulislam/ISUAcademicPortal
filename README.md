@@ -313,8 +313,110 @@ data (names/emails) is ever sent in event params.
 
 - The S3/R2 storage provider is stubbed (`s3Storage.js`) but not
   implemented — wire it up when you're ready to migrate off local disk.
-- Admin user creation is via the seed script only; there's no in-app "invite
-  admin" flow yet (promote a student via `PUT /users/:id/role`).
-- No automated test suite yet; verified manually end-to-end (auth, upload,
-  search, PDF viewer, admin dashboard) during development.
-"# ISUAcademicPortal" 
+- Admin/Super Admin accounts are provisioned only via the seed script or by
+  an existing Super Admin promoting a student (`PATCH /super-admin/users/:id/role`)
+  — there's no in-app "invite" flow.
+- No automated test suite yet; verified manually end-to-end (auth, RBAC,
+  upload, search, PDF viewer, dashboards) during development.
+
+---
+
+## 10. Deployment
+
+### 10.1 Architecture at a glance
+
+```text
+Frontend (static build)  →  Vercel / Netlify / Cloudflare Pages
+Backend (long-running Node process)  →  Render / Railway / Fly.io / a VPS
+Database  →  MongoDB Atlas (already what this project uses in dev)
+Images  →  ImgBB (or Uploadcare)
+Documents  →  local disk on the backend host, or Uploadcare
+```
+
+**Important:** the backend must run as a persistent, long-running process,
+not a serverless function (Vercel/Netlify functions). Two reasons:
+1. With `FILE_STORAGE_PROVIDER=local`, uploaded documents are written to
+   `server/uploads/` on that instance's disk — a serverless platform gives
+   you no durable disk, and most PaaS containers are ephemeral (a redeploy
+   or restart wipes anything not in a persistent volume).
+2. If you deploy the backend somewhere with an ephemeral filesystem, either
+   attach a **persistent volume/disk** mounted at `server/uploads`, or set
+   `FILE_STORAGE_PROVIDER` so all documents also go through Uploadcare
+   instead of local disk (images already always go to ImgBB/Uploadcare,
+   never to disk).
+
+### 10.2 Database — MongoDB Atlas
+
+You're already using this in development, so production is the same
+cluster (or a separate one for production data) — just make sure:
+- The cluster's **Network Access** allows connections from your backend
+  host's IP (or `0.0.0.0/0` if the host has a dynamic IP, common on PaaS —
+  acceptable since the connection still requires the username/password).
+- You use a strong, unique database user password.
+- `server/src/config/db.js` already points Node's DNS resolver at
+  `1.1.1.1`/`8.8.8.8` before connecting when the URI is `mongodb+srv://` —
+  this works around ISPs/networks that don't forward SRV DNS queries, a
+  common cause of `querySrv ECONNREFUSED` in some environments.
+
+### 10.3 Backend — example with Render (Railway/Fly.io are similar)
+
+1. Push this repo to GitHub.
+2. In Render: **New → Web Service**, connect the repo.
+3. Root directory: `server`. Build command: `npm install`. Start command: `npm start`.
+4. Add a **persistent disk** (Render calls it a "Disk") mounted at
+   `/opt/render/project/src/uploads` (or wherever `UPLOAD_DIR` resolves to)
+   if you're using local document storage — skip this if you switch
+   documents to Uploadcare too.
+5. Set environment variables (Render → Environment):
+
+   | Key | Value |
+   |---|---|
+   | `NODE_ENV` | `production` |
+   | `PORT` | Render sets this automatically — leave your app reading `process.env.PORT` (already does) |
+   | `CLIENT_URL` | your deployed frontend URL, e.g. `https://your-app.vercel.app` (no trailing slash) |
+   | `MONGODB_URI` | your Atlas connection string |
+   | `JWT_SECRET` | a long random string — **generate a new one for production**, never reuse the dev value |
+   | `JWT_EXPIRES_IN` | `7d` (or shorter for production) |
+   | `FILE_STORAGE_PROVIDER` | `local` (with a disk attached) or `uploadcare` |
+   | `UPLOAD_DIR` | `uploads` |
+   | `MAX_FILE_SIZE_MB` | `50` (or your limit) |
+   | `IMGBB_API_KEY` | your ImgBB key |
+   | `UPLOADCARE_PUBLIC_KEY` / `UPLOADCARE_SECRET_KEY` | if using Uploadcare |
+
+6. Deploy. Once live, run the seed script **once** against production
+   (from your own machine, pointing at the production `MONGODB_URI`) to
+   create the Super Admin account and base taxonomy:
+   ```bash
+   MONGODB_URI="<your-atlas-uri>" SEED_SUPER_ADMIN_EMAIL="you@yourdomain.com" SEED_SUPER_ADMIN_PASSWORD="<a-strong-password>" npm --prefix server run seed
+   ```
+   Then log in and change that password immediately from the Profile page.
+
+### 10.4 Frontend — example with Vercel (Netlify is nearly identical)
+
+1. In Vercel: **New Project**, import the repo, set **Root Directory** to `client`.
+2. Framework preset: Vite. Build command: `npm run build`. Output directory: `dist`.
+3. Environment variables (Vercel → Settings → Environment Variables):
+
+   | Key | Value |
+   |---|---|
+   | `VITE_API_URL` | your deployed backend URL + `/api`, e.g. `https://your-api.onrender.com/api` |
+   | `VITE_GA_MEASUREMENT_ID` | your GA4 ID, if used |
+   | `VITE_UPLOADCARE_PUBLIC_KEY` | if using the Uploadcare upload widget |
+
+4. Deploy. Vercel gives you HTTPS automatically.
+5. Go back to the backend's `CLIENT_URL` env var and set it to this exact
+   Vercel URL, then redeploy the backend — CORS in production is locked to
+   a single origin (see `server/src/app.js`), so this step is required or
+   the frontend will get CORS errors on every API call.
+
+### 10.5 Post-deploy checklist
+
+- [ ] `NODE_ENV=production` on the backend (hides stack traces in error responses).
+- [ ] `JWT_SECRET` is a fresh, long random value — not the dev placeholder.
+- [ ] `CLIENT_URL` matches the frontend's exact production URL (https, no trailing slash).
+- [ ] `VITE_API_URL` matches the backend's exact production URL + `/api`.
+- [ ] MongoDB Atlas network access allows the backend host.
+- [ ] Seed script has been run once against production; Super Admin password changed after first login.
+- [ ] Document storage is durable (persistent disk attached, or `FILE_STORAGE_PROVIDER=uploadcare`) — not the default ephemeral disk of a serverless/container platform.
+- [ ] `.env` files are not committed (already covered by `.gitignore`).
+- [ ] HTTPS is active on both frontend and backend (Vercel/Render/Railway all provide this automatically). 

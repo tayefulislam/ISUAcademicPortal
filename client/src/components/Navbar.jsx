@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { GraduationCap, LayoutDashboard, LogOut, Menu, X } from 'lucide-react';
+import { GraduationCap, LayoutDashboard, ShieldCheck, Bookmark, User, LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -9,7 +9,7 @@ const navLinkClass = ({ isActive }) =>
   }`;
 
 export default function Navbar() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isSuperAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -33,7 +33,15 @@ export default function Navbar() {
           </NavLink>
         </nav>
 
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-1">
+          {user && (
+            <Link
+              to="/my-bookmarks"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <Bookmark size={16} /> Bookmarks
+            </Link>
+          )}
           {isAdmin && (
             <Link
               to="/admin"
@@ -42,20 +50,36 @@ export default function Navbar() {
               <LayoutDashboard size={16} /> Admin
             </Link>
           )}
-          {user ? (
-            <button
-              onClick={() => {
-                logout();
-                navigate('/');
-              }}
+          {isSuperAdmin && (
+            <Link
+              to="/super-admin"
               className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
             >
-              <LogOut size={16} /> Logout
-            </button>
+              <ShieldCheck size={16} /> Super Admin
+            </Link>
+          )}
+          {user ? (
+            <>
+              <Link
+                to="/profile"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                <User size={16} /> {user.name?.split(' ')[0]}
+              </Link>
+              <button
+                onClick={() => {
+                  logout();
+                  navigate('/');
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                <LogOut size={16} /> Logout
+              </button>
+            </>
           ) : (
             <Link
               to="/login"
-              className="px-4 py-2 rounded-md text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700"
+              className="ml-1 px-4 py-2 rounded-md text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700"
             >
               Sign in
             </Link>
@@ -78,22 +102,37 @@ export default function Navbar() {
           <NavLink to="/courses" className={navLinkClass} onClick={() => setOpen(false)}>
             Courses
           </NavLink>
+          {user && (
+            <NavLink to="/my-bookmarks" className={navLinkClass} onClick={() => setOpen(false)}>
+              My Bookmarks
+            </NavLink>
+          )}
           {isAdmin && (
             <NavLink to="/admin" className={navLinkClass} onClick={() => setOpen(false)}>
               Admin
             </NavLink>
           )}
+          {isSuperAdmin && (
+            <NavLink to="/super-admin" className={navLinkClass} onClick={() => setOpen(false)}>
+              Super Admin
+            </NavLink>
+          )}
           {user ? (
-            <button
-              onClick={() => {
-                logout();
-                setOpen(false);
-                navigate('/');
-              }}
-              className="text-left px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
-            >
-              Logout
-            </button>
+            <>
+              <NavLink to="/profile" className={navLinkClass} onClick={() => setOpen(false)}>
+                Profile
+              </NavLink>
+              <button
+                onClick={() => {
+                  logout();
+                  setOpen(false);
+                  navigate('/');
+                }}
+                className="text-left px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Logout
+              </button>
+            </>
           ) : (
             <Link
               to="/login"

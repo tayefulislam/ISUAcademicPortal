@@ -1,10 +1,16 @@
 import { Link } from 'react-router-dom';
-import { Eye, Download, Files } from 'lucide-react';
+import { Eye, Download, Files, Heart } from 'lucide-react';
 import FileIcon from './FileIcon.jsx';
 import { formatBytes, formatDate } from '../utils/format.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
 
 export default function FileCard({ file, onDownload }) {
   const multi = (file.fileCount ?? 1) > 1;
+  const { user } = useAuth();
+  const bookmarkedIds = useBookmarkedIds();
+  const toggleBookmark = useToggleBookmark();
+  const isBookmarked = bookmarkedIds.has(file._id);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:border-brand-300 hover:shadow-md transition-all p-4 flex flex-col gap-3">
@@ -22,6 +28,15 @@ export default function FileCard({ file, onDownload }) {
             {file.departmentCode} &middot; {file.courseName} ({file.courseId})
           </p>
         </div>
+        {user && (
+          <button
+            onClick={() => toggleBookmark(file)}
+            title={isBookmarked ? 'Remove from Favorites' : 'Add to Favorites'}
+            className="shrink-0 p-1 text-slate-300 hover:text-red-500"
+          >
+            <Heart size={18} fill={isBookmarked ? 'currentColor' : 'none'} className={isBookmarked ? 'text-red-500' : ''} />
+          </button>
+        )}
       </div>
 
       {multi && (

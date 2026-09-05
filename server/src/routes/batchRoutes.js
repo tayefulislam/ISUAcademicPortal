@@ -15,8 +15,8 @@ const router = Router();
 router.get('/', listBatches);
 router.get('/:id', getBatch);
 
-router.post('/', authenticate, requireRole('admin'), [body('name').notEmpty(), body('code').notEmpty()], validate, createBatch);
-router.put('/:id', authenticate, requireRole('admin'), updateBatch);
-router.delete('/:id', authenticate, requireRole('admin'), deleteBatch);
+router.post('/', authenticate, requireRole('super_admin'), [body('name').notEmpty(), body('code').notEmpty()], validate, createBatch);
+router.put('/:id', authenticate, requireRole('super_admin'), updateBatch);
+router.delete('/:id', authenticate, requireRole('super_admin'), deleteBatch);
 
 export default router;

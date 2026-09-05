@@ -4,6 +4,6 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-router.get('/dashboard', authenticate, requireRole('admin'), dashboard);
+router.get('/dashboard', authenticate, requireRole('super_admin'), dashboard);
 
 export default router;

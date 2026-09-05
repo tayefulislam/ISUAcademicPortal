@@ -254,18 +254,30 @@ export const getRelatedFiles = asyncHandler(async (req, res) => {
   res.json({ success: true, data: related });
 });
 
+// Admins may only manage files they themselves uploaded; Super Admin bypasses
+// this check entirely. Checked against the document fetched from the
+// database — never against anything the client claims.
+function assertOwnership(file, user) {
+  if (user.role === 'super_admin') return;
+  if (!file.uploadedBy.equals(user._id)) {
+    throw new ApiError(403, 'You can only manage files you uploaded', null, 'FORBIDDEN');
+  }
+}
+
 export const updateFile = asyncHandler(async (req, res) => {
+  const file = await File.findById(req.params.id);
+  if (!file) throw new ApiError(404, 'File not found');
+  assertOwnership(file, req.user);
+
   const allowed = ['title', 'description', 'semester', 'academicYear', 'status'];
-  const update = {};
   for (const key of allowed) {
-    if (req.body[key] !== undefined) update[key] = req.body[key];
+    if (req.body[key] !== undefined) file[key] = req.body[key];
   }
   if (req.body.keywords) {
-    update.keywords = String(req.body.keywords).split(',').map((k) => k.trim()).filter(Boolean);
+    file.keywords = String(req.body.keywords).split(',').map((k) => k.trim()).filter(Boolean);
   }
+  await file.save();
 
-  const file = await File.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
-  if (!file) throw new ApiError(404, 'File not found');
   res.json({ success: true, data: file });
 });
 
@@ -277,6 +289,7 @@ async function deleteAllAttachments(file) {
 export const deleteFile = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'File not found');
+  assertOwnership(file, req.user);
 
   await deleteAllAttachments(file);
   await file.deleteOne();
@@ -289,10 +302,32 @@ export const bulkDeleteFiles = asyncHandler(async (req, res) => {
   if (!Array.isArray(ids) || !ids.length) throw new ApiError(400, 'ids array is required');
 
   const files = await File.find({ _id: { $in: ids } });
+  for (const f of files) assertOwnership(f, req.user);
+
   await Promise.all(files.map((f) => deleteAllAttachments(f)));
-  await File.deleteMany({ _id: { $in: ids } });
+  await File.deleteMany({ _id: { $in: files.map((f) => f._id) } });
 
   res.json({ success: true, message: `${files.length} file(s) deleted` });
+});
+
+// GET /api/admin/files — an Admin's (or Super Admin's) own uploads only.
+// The filter is applied server-side, never left to the frontend to hide.
+export const getMyFiles = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, q } = req.query;
+  const filter = { uploadedBy: req.user._id };
+  if (q) filter.$text = { $search: q };
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [files, total] = await Promise.all([
+    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    File.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    data: files,
+    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+  });
 });
 
 export const getRecentFiles = asyncHandler(async (req, res) => {

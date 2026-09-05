@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide, CloudUpload, HardDrive } from 'lucide-react';
 import { FileUploaderRegular } from '@uploadcare/react-uploader';
 import '@uploadcare/react-uploader/core.css';
-import { departmentApi, courseApi, batchApi, categoryApi, fileApi } from '../../api/endpoints.js';
+import { departmentApi, courseApi, batchApi, categoryApi, adminApi, fileApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
 
@@ -98,7 +98,7 @@ export default function AdminUpload() {
       if (k === 'batches') v.forEach((b) => fd.append('batches', b));
       else fd.append(k, v);
     });
-    return fileApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
+    return adminApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
   };
 
   const submitUploadcare = () =>

@@ -11,9 +11,34 @@ const MULTER_MESSAGES = {
   LIMIT_UNEXPECTED_FILE: 'Too many files in a single upload',
 };
 
+function duplicateKeyMessage(err) {
+  const pattern = err.keyPattern || {};
+  const field = Object.keys(pattern).join(', ');
+
+  if (pattern.department && pattern.courseId) {
+    return 'This course ID is already used in that department. Choose a different ID, or pick the existing course.';
+  }
+  if (pattern.department && pattern.batch && pattern.rollNo) {
+    return 'This roll number is already registered for that department and batch.';
+  }
+  if (pattern.user && pattern.file) {
+    return 'You already bookmarked this file.';
+  }
+  if (pattern.email) {
+    return 'An account with this email already exists.';
+  }
+  return `Duplicate value for field: ${field || 'unknown'}`;
+}
+
 export function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
   if (err instanceof multer.MulterError) {
-    return res.status(400).json({ success: false, message: MULTER_MESSAGES[err.code] || err.message });
+    return res
+      .status(400)
+      .json({ success: false, message: MULTER_MESSAGES[err.code] || err.message, code: 'BAD_REQUEST' });
+  }
+
+  if (err.code === 11000) {
+    return res.status(409).json({ success: false, message: duplicateKeyMessage(err), code: 'CONFLICT' });
   }
 
   const statusCode = err.statusCode || 500;
@@ -26,6 +51,7 @@ export function errorHandler(err, req, res, next) { // eslint-disable-line no-un
   res.status(statusCode).json({
     success: false,
     message,
+    code: err.code && typeof err.code === 'string' ? err.code : statusCode >= 500 ? 'INTERNAL_ERROR' : 'ERROR',
     details: err.details || undefined,
     stack: env.nodeEnv === 'development' ? err.stack : undefined,
   });
