@@ -6,6 +6,7 @@ import MainLayout from './layouts/MainLayout.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import SuperAdminLayout from './layouts/SuperAdminLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import PwaUpdatePrompt from './components/PwaUpdatePrompt.jsx';
 
 import Home from './pages/Home.jsx';
 import SearchResults from './pages/SearchResults.jsx';
@@ -43,6 +44,7 @@ export default function App() {
   return (
     <ToastProvider>
       <AnalyticsTracker />
+      <PwaUpdatePrompt />
       <Routes>
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
