@@ -15,18 +15,19 @@ const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// In development, Vite may pick a fallback port (5174, 5175, ...) if 5173 is
-// already in use, so any localhost origin is accepted; production is locked
-// to CLIENT_URL only.
-const corsOrigin =
-  env.nodeEnv === 'development'
-    ? (origin, callback) => {
-        if (!origin || /^http:\/\/localhost:\d+$/.test(origin) || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) {
-          return callback(null, true);
-        }
-        callback(new Error('Not allowed by CORS'));
-      }
-    : env.clientUrl;
+// Always honors CLIENT_URL (one or more, comma-separated) regardless of
+// NODE_ENV — a deploy that forgets to set NODE_ENV=production must not
+// silently fall back to a dev-only CORS policy that rejects the real
+// frontend. localhost/127.0.0.1 on any port is allowed as a permanent local
+// dev convenience; it's harmless in production since CORS is enforced by
+// the browser against the page's real origin, not spoofable by a remote
+// attacker.
+function corsOrigin(origin, callback) {
+  if (!origin) return callback(null, true); // same-origin / curl / server-to-server
+  if (/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return callback(null, true);
+  if (env.clientUrls.includes(origin.replace(/\/$/, ''))) return callback(null, true);
+  callback(new Error(`Not allowed by CORS: ${origin}`));
+}
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
