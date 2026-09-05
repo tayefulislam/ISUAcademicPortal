@@ -1,0 +1,50 @@
+import fs from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
+import { env } from '../../config/env.js';
+import { getSafeExtension } from '../../utils/fileTypes.js';
+
+const UPLOAD_ROOT = path.resolve(process.cwd(), env.uploadDir);
+
+function safeFileName(originalName) {
+  const ext = getSafeExtension(originalName);
+  const base = originalName
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .slice(0, 60);
+  const unique = crypto.randomBytes(6).toString('hex');
+  return `${Date.now()}_${unique}_${base}.${ext}`;
+}
+
+/**
+ * Store a document (non-image) buffer on the local filesystem.
+ * @returns {{fileUrl:string, fileName:string, storageRef:string}}
+ */
+export async function uploadDocumentLocal(buffer, originalName, subDir) {
+  const dir = path.join(UPLOAD_ROOT, subDir);
+  await fs.mkdir(dir, { recursive: true });
+
+  const fileName = safeFileName(originalName);
+  const destPath = path.join(dir, fileName);
+
+  // Path traversal guard: resolved path must stay inside the target dir.
+  if (!destPath.startsWith(path.resolve(dir))) {
+    throw new Error('Invalid file path');
+  }
+
+  await fs.writeFile(destPath, buffer);
+
+  return {
+    fileUrl: `/uploads/${subDir}/${fileName}`,
+    fileName,
+    storageRef: path.join(subDir, fileName),
+  };
+}
+
+export async function deleteDocumentLocal(storageRef) {
+  const target = path.resolve(UPLOAD_ROOT, storageRef);
+  if (!target.startsWith(UPLOAD_ROOT)) {
+    throw new Error('Invalid file path');
+  }
+  await fs.rm(target, { force: true });
+}

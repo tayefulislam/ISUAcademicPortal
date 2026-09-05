@@ -1,0 +1,33 @@
+node_modules/
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# uploads (runtime data, not source)
+server/uploads/*
+!server/uploads/.gitkeep
+!server/uploads/pdf/.gitkeep
+!server/uploads/documents/.gitkeep
+!server/uploads/presentations/.gitkeep
+!server/uploads/spreadsheets/.gitkeep
+!server/uploads/other/.gitkeep
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+
+# misc
+coverage/
+.cache/
