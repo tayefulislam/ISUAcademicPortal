@@ -61,6 +61,7 @@ export const fileApi = {
   update: (id, data) => api.put(`/files/${id}`, data).then((r) => r.data),
   remove: (id) => api.delete(`/files/${id}`).then((r) => r.data),
   bulkRemove: (ids) => api.post('/files/bulk-delete', { ids }).then((r) => r.data),
+  attachUploadcare: (payload) => api.post('/files/from-uploadcare', payload).then((r) => r.data),
 };
 
 // ----- Search -----

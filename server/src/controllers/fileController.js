@@ -6,6 +6,8 @@ import Category from '../models/Category.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
+import { resolveDocumentType } from '../utils/fileTypes.js';
 import { buildFileQuery, buildSortOption } from '../services/fileQueryBuilder.js';
 
 const LIST_FIELDS = [
@@ -36,19 +38,13 @@ function listProjection(withScore) {
   return projection;
 }
 
-// Accepts one or more files (req.files) uploaded together under one shared
-// title and metadata (department/course/batch/category/etc). All of them
-// become a single File document — its `attachments` array holds each
-// physical file, so the entry shows up once in search/listings under one
-// title instead of once per uploaded file.
-export const uploadFiles = asyncHandler(async (req, res) => {
-  const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
-  if (!files.length) throw new ApiError(400, 'At least one file is required');
-
-  const { title, description, semester, academicYear, keywords } = req.body;
-  const { departmentId, courseIdRef, categoryId } = req.body;
-  const batchIds = req.body.batches ? [].concat(req.body.batches) : [];
-  const allBatches = req.body.allBatches === 'true' || req.body.allBatches === true;
+// Resolves the department/course/category/batches shared by every
+// attachment in one upload — used by both the direct-upload and the
+// Uploadcare-attach endpoints so they build File entries identically.
+async function resolveUploadMetadata(body) {
+  const { departmentId, courseIdRef, categoryId, keywords } = body;
+  const batchIds = body.batches ? [].concat(body.batches) : [];
+  const allBatches = body.allBatches === 'true' || body.allBatches === true;
 
   const [department, course, category] = await Promise.all([
     Department.findById(departmentId),
@@ -62,12 +58,67 @@ export const uploadFiles = asyncHandler(async (req, res) => {
   let batches = [];
   let batchCodes = [];
   if (!allBatches && batchIds.length) {
-    batches = await Batch.find({ _id: { $in: batchIds } });
-    batchCodes = batches.map((b) => b.code);
-    batches = batches.map((b) => b._id);
+    const found = await Batch.find({ _id: { $in: batchIds } });
+    batchCodes = found.map((b) => b.code);
+    batches = found.map((b) => b._id);
   }
 
   const keywordList = keywords ? String(keywords).split(',').map((k) => k.trim()).filter(Boolean) : [];
+
+  return { department, course, category, batches, batchCodes, allBatches, keywordList };
+}
+
+// Creates one File entry (with an `attachments[]` of one or more physical
+// files) from already-prepared attachment descriptors + shared metadata.
+async function createGroupedFile({ attachments, title, description, semester, academicYear, meta, uploadedBy }) {
+  const primary = attachments[0];
+  const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
+
+  return File.create({
+    title: title || stripExtension(primary.originalName),
+    originalName: primary.originalName,
+    fileName: primary.fileName,
+    fileType: primary.fileType,
+    mimeType: primary.mimeType,
+    fileSize: totalSize,
+    fileUrl: primary.fileUrl,
+    storageProvider: primary.storageProvider,
+    storageRef: primary.storageRef,
+    attachments,
+    fileCount: attachments.length,
+    department: meta.department._id,
+    departmentCode: meta.department.code,
+    course: meta.course._id,
+    courseName: meta.course.name,
+    courseId: meta.course.courseId,
+    batches: meta.batches,
+    batchCodes: meta.batchCodes,
+    allBatches: meta.allBatches,
+    semester: semester || '',
+    academicYear: academicYear || '',
+    category: meta.category._id,
+    categoryName: meta.category.name,
+    description: description || '',
+    keywords: meta.keywordList,
+    uploadedBy,
+  });
+}
+
+function stripExtension(name) {
+  return name.replace(/\.[^/.]+$/, '');
+}
+
+// Accepts one or more files (req.files) uploaded together under one shared
+// title and metadata (department/course/batch/category/etc). All of them
+// become a single File document — its `attachments` array holds each
+// physical file, so the entry shows up once in search/listings under one
+// title instead of once per uploaded file.
+export const uploadFiles = asyncHandler(async (req, res) => {
+  const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
+  if (!files.length) throw new ApiError(400, 'At least one file is required');
+
+  const { title, description, semester, academicYear } = req.body;
+  const meta = await resolveUploadMetadata(req.body);
 
   const attachments = [];
   const failed = [];
@@ -94,44 +145,64 @@ export const uploadFiles = asyncHandler(async (req, res) => {
     throw new ApiError(502, 'All uploads failed', failed);
   }
 
-  const primary = attachments[0];
-  const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
-
-  const file = await File.create({
-    title: title || stripExtension(primary.originalName),
-    originalName: primary.originalName,
-    fileName: primary.fileName,
-    fileType: primary.fileType,
-    mimeType: primary.mimeType,
-    fileSize: totalSize,
-    fileUrl: primary.fileUrl,
-    storageProvider: primary.storageProvider,
-    storageRef: primary.storageRef,
+  const file = await createGroupedFile({
     attachments,
-    fileCount: attachments.length,
-    department: department._id,
-    departmentCode: department.code,
-    course: course._id,
-    courseName: course.name,
-    courseId: course.courseId,
-    batches,
-    batchCodes,
-    allBatches,
-    semester: semester || '',
-    academicYear: academicYear || '',
-    category: category._id,
-    categoryName: category.name,
-    description: description || '',
-    keywords: keywordList,
+    title,
+    description,
+    semester,
+    academicYear,
+    meta,
     uploadedBy: req.user._id,
   });
 
   res.status(201).json({ success: true, data: file, failed: failed.length ? failed : undefined });
 });
 
-function stripExtension(name) {
-  return name.replace(/\.[^/.]+$/, '');
-}
+// Records files that were already uploaded directly from the browser to
+// Uploadcare's CDN (via their File Uploader widget) — our server never
+// touches the binary, only the resulting metadata. Body: { title?,
+// description?, semester?, academicYear?, departmentId, courseIdRef,
+// categoryId, batches?, allBatches?, keywords?, files: [{ uuid, name,
+// size, mimeType, isImage }] } — matching Uploadcare's OutputFileEntry
+// shape (successEntries from the onCommonUploadSuccess event).
+export const attachUploadcareFiles = asyncHandler(async (req, res) => {
+  const { files, title, description, semester, academicYear } = req.body;
+  if (!Array.isArray(files) || !files.length) {
+    throw new ApiError(400, 'At least one uploaded file descriptor is required');
+  }
+
+  const meta = await resolveUploadMetadata(req.body);
+
+  const attachments = files.map((f) => {
+    if (!f.uuid) throw new ApiError(400, 'Each file needs an Uploadcare uuid');
+    const mimeType = f.mimeType || 'application/octet-stream';
+    const name = f.name || f.uuid;
+    const { fileType } = f.isImage ? { fileType: 'image' } : resolveDocumentType(mimeType, name);
+
+    return {
+      originalName: name,
+      fileName: name,
+      fileType,
+      mimeType,
+      fileSize: Number(f.size) || 0,
+      fileUrl: uploadcareCdnUrl(f.uuid),
+      storageProvider: 'uploadcare',
+      storageRef: f.uuid,
+    };
+  });
+
+  const file = await createGroupedFile({
+    attachments,
+    title,
+    description,
+    semester,
+    academicYear,
+    meta,
+    uploadedBy: req.user._id,
+  });
+
+  res.status(201).json({ success: true, data: file });
+});
 
 export const listFiles = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, sort, q } = req.query;

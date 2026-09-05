@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
+import { UploadCloud, X, FileIcon as FileIconLucide, CloudUpload, HardDrive } from 'lucide-react';
+import { FileUploaderRegular } from '@uploadcare/react-uploader';
+import '@uploadcare/react-uploader/core.css';
 import { departmentApi, courseApi, batchApi, categoryApi, fileApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
+
+const UPLOADCARE_PUBKEY = import.meta.env.VITE_UPLOADCARE_PUBLIC_KEY;
 
 const initialState = {
   title: '',
@@ -21,10 +25,13 @@ const initialState = {
 const MAX_FILES = 10;
 
 export default function AdminUpload() {
+  const [mode, setMode] = useState('direct'); // 'direct' | 'uploadcare'
   const [form, setForm] = useState(initialState);
   const [files, setFiles] = useState([]);
+  const [ucFiles, setUcFiles] = useState([]);
   const [progress, setProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const uploaderRef = useRef(null);
   const { toast } = useToast();
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
@@ -69,31 +76,47 @@ export default function AdminUpload() {
 
   const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!files.length) return toast('Please select at least one file or image', 'error');
+  const reportSuccess = (res) => {
+    const count = res.data?.fileCount || 1;
+    toast(
+      count > 1 ? `Uploaded — ${count} files grouped under "${res.data.title}"` : 'File uploaded successfully',
+      'success'
+    );
+    if (res.failed?.length) {
+      toast(`${res.failed.length} file(s) failed to upload`, 'error');
+    }
+    setForm(initialState);
+    setFiles([]);
+    setUcFiles([]);
+    uploaderRef.current?.api?.removeAllFiles?.();
+  };
 
+  const submitDirect = async () => {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f));
     Object.entries(form).forEach(([k, v]) => {
       if (k === 'batches') v.forEach((b) => fd.append('batches', b));
       else fd.append(k, v);
     });
+    return fileApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
+  };
+
+  const submitUploadcare = () =>
+    fileApi.attachUploadcare({
+      ...form,
+      files: ucFiles.map((f) => ({ uuid: f.uuid, name: f.name, size: f.size, mimeType: f.mimeType, isImage: f.isImage })),
+    });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (mode === 'direct' && !files.length) return toast('Please select at least one file or image', 'error');
+    if (mode === 'uploadcare' && !ucFiles.length) return toast('Please upload at least one file first', 'error');
 
     setSubmitting(true);
     setProgress(0);
     try {
-      const res = await fileApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
-      const count = res.data?.fileCount || 1;
-      toast(
-        count > 1 ? `Uploaded — ${count} files grouped under "${res.data.title}"` : 'File uploaded successfully',
-        'success'
-      );
-      if (res.failed?.length) {
-        toast(`${res.failed.length} file(s) failed to upload`, 'error');
-      }
-      setForm(initialState);
-      setFiles([]);
+      const res = mode === 'direct' ? await submitDirect() : await submitUploadcare();
+      reportSuccess(res);
     } catch (err) {
       toast(err.response?.data?.message || 'Upload failed', 'error');
     } finally {
@@ -106,37 +129,92 @@ export default function AdminUpload() {
       <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload Files</h1>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-        <label
-          className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            addFiles(e.dataTransfer.files);
-          }}
-        >
-          <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
-          <UploadCloud className="mx-auto text-slate-400 mb-2" size={32} />
-          <p className="text-sm text-slate-600">
-            {files.length ? `${files.length} file(s) selected — click to add more` : 'Click to choose files/images, or drag and drop'}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP &middot; up to {MAX_FILES} at once</p>
-        </label>
+        {UPLOADCARE_PUBKEY && (
+          <div className="flex gap-2 p-1 bg-slate-100 rounded-lg w-fit">
+            <button
+              type="button"
+              onClick={() => setMode('direct')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${
+                mode === 'direct' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'
+              }`}
+            >
+              <HardDrive size={15} /> Direct upload
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('uploadcare')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${
+                mode === 'uploadcare' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'
+              }`}
+            >
+              <CloudUpload size={15} /> Uploadcare (cloud sources)
+            </button>
+          </div>
+        )}
 
-        {files.length > 0 && (
-          <ul className="space-y-1.5">
-            {files.map((f, idx) => (
-              <li key={`${f.name}_${f.size}`} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                <span className="flex items-center gap-2 min-w-0">
-                  <FileIconLucide size={16} className="text-slate-400 shrink-0" />
-                  <span className="truncate">{f.name}</span>
-                  <span className="text-xs text-slate-400 shrink-0">{formatBytes(f.size)}</span>
-                </span>
-                <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0">
-                  <X size={16} />
-                </button>
-              </li>
-            ))}
-          </ul>
+        {mode === 'uploadcare' && UPLOADCARE_PUBKEY ? (
+          <div>
+            <FileUploaderRegular
+              apiRef={uploaderRef}
+              pubkey={UPLOADCARE_PUBKEY}
+              multiple
+              sourceList="local, url, camera, dropbox, gdrive, gphotos"
+              classNameUploader="uc-light"
+              onCommonUploadSuccess={(e) =>
+                setUcFiles(
+                  e.successEntries.map((entry) => ({
+                    uuid: entry.uuid,
+                    name: entry.name,
+                    size: entry.size,
+                    mimeType: entry.mimeType,
+                    isImage: entry.isImage,
+                  }))
+                )
+              }
+            />
+            <p className="text-xs text-slate-400 mt-2">
+              Drag &amp; drop, pick from your device, paste a URL, use the camera, or import from Dropbox / Google
+              Drive / Google Photos. Files upload straight to Uploadcare's CDN — up to {MAX_FILES} at once.
+            </p>
+            {ucFiles.length > 0 && (
+              <p className="text-sm text-brand-700 font-medium mt-2">{ucFiles.length} file(s) ready to attach</p>
+            )}
+          </div>
+        ) : (
+          <>
+            <label
+              className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                addFiles(e.dataTransfer.files);
+              }}
+            >
+              <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+              <UploadCloud className="mx-auto text-slate-400 mb-2" size={32} />
+              <p className="text-sm text-slate-600">
+                {files.length ? `${files.length} file(s) selected — click to add more` : 'Click to choose files/images, or drag and drop'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP &middot; up to {MAX_FILES} at once</p>
+            </label>
+
+            {files.length > 0 && (
+              <ul className="space-y-1.5">
+                {files.map((f, idx) => (
+                  <li key={`${f.name}_${f.size}`} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <FileIconLucide size={16} className="text-slate-400 shrink-0" />
+                      <span className="truncate">{f.name}</span>
+                      <span className="text-xs text-slate-400 shrink-0">{formatBytes(f.size)}</span>
+                    </span>
+                    <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0">
+                      <X size={16} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
 
         {submitting && (
@@ -148,8 +226,8 @@ export default function AdminUpload() {
         <Field
           label="Title"
           hint={
-            files.length > 1
-              ? `All ${files.length} files will be grouped under this one title as a single entry`
+            (mode === 'direct' ? files.length : ucFiles.length) > 1
+              ? `All ${mode === 'direct' ? files.length : ucFiles.length} files will be grouped under this one title as a single entry`
               : 'Leave blank to use the file name'
           }
         >
@@ -230,9 +308,11 @@ export default function AdminUpload() {
 
         <button disabled={submitting} className="w-full h-11 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700 disabled:opacity-60">
           {submitting
-            ? `Uploading... ${progress}%`
-            : files.length > 1
-            ? `Upload ${files.length} Files`
+            ? mode === 'direct'
+              ? `Uploading... ${progress}%`
+              : 'Saving...'
+            : (mode === 'direct' ? files.length : ucFiles.length) > 1
+            ? `Upload ${mode === 'direct' ? files.length : ucFiles.length} Files`
             : 'Upload File'}
         </button>
       </form>

@@ -14,6 +14,8 @@ export const FILE_TYPES = [
   'other',
 ];
 
+export const STORAGE_PROVIDERS = ['local', 'imgbb', 'uploadcare', 's3'];
+
 // One physical file within a File entry. A single upload with a shared
 // title can bundle several of these (e.g. a lecture note PDF plus its
 // diagram images) under one searchable, one-titled record.
@@ -25,7 +27,7 @@ const attachmentSchema = new mongoose.Schema(
     mimeType: { type: String, required: true },
     fileSize: { type: Number, required: true }, // bytes
     fileUrl: { type: String, required: true },
-    storageProvider: { type: String, enum: ['local', 'imgbb', 's3'], required: true },
+    storageProvider: { type: String, enum: STORAGE_PROVIDERS, required: true },
     // ImgBB delete token, or S3 object key — used for clean deletion. Never exposed to the client.
     storageRef: { type: String, default: '' },
   },
@@ -45,7 +47,7 @@ const fileSchema = new mongoose.Schema(
     mimeType: { type: String, required: true },
     fileSize: { type: Number, required: true }, // bytes, summed across all attachments
     fileUrl: { type: String, required: true },
-    storageProvider: { type: String, enum: ['local', 'imgbb', 's3'], required: true },
+    storageProvider: { type: String, enum: STORAGE_PROVIDERS, required: true },
     storageRef: { type: String, default: '' },
 
     attachments: {

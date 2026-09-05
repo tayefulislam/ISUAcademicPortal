@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import {
   uploadFiles,
+  attachUploadcareFiles,
   listFiles,
   getFile,
   recordDownload,
@@ -39,6 +40,20 @@ router.post(
   ],
   validate,
   uploadFiles
+);
+
+router.post(
+  '/from-uploadcare',
+  authenticate,
+  requireRole('admin'),
+  [
+    body('departmentId').notEmpty().withMessage('Department is required'),
+    body('courseIdRef').notEmpty().withMessage('Course is required'),
+    body('categoryId').notEmpty().withMessage('Category is required'),
+    body('files').isArray({ min: 1 }).withMessage('At least one uploaded file is required'),
+  ],
+  validate,
+  attachUploadcareFiles
 );
 
 router.put('/:id', authenticate, requireRole('admin'), updateFile);

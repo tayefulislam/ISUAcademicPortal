@@ -3,6 +3,7 @@ import { isImageMime, resolveDocumentType } from '../../utils/fileTypes.js';
 import { uploadDocumentLocal, deleteDocumentLocal } from './localStorage.js';
 import { uploadImageToImgbb, deleteImageFromImgbb } from './imgbbStorage.js';
 import { uploadDocumentS3, deleteDocumentS3 } from './s3Storage.js';
+import { deleteFromUploadcare } from './uploadcareStorage.js';
 
 /**
  * Single entry point the rest of the app uses for file storage.
@@ -46,6 +47,9 @@ export async function storeUploadedFile(buffer, originalName, mimeType) {
 export async function deleteStoredFile(file) {
   if (file.storageProvider === 'imgbb') {
     return deleteImageFromImgbb(file.storageRef);
+  }
+  if (file.storageProvider === 'uploadcare') {
+    return deleteFromUploadcare(file.storageRef);
   }
   if (file.storageProvider === 's3') {
     return deleteDocumentS3(file.storageRef);

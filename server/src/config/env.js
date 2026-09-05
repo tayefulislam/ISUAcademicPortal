@@ -18,6 +18,9 @@ export const env = {
 
   imgbbApiKey: process.env.IMGBB_API_KEY || '',
 
+  uploadcarePublicKey: process.env.UPLOADCARE_PUBLIC_KEY || '',
+  uploadcareSecretKey: process.env.UPLOADCARE_SECRET_KEY || '',
+
   s3: {
     endpoint: process.env.S3_ENDPOINT || '',
     region: process.env.S3_REGION || '',
