@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide, CloudUpload, HardDrive } from 'lucide-react';
 import { FileUploaderRegular } from '@uploadcare/react-uploader';
 import '@uploadcare/react-uploader/core.css';
-import { departmentApi, courseApi, batchApi, categoryApi, adminApi, fileApi } from '../../api/endpoints.js';
+import { departmentApi, courseApi, batchApi, categoryApi, chapterApi, topicApi, semesterApi, adminApi, fileApi } from '../../api/endpoints.js';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
 
@@ -15,11 +16,19 @@ const initialState = {
   departmentId: '',
   courseIdRef: '',
   categoryId: '',
+  chapterId: '',
+  topicId: '',
   semester: '',
   academicYear: '',
   keywords: '',
   allBatches: false,
   batches: [],
+  visibility: 'login_required',
+  restrictEnabled: false,
+  restrictDepartments: [],
+  restrictBatches: [],
+  restrictSemesters: [],
+  restrictCourses: [],
 };
 
 const MAX_FILES = 10;
@@ -42,6 +51,17 @@ export default function AdminUpload() {
   });
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list });
+  const { data: chapters } = useQuery({
+    queryKey: ['chapters', form.courseIdRef],
+    queryFn: () => chapterApi.list({ course: form.courseIdRef }),
+    enabled: !!form.courseIdRef,
+  });
+  const { data: topics } = useQuery({
+    queryKey: ['topics', form.chapterId],
+    queryFn: () => topicApi.list({ chapter: form.chapterId }),
+    enabled: !!form.chapterId,
+  });
+  const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -49,6 +69,13 @@ export default function AdminUpload() {
     setForm((f) => ({
       ...f,
       batches: f.batches.includes(id) ? f.batches.filter((b) => b !== id) : [...f.batches, id],
+    }));
+  };
+
+  const toggleIn = (key) => (id) => {
+    setForm((f) => ({
+      ...f,
+      [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id],
     }));
   };
 
@@ -95,17 +122,20 @@ export default function AdminUpload() {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f));
     Object.entries(form).forEach(([k, v]) => {
-      if (k === 'batches') v.forEach((b) => fd.append('batches', b));
+      if (k === 'restrictEnabled') return; // UI-only toggle, not sent
+      if (Array.isArray(v)) v.forEach((item) => fd.append(k, item));
       else fd.append(k, v);
     });
     return adminApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
   };
 
-  const submitUploadcare = () =>
-    fileApi.attachUploadcare({
-      ...form,
+  const submitUploadcare = () => {
+    const { restrictEnabled, ...rest } = form;
+    return fileApi.attachUploadcare({
+      ...rest,
       files: ucFiles.map((f) => ({ uuid: f.uuid, name: f.name, size: f.size, mimeType: f.mimeType, isImage: f.isImage })),
     });
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -241,22 +271,27 @@ export default function AdminUpload() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Field label="Department" required>
-            <select value={form.departmentId} onChange={(e) => { set('departmentId')(e.target.value); set('courseIdRef')(''); }} className="input" required>
-              <option value="">Select</option>
-              {(departments?.data || []).map((d) => (
-                <option key={d._id} value={d._id}>{d.name} ({d.code})</option>
-              ))}
-            </select>
+            <SearchableSelect
+              required
+              value={form.departmentId}
+              onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '' }))}
+              placeholder="Select"
+              searchPlaceholder="Search departments..."
+              options={(departments?.data || []).map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
+            />
           </Field>
           <Field label="Course" required>
-            <select value={form.courseIdRef} onChange={(e) => set('courseIdRef')(e.target.value)} className="input" required disabled={!form.departmentId}>
-              <option value="">Select</option>
-              {(courses?.data || []).map((c) => (
-                <option key={c._id} value={c._id}>{c.name} ({c.courseId})</option>
-              ))}
-            </select>
+            <SearchableSelect
+              required
+              disabled={!form.departmentId}
+              value={form.courseIdRef}
+              onChange={(v) => setForm((f) => ({ ...f, courseIdRef: v, chapterId: '', topicId: '' }))}
+              placeholder="Select"
+              searchPlaceholder="Search courses..."
+              options={(courses?.data || []).map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
+            />
           </Field>
-          <Field label="Category" required>
+          <Field label="Material Type" required>
             <select value={form.categoryId} onChange={(e) => set('categoryId')(e.target.value)} className="input" required>
               <option value="">Select</option>
               {(categories?.data || []).map((c) => (
@@ -267,13 +302,76 @@ export default function AdminUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Chapter">
+            <select
+              value={form.chapterId}
+              onChange={(e) => { set('chapterId')(e.target.value); set('topicId')(''); }}
+              className="input"
+              disabled={!form.courseIdRef}
+            >
+              <option value="">None</option>
+              {(chapters?.data || []).map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Topic">
+            <select value={form.topicId} onChange={(e) => set('topicId')(e.target.value)} className="input" disabled={!form.chapterId}>
+              <option value="">None</option>
+              {(topics?.data || []).map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Semester">
-            <input value={form.semester} onChange={(e) => set('semester')(e.target.value)} className="input" placeholder="e.g. 3rd Semester" />
+            <select value={form.semester} onChange={(e) => set('semester')(e.target.value)} className="input">
+              <option value="">Select semester</option>
+              {(semesters?.data || []).map((s) => (
+                <option key={s._id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Academic Year">
             <input value={form.academicYear} onChange={(e) => set('academicYear')(e.target.value)} className="input" placeholder="e.g. 2026" />
           </Field>
         </div>
+
+        <Field label="Visibility">
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={form.visibility === 'public'} onChange={() => set('visibility')('public')} />
+              Public (anyone, no login)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={form.visibility === 'login_required'} onChange={() => set('visibility')('login_required')} />
+              Login required
+            </label>
+          </div>
+        </Field>
+
+        <Field label="Restrict to specific students">
+          <label className="flex items-center gap-2 text-sm mb-2">
+            <input
+              type="checkbox"
+              checked={form.restrictEnabled}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  restrictEnabled: e.target.checked,
+                  ...(e.target.checked ? {} : { restrictDepartments: [], restrictBatches: [], restrictSemesters: [], restrictCourses: [] }),
+                }))
+              }
+            />
+            Only students matching these criteria can access this material
+          </label>
+          {form.restrictEnabled && (
+            <div className="space-y-3 border border-slate-200 rounded-lg p-3">
+              <RestrictGroup label="Department" items={departments?.data} value={form.restrictDepartments} onToggle={toggleIn('restrictDepartments')} />
+              <RestrictGroup label="Batch" items={batches?.data} value={form.restrictBatches} onToggle={toggleIn('restrictBatches')} />
+              <RestrictGroup label="Semester" items={semesters?.data} value={form.restrictSemesters} onToggle={toggleIn('restrictSemesters')} />
+              <RestrictGroup label="Course" items={courses?.data} value={form.restrictCourses} onToggle={toggleIn('restrictCourses')} labelKey="courseId" />
+            </div>
+          )}
+        </Field>
 
         <Field label="Batches">
           <label className="flex items-center gap-2 text-sm mb-2">
@@ -333,6 +431,29 @@ function Field({ label, required, hint, children }) {
       </label>
       {children}
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function RestrictGroup({ label, items, value, onToggle, labelKey = 'name' }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-500 mb-1.5">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {(items || []).map((item) => (
+          <button
+            type="button"
+            key={item._id}
+            onClick={() => onToggle(item._id)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+              value.includes(item._id) ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-300 text-slate-600'
+            }`}
+          >
+            {item[labelKey] || item.name}
+          </button>
+        ))}
+        {!items?.length && <span className="text-xs text-slate-400">None available</span>}
+      </div>
     </div>
   );
 }

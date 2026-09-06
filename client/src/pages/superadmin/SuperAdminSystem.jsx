@@ -1,16 +1,22 @@
 import { useState } from 'react';
 import AdminDepartments from '../admin/AdminDepartments.jsx';
 import AdminCourses from '../admin/AdminCourses.jsx';
+import AdminChapters from '../admin/AdminChapters.jsx';
+import AdminTopics from '../admin/AdminTopics.jsx';
 import AdminBatches from '../admin/AdminBatches.jsx';
 import AdminSemesters from '../admin/AdminSemesters.jsx';
 import AdminCategories from '../admin/AdminCategories.jsx';
+import SuperAdminSettings from './SuperAdminSettings.jsx';
 
 const TABS = [
   { key: 'departments', label: 'Departments', Component: AdminDepartments },
   { key: 'courses', label: 'Courses', Component: AdminCourses },
+  { key: 'chapters', label: 'Chapters', Component: AdminChapters },
+  { key: 'topics', label: 'Topics', Component: AdminTopics },
   { key: 'batches', label: 'Batches', Component: AdminBatches },
   { key: 'semesters', label: 'Semesters', Component: AdminSemesters },
-  { key: 'categories', label: 'Categories', Component: AdminCategories },
+  { key: 'categories', label: 'Material Types', Component: AdminCategories },
+  { key: 'settings', label: 'Settings', Component: SuperAdminSettings },
 ];
 
 export default function SuperAdminSystem() {

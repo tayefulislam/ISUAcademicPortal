@@ -2,6 +2,13 @@ import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { signToken } from '../utils/jwt.js';
+import { getSettings } from '../models/Settings.js';
+import { storePrivateImage } from '../services/storage/storageService.js';
+
+export const getPublicSettings = asyncHandler(async (req, res) => {
+  const settings = await getSettings();
+  res.json({ success: true, data: { studentApprovalEnabled: settings.studentApprovalEnabled } });
+});
 
 export const register = asyncHandler(async (req, res) => {
   // Only these fields are ever read from the request — role/status/tokenVersion
@@ -11,6 +18,18 @@ export const register = asyncHandler(async (req, res) => {
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) {
     throw new ApiError(409, 'An account with this email already exists');
+  }
+
+  const settings = await getSettings();
+  let studentIdImageKey = '';
+  let approvalStatus = 'approved';
+
+  if (settings.studentApprovalEnabled) {
+    if (!req.file) {
+      throw new ApiError(400, 'A Student ID photo is required while the approval system is enabled');
+    }
+    studentIdImageKey = await storePrivateImage(req.file.buffer, req.file.originalname);
+    approvalStatus = 'pending';
   }
 
   // Public registration always creates a student account; admin/super_admin
@@ -24,10 +43,16 @@ export const register = asyncHandler(async (req, res) => {
     semester: semester || null,
     rollNo: rollNo || '',
     role: 'student',
+    studentIdImageKey,
+    approvalStatus,
   });
 
   const token = signToken(user);
-  res.status(201).json({ success: true, message: 'Account created', data: { user: user.toSafeObject(), token } });
+  res.status(201).json({
+    success: true,
+    message: approvalStatus === 'pending' ? 'Account created, pending admin approval' : 'Account created',
+    data: { user: user.toSafeObject(), token },
+  });
 });
 
 export const login = asyncHandler(async (req, res) => {

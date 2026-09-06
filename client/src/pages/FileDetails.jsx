@@ -21,7 +21,11 @@ export default function FileDetails() {
   const bookmarkedIds = useBookmarkedIds();
   const toggleBookmark = useToggleBookmark();
 
-  const { data, isLoading } = useQuery({ queryKey: ['file', id], queryFn: () => fileApi.get(id) });
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['file', id],
+    queryFn: () => fileApi.get(id),
+    retry: false,
+  });
   const { data: related } = useQuery({ queryKey: ['related', id], queryFn: () => fileApi.related(id), enabled: !!id });
 
   const file = data?.data;
@@ -41,6 +45,24 @@ export default function FileDetails() {
 
   if (isLoading) {
     return <div className="max-w-5xl mx-auto px-4 py-16 text-center text-slate-400">Loading file...</div>;
+  }
+  if (error?.response?.status === 403) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-16 text-center">
+        <FileWarning className="mx-auto text-slate-300 mb-3" size={40} />
+        <p className="text-slate-600 font-medium">This material is restricted.</p>
+        <p className="text-sm text-slate-400 mt-1">
+          {user
+            ? "You don't have access to this material — it may be limited to a specific department, batch, semester, or approved students only."
+            : 'Sign in to check whether you have access to this material.'}
+        </p>
+        {!user && (
+          <Link to="/login" className="inline-block mt-4 text-brand-600 font-medium hover:underline">
+            Sign in
+          </Link>
+        )}
+      </div>
+    );
   }
   if (!file) {
     return <div className="max-w-5xl mx-auto px-4 py-16 text-center text-slate-400">File not found.</div>;

@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Trash2, Eye, Download, Search } from 'lucide-react';
+import { Trash2, Eye, Download, Search, Pencil } from 'lucide-react';
 import { adminApi } from '../../api/endpoints.js';
 import { formatBytes, formatDate } from '../../utils/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import Pagination from '../../components/Pagination.jsx';
+import EditFileModal from '../../components/EditFileModal.jsx';
 
 export default function AdminFiles() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState([]);
+  const [editing, setEditing] = useState(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -120,6 +122,9 @@ export default function AdminFiles() {
                       <a href={f.fileUrl} className="p-1.5 rounded hover:bg-slate-100" title="Download">
                         <Download size={16} />
                       </a>
+                      <button onClick={() => setEditing(f)} className="p-1.5 rounded hover:bg-slate-100" title="Edit">
+                        <Pencil size={16} />
+                      </button>
                       <button onClick={() => deleteOne(f._id)} className="p-1.5 rounded hover:bg-red-50 text-red-600" title="Delete">
                         <Trash2 size={16} />
                       </button>
@@ -149,6 +154,7 @@ export default function AdminFiles() {
             </div>
             <div className="flex gap-2 mt-3">
               <Link to={`/files/${f._id}`} className="flex-1 text-center py-1.5 rounded-md border border-slate-300 text-sm">View</Link>
+              <button onClick={() => setEditing(f)} className="flex-1 text-center py-1.5 rounded-md border border-slate-300 text-sm">Edit</button>
               <button onClick={() => deleteOne(f._id)} className="flex-1 text-center py-1.5 rounded-md border border-red-200 text-red-600 text-sm">Delete</button>
             </div>
           </div>
@@ -156,6 +162,8 @@ export default function AdminFiles() {
       </div>
 
       {data?.pagination && <Pagination page={page} pages={data.pagination.pages} onChange={setPage} />}
+
+      {editing && <EditFileModal file={editing} onClose={() => setEditing(null)} invalidateKey="admin-my-files" />}
     </div>
   );
 }

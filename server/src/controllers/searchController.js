@@ -28,7 +28,7 @@ const LIST_FIELDS = [
 // Combines full-text search (?q=) with exact filters (department, course, batch, ...).
 export const search = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, sort, q } = req.query;
-  const query = buildFileQuery(req.query);
+  const query = await buildFileQuery(req.query, req.user);
 
   const projection = Object.fromEntries(LIST_FIELDS.map((f) => [f, 1]));
   if (q) projection.score = { $meta: 'textScore' };

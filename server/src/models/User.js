@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export const USER_ROLES = ['student', 'admin', 'super_admin'];
+export const USER_ROLES = ['student', 'faculty', 'admin', 'super_admin'];
 
 const userSchema = new mongoose.Schema(
   {
@@ -18,6 +18,22 @@ const userSchema = new mongoose.Schema(
     favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
 
     status: { type: String, enum: ['active', 'blocked'], default: 'active' },
+
+    // Gates access to restricted materials only — NOT login itself (a pending
+    // student can still sign in and see public/login_required materials).
+    // Defaults to 'approved' so existing users, and registrations made while
+    // the approval system is OFF, are never accidentally locked out.
+    approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected', 'blocked'], default: 'approved' },
+    // S3/R2 object key (or local relative path) for the private student-ID
+    // photo, under a prefix never served publicly. Never sent to the client —
+    // access goes through an authenticated proxy endpoint, keyed by user id.
+    studentIdImageKey: { type: String, default: '' },
+
+    // Only meaningful for role 'faculty' — scopes their review/management
+    // powers to these Department(s)/Course(s). Empty for everyone else.
+    assignedDepartments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
+    assignedCourses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
+
     lastLogin: { type: Date, default: null },
 
     // Bumped whenever a token-invalidating event happens (password change,
@@ -50,6 +66,7 @@ userSchema.methods.toSafeObject = function toSafeObject() {
   const obj = this.toObject();
   delete obj.password;
   delete obj.tokenVersion;
+  delete obj.studentIdImageKey;
   return obj;
 };
 

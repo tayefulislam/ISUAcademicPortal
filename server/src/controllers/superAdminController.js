@@ -3,6 +3,37 @@ import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { deleteStoredFile } from '../services/storage/storageService.js';
+import { getSettings, updateSettings } from '../models/Settings.js';
+
+// ----- System settings -----
+
+export const getSystemSettings = asyncHandler(async (req, res) => {
+  const settings = await getSettings();
+  res.json({
+    success: true,
+    data: { studentApprovalEnabled: settings.studentApprovalEnabled, studentUploadEnabled: settings.studentUploadEnabled },
+  });
+});
+
+export const updateSystemSettings = asyncHandler(async (req, res) => {
+  const { studentApprovalEnabled, studentUploadEnabled } = req.body;
+  const patch = {};
+  if (studentApprovalEnabled !== undefined) {
+    if (typeof studentApprovalEnabled !== 'boolean') throw new ApiError(400, 'studentApprovalEnabled must be a boolean');
+    patch.studentApprovalEnabled = studentApprovalEnabled;
+  }
+  if (studentUploadEnabled !== undefined) {
+    if (typeof studentUploadEnabled !== 'boolean') throw new ApiError(400, 'studentUploadEnabled must be a boolean');
+    patch.studentUploadEnabled = studentUploadEnabled;
+  }
+  if (!Object.keys(patch).length) throw new ApiError(400, 'No valid settings provided');
+
+  const settings = await updateSettings(patch);
+  res.json({
+    success: true,
+    data: { studentApprovalEnabled: settings.studentApprovalEnabled, studentUploadEnabled: settings.studentUploadEnabled },
+  });
+});
 
 const POPULATE = [
   { path: 'department', select: 'name code' },
@@ -101,6 +132,50 @@ export const updateUserStatus = asyncHandler(async (req, res) => {
   await target.save();
 
   res.json({ success: true, message: `User ${status === 'blocked' ? 'blocked' : 'unblocked'}`, data: target.toSafeObject() });
+});
+
+// ----- Faculty (Super Admin only — Faculty accounts are never provisioned
+// through public registration or the role-promotion endpoint above) -----
+
+const FACULTY_POPULATE = [
+  { path: 'assignedDepartments', select: 'name code' },
+  { path: 'assignedCourses', select: 'name courseId' },
+];
+
+export const listFaculty = asyncHandler(async (req, res) => {
+  const faculty = await User.find({ role: 'faculty' }).populate(FACULTY_POPULATE).sort({ createdAt: -1 });
+  res.json({ success: true, data: faculty.map((f) => f.toSafeObject()) });
+});
+
+export const createFaculty = asyncHandler(async (req, res) => {
+  const { name, email, password, assignedDepartments, assignedCourses } = req.body;
+
+  const existing = await User.findOne({ email: String(email).toLowerCase() });
+  if (existing) throw new ApiError(409, 'An account with this email already exists');
+
+  const faculty = await User.create({
+    name,
+    email,
+    password,
+    role: 'faculty',
+    assignedDepartments: assignedDepartments || [],
+    assignedCourses: assignedCourses || [],
+  });
+
+  res.status(201).json({ success: true, message: 'Faculty account created', data: faculty.toSafeObject() });
+});
+
+export const updateFaculty = asyncHandler(async (req, res) => {
+  const faculty = await User.findOne({ _id: req.params.id, role: 'faculty' });
+  if (!faculty) throw new ApiError(404, 'Faculty not found');
+
+  const allowed = ['name', 'email', 'assignedDepartments', 'assignedCourses'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) faculty[key] = req.body[key];
+  }
+  await faculty.save();
+
+  res.json({ success: true, message: 'Faculty updated', data: faculty.toSafeObject() });
 });
 
 // ----- Files (system-wide) -----

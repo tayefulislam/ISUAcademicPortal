@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { GraduationCap, LayoutDashboard, ShieldCheck, Bookmark, User, LogOut, Menu, X } from 'lucide-react';
+import { GraduationCap, LayoutDashboard, ShieldCheck, Bookmark, User, LogOut, Menu, X, UploadCloud, ClipboardCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -9,7 +9,7 @@ const navLinkClass = ({ isActive }) =>
   }`;
 
 export default function Navbar() {
-  const { user, logout, isAdmin, isSuperAdmin } = useAuth();
+  const { user, logout, isAdmin, isSuperAdmin, isFaculty } = useAuth();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -36,10 +36,34 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-1">
           {user && (
             <Link
+              to="/dashboard"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <LayoutDashboard size={16} /> Dashboard
+            </Link>
+          )}
+          {user && (
+            <Link
               to="/my-bookmarks"
               className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
             >
               <Bookmark size={16} /> Bookmarks
+            </Link>
+          )}
+          {user?.role === 'student' && (
+            <Link
+              to="/submit-material"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <UploadCloud size={16} /> Submit Material
+            </Link>
+          )}
+          {isFaculty && (
+            <Link
+              to="/faculty"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <ClipboardCheck size={16} /> Faculty
             </Link>
           )}
           {isAdmin && (
@@ -103,8 +127,23 @@ export default function Navbar() {
             Courses
           </NavLink>
           {user && (
+            <NavLink to="/dashboard" className={navLinkClass} onClick={() => setOpen(false)}>
+              Dashboard
+            </NavLink>
+          )}
+          {user && (
             <NavLink to="/my-bookmarks" className={navLinkClass} onClick={() => setOpen(false)}>
               My Bookmarks
+            </NavLink>
+          )}
+          {user?.role === 'student' && (
+            <NavLink to="/submit-material" className={navLinkClass} onClick={() => setOpen(false)}>
+              Submit Material
+            </NavLink>
+          )}
+          {isFaculty && (
+            <NavLink to="/faculty" className={navLinkClass} onClick={() => setOpen(false)}>
+              Faculty
             </NavLink>
           )}
           {isAdmin && (

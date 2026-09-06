@@ -16,6 +16,9 @@ server/uploads/*
 !server/uploads/spreadsheets/.gitkeep
 !server/uploads/other/.gitkeep
 
+# private uploads (student ID photos, etc.) — never served statically, never committed
+server/private-uploads/
+
 # logs
 *.log
 npm-debug.log*

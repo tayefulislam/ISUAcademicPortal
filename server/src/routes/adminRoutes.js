@@ -1,6 +1,19 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { uploadFiles, getMyFiles, updateFile, deleteFile } from '../controllers/fileController.js';
+import {
+  uploadFiles,
+  getMyFiles,
+  updateFile,
+  deleteFile,
+  replaceFileVersion,
+  getFileVersions,
+} from '../controllers/fileController.js';
+import {
+  listPendingStudents,
+  getStudentIdPhoto,
+  approveStudent,
+  rejectStudent,
+} from '../controllers/studentApprovalController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
@@ -26,5 +39,13 @@ router.post(
 );
 router.patch('/files/:id', updateFile);
 router.delete('/files/:id', deleteFile);
+
+router.get('/files/:id/versions', getFileVersions);
+router.post('/files/:id/versions', upload.array('files', MAX_FILES_PER_UPLOAD), replaceFileVersion);
+
+router.get('/students/pending', listPendingStudents);
+router.get('/students/:id/id-photo', getStudentIdPhoto);
+router.patch('/students/:id/approve', approveStudent);
+router.patch('/students/:id/reject', rejectStudent);
 
 export default router;

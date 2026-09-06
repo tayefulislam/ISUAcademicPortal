@@ -25,8 +25,12 @@ export default function SearchResults() {
     batch: params.get('batch') || '',
     fileType: params.get('fileType') || '',
     category: params.get('category') || '',
+    chapter: params.get('chapter') || '',
+    topic: params.get('topic') || '',
     semester: params.get('semester') || '',
     academicYear: params.get('academicYear') || '',
+    dateFrom: params.get('dateFrom') || '',
+    dateTo: params.get('dateTo') || '',
   };
   const page = Number(params.get('page')) || 1;
   const sort = params.get('sort') || 'newest';

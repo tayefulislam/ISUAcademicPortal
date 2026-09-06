@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, ShieldCheck, ShieldOff, UserCog } from 'lucide-react';
+import { Search, ShieldCheck, ShieldOff, UserCog, Clock } from 'lucide-react';
 import { superAdminApi, departmentApi, batchApi, semesterApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
@@ -10,6 +10,7 @@ import { formatDate } from '../../utils/format.js';
 
 const ROLE_STYLE = {
   student: 'bg-slate-100 text-slate-600',
+  faculty: 'bg-amber-50 text-amber-700',
   admin: 'bg-brand-50 text-brand-700',
   super_admin: 'bg-purple-50 text-purple-700',
 };
@@ -90,6 +91,7 @@ export default function SuperAdminUsers() {
           <select value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-slate-300 px-2 text-sm">
             <option value="">All Roles</option>
             <option value="student">Student</option>
+            <option value="faculty">Faculty</option>
             <option value="admin">Admin</option>
             <option value="super_admin">Super Admin</option>
           </select>
@@ -172,6 +174,75 @@ export default function SuperAdminUsers() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile cards — the desktop table is simply hidden below md, so
+          without this the user list disappeared entirely on small screens. */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <p className="text-center text-slate-400 py-6">Loading...</p>
+        ) : users.length === 0 ? (
+          <p className="text-center text-slate-400 py-6">No users found.</p>
+        ) : (
+          users.map((u) => (
+            <div key={u._id} className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-700 truncate">{u.name}</p>
+                  <p className="text-sm text-slate-500 truncate">{u.email}</p>
+                </div>
+                <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_STYLE[u.role]}`}>{u.role}</span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-500">
+                <p>Roll No: <span className="text-slate-700">{u.rollNo || '-'}</span></p>
+                <p>Department: <span className="text-slate-700">{u.department?.code || '-'}</span></p>
+                <p>Batch: <span className="text-slate-700">{u.batch?.name || '-'}</span></p>
+                <p>Joined: <span className="text-slate-700">{formatDate(u.createdAt)}</span></p>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'blocked' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {u.status === 'blocked' ? <ShieldOff size={12} /> : <ShieldCheck size={12} />} {u.status}
+                </span>
+                {u.lastLogin && (
+                  <span className="flex items-center gap-1 text-xs text-slate-400">
+                    <Clock size={12} /> Last login {formatDate(u.lastLogin)}
+                  </span>
+                )}
+              </div>
+
+              {u.role !== 'super_admin' && u._id !== me._id && (
+                <div className="flex gap-2 mt-3">
+                  {u.role === 'student' ? (
+                    <button
+                      onClick={() => promote(u._id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-slate-300 text-sm text-brand-600"
+                    >
+                      <UserCog size={14} /> Promote
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => demote(u._id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-slate-300 text-sm text-slate-600"
+                    >
+                      <UserCog size={14} /> To Student
+                    </button>
+                  )}
+                  <button
+                    onClick={() => toggleStatus(u)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border text-sm font-medium ${
+                      u.status === 'blocked' ? 'border-emerald-200 text-emerald-600' : 'border-red-200 text-red-600'
+                    }`}
+                  >
+                    {u.status === 'blocked' ? <ShieldCheck size={14} /> : <ShieldOff size={14} />}
+                    {u.status === 'blocked' ? 'Unblock' : 'Block'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       {data?.pagination && <Pagination page={page} pages={data.pagination.pages} onChange={setPage} />}

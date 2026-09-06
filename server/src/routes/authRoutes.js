@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import rateLimit from 'express-rate-limit';
-import { register, login, me, changePassword } from '../controllers/authController.js';
+import { register, login, me, changePassword, getPublicSettings } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/auth.js';
+import { upload } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -17,9 +18,12 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many attempts, please try again later', code: 'TOO_MANY_REQUESTS' },
 });
 
+router.get('/settings', getPublicSettings);
+
 router.post(
   '/register',
   authLimiter,
+  upload.single('studentIdImage'),
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
