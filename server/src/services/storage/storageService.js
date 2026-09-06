@@ -33,7 +33,7 @@ export async function storeUploadedFile(buffer, originalName, mimeType) {
   const { fileType, dir } = resolveDocumentType(mimeType, originalName);
 
   if (env.fileStorageProvider === 's3') {
-    const { fileUrl, fileName, storageRef } = await uploadDocumentS3(buffer, originalName, dir);
+    const { fileUrl, fileName, storageRef } = await uploadDocumentS3(buffer, originalName, dir, mimeType);
     return { fileType, storageProvider: 's3', fileUrl, fileName, storageRef };
   }
 

@@ -30,9 +30,16 @@ export const env = {
 
   s3: {
     endpoint: process.env.S3_ENDPOINT || '',
-    region: process.env.S3_REGION || '',
+    region: process.env.S3_REGION || 'auto',
     bucket: process.env.S3_BUCKET || '',
     accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    // The API endpoint (S3_ENDPOINT) is often NOT publicly readable — e.g. on
+    // Cloudflare R2, `https://<account>.r2.cloudflarestorage.com` requires
+    // signed requests, while the public read URL is a separate R2.dev
+    // subdomain or your own custom domain. Set this to whatever base URL
+    // actually serves the object publicly; falls back to path-style off the
+    // API endpoint for providers where that's the same thing (e.g. MinIO).
+    publicUrl: process.env.S3_PUBLIC_URL || '',
   },
 };
