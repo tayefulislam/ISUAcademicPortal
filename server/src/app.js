@@ -13,6 +13,15 @@ import Course from './models/Course.js';
 
 const app = express();
 
+// Railway/Render/most PaaS put the app behind a reverse proxy that sets
+// X-Forwarded-For. Without this, Express's req.ip is the proxy's own
+// address for every request, and express-rate-limit refuses to trust
+// X-Forwarded-For (rightly — it's spoofable by the client otherwise),
+// which is what threw ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. `1` trusts
+// exactly one hop (the platform's own proxy), not arbitrary upstream
+// headers.
+app.set('trust proxy', 1);
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 // Always honors CLIENT_URL (one or more, comma-separated) regardless of
