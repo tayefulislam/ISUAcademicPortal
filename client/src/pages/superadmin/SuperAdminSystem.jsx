@@ -7,6 +7,7 @@ import AdminBatches from '../admin/AdminBatches.jsx';
 import AdminSemesters from '../admin/AdminSemesters.jsx';
 import AdminCategories from '../admin/AdminCategories.jsx';
 import SuperAdminSettings from './SuperAdminSettings.jsx';
+import SuperAdminPermissions from './SuperAdminPermissions.jsx';
 
 const TABS = [
   { key: 'departments', label: 'Departments', Component: AdminDepartments },
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'batches', label: 'Batches', Component: AdminBatches },
   { key: 'semesters', label: 'Semesters', Component: AdminSemesters },
   { key: 'categories', label: 'Material Types', Component: AdminCategories },
+  { key: 'permissions', label: 'Roles & Permissions', Component: SuperAdminPermissions },
   { key: 'settings', label: 'Settings', Component: SuperAdminSettings },
 ];
 

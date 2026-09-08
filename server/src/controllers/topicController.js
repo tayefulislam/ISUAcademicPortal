@@ -1,8 +1,22 @@
 import Topic from '../models/Topic.js';
 import Chapter from '../models/Chapter.js';
+import Course from '../models/Course.js';
 import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+
+// Faculty may only create a Topic under a chapter whose course is within
+// their own assigned Department/Course.
+async function assertFacultyCourseScope(chapter, user) {
+  if (user.role !== 'faculty') return;
+  const deptIds = new Set((user.assignedDepartments || []).map(String));
+  const courseIds = new Set((user.assignedCourses || []).map(String));
+  if (courseIds.has(String(chapter.course))) return;
+  const course = await Course.findById(chapter.course);
+  if (!course || !deptIds.has(String(course.department))) {
+    throw new ApiError(403, 'You can only create topics for your own assigned Department/Course', null, 'FORBIDDEN');
+  }
+}
 
 export const listTopics = asyncHandler(async (req, res) => {
   const { chapter, course } = req.query;
@@ -23,6 +37,7 @@ export const createTopic = asyncHandler(async (req, res) => {
   const { chapterId, name, order } = req.body;
   const chapter = await Chapter.findById(chapterId);
   if (!chapter) throw new ApiError(400, 'Invalid chapter');
+  await assertFacultyCourseScope(chapter, req.user);
 
   const topic = await Topic.create({ name, chapter: chapter._id, course: chapter.course, order });
   res.status(201).json({ success: true, data: topic });

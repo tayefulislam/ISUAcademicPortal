@@ -6,15 +6,15 @@ import {
   updateCategory,
   deleteCategory,
 } from '../controllers/categoryController.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireSuperAdminTier } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
 
 router.get('/', listCategories);
 
-router.post('/', authenticate, requireRole('super_admin'), [body('name').notEmpty()], validate, createCategory);
-router.put('/:id', authenticate, requireRole('super_admin'), updateCategory);
-router.delete('/:id', authenticate, requireRole('super_admin'), deleteCategory);
+router.post('/', authenticate, requireSuperAdminTier, [body('name').notEmpty()], validate, createCategory);
+router.put('/:id', authenticate, requireSuperAdminTier, updateCategory);
+router.delete('/:id', authenticate, requireSuperAdminTier, deleteCategory);
 
 export default router;

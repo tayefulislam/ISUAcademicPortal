@@ -1,7 +1,17 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import rateLimit from 'express-rate-limit';
-import { register, login, me, changePassword, getPublicSettings } from '../controllers/authController.js';
+import {
+  register,
+  login,
+  me,
+  changePassword,
+  getPublicSettings,
+  sendOtp,
+  verifyOtp,
+  forgotPassword,
+  resetPassword,
+} from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -51,6 +61,36 @@ router.post(
   ],
   validate,
   changePassword
+);
+
+router.post('/send-otp', authLimiter, [body('email').isEmail().withMessage('Valid email is required')], validate, sendOtp);
+
+router.post(
+  '/verify-otp',
+  authLimiter,
+  [body('email').isEmail().withMessage('Valid email is required'), body('code').trim().notEmpty().withMessage('Code is required')],
+  validate,
+  verifyOtp
+);
+
+router.post(
+  '/forgot-password',
+  authLimiter,
+  [body('email').isEmail().withMessage('Valid email is required')],
+  validate,
+  forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  authLimiter,
+  [
+    body('token').notEmpty().withMessage('Reset token is required'),
+    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
+    body('confirmNewPassword').notEmpty().withMessage('Please confirm the new password'),
+  ],
+  validate,
+  resetPassword
 );
 
 export default router;

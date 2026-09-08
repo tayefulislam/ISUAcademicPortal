@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, ShieldCheck, ShieldOff, UserCog, Clock } from 'lucide-react';
-import { superAdminApi, departmentApi, batchApi, semesterApi } from '../../api/endpoints.js';
+import { Search, ShieldCheck, ShieldOff, Clock, Pencil, X } from 'lucide-react';
+import { superAdminApi, departmentApi, batchApi, semesterApi, roleApi, courseApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -12,11 +12,12 @@ const ROLE_STYLE = {
   student: 'bg-slate-100 text-slate-600',
   faculty: 'bg-amber-50 text-amber-700',
   admin: 'bg-brand-50 text-brand-700',
+  administrator: 'bg-indigo-50 text-indigo-700',
   super_admin: 'bg-purple-50 text-purple-700',
 };
 
 export default function SuperAdminUsers() {
-  const { user: me } = useAuth();
+  const { user: me, isSuperAdmin } = useAuth();
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q, 400);
   const [role, setRole] = useState('');
@@ -24,12 +25,16 @@ export default function SuperAdminUsers() {
   const [batch, setBatch] = useState('');
   const [semester, setSemester] = useState('');
   const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
+  const { data: allCourses } = useQuery({ queryKey: ['all-courses'], queryFn: () => courseApi.list({ limit: 500 }) });
+  const { data: rolesData } = useQuery({ queryKey: ['roles'], queryFn: roleApi.list });
+  const adminTierRoles = rolesData?.data || []; // Admin, CR, any further role Super Admin created
 
   const params = { q: debouncedQ || undefined, role: role || undefined, department: department || undefined, batch: batch || undefined, semester: semester || undefined, page, limit: 15 };
   const { data, isLoading } = useQuery({
@@ -37,22 +42,11 @@ export default function SuperAdminUsers() {
     queryFn: () => superAdminApi.listUsers(params),
   });
 
-  const promote = async (id) => {
-    if (!confirm('Promote this user to Admin?')) return;
+  const changeRole = async (id, nextRole) => {
+    if (!confirm(`Change this user's role to "${nextRole}"?`)) return;
     try {
-      await superAdminApi.updateUserRole(id, 'admin');
-      toast('User promoted to Admin', 'success');
-      qc.invalidateQueries({ queryKey: ['super-admin-users'] });
-    } catch (err) {
-      toast(err.response?.data?.message || 'Failed to update role', 'error');
-    }
-  };
-
-  const demote = async (id) => {
-    if (!confirm('Change this Admin back to Student?')) return;
-    try {
-      await superAdminApi.updateUserRole(id, 'student');
-      toast('User changed to Student', 'success');
+      await superAdminApi.updateUserRole(id, nextRole);
+      toast('User role updated', 'success');
       qc.invalidateQueries({ queryKey: ['super-admin-users'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Failed to update role', 'error');
@@ -72,6 +66,11 @@ export default function SuperAdminUsers() {
   };
 
   const users = data?.data || [];
+
+  // Granting/revoking the 'administrator' role (super_admin-equivalent) is
+  // itself restricted to an actual Super Admin — an Administrator can change
+  // a student/Admin/CR's role, but not touch another Administrator's role.
+  const canChangeRoleOf = (u) => (u.role === 'administrator' ? isSuperAdmin : u.role === 'student' || adminTierRoles.some((r) => r.key === u.role));
 
   return (
     <div>
@@ -93,7 +92,8 @@ export default function SuperAdminUsers() {
             <option value="student">Student</option>
             <option value="faculty">Faculty</option>
             <option value="admin">Admin</option>
-            <option value="super_admin">Super Admin</option>
+            <option value="administrator">Administrator</option>
+            {isSuperAdmin && <option value="super_admin">Super Admin</option>}
           </select>
           <select value={department} onChange={(e) => { setDepartment(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-slate-300 px-2 text-sm">
             <option value="">All Departments</option>
@@ -139,7 +139,7 @@ export default function SuperAdminUsers() {
                   <td className="p-3">{u.department?.code || '-'}</td>
                   <td className="p-3">{u.batch?.name || '-'}</td>
                   <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_STYLE[u.role]}`}>{u.role}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_STYLE[u.role] || 'bg-teal-50 text-teal-700'}`}>{u.role}</span>
                   </td>
                   <td className="p-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'blocked' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
@@ -150,14 +150,19 @@ export default function SuperAdminUsers() {
                   <td className="p-3">
                     {u.role !== 'super_admin' && u._id !== me._id && (
                       <div className="flex items-center gap-2">
-                        {u.role === 'student' ? (
-                          <button onClick={() => promote(u._id)} title="Promote to Admin" className="p-1.5 rounded hover:bg-slate-100 text-brand-600">
-                            <UserCog size={16} />
-                          </button>
-                        ) : (
-                          <button onClick={() => demote(u._id)} title="Change to Student" className="p-1.5 rounded hover:bg-slate-100 text-slate-500">
-                            <UserCog size={16} />
-                          </button>
+                        {canChangeRoleOf(u) && (
+                          <select
+                            value={u.role}
+                            onChange={(e) => changeRole(u._id, e.target.value)}
+                            title="Change role"
+                            className="h-8 rounded-md border border-slate-300 px-1.5 text-xs"
+                          >
+                            <option value="student">Student</option>
+                            {adminTierRoles.map((r) => (
+                              <option key={r.key} value={r.key}>{r.name}</option>
+                            ))}
+                            {isSuperAdmin && <option value="administrator">Administrator</option>}
+                          </select>
                         )}
                         <button
                           onClick={() => toggleStatus(u)}
@@ -165,6 +170,9 @@ export default function SuperAdminUsers() {
                           className={`p-1.5 rounded hover:bg-slate-100 ${u.status === 'blocked' ? 'text-emerald-600' : 'text-red-600'}`}
                         >
                           {u.status === 'blocked' ? <ShieldCheck size={16} /> : <ShieldOff size={16} />}
+                        </button>
+                        <button onClick={() => setEditing(u)} title="Edit profile" className="p-1.5 rounded hover:bg-slate-100 text-slate-500">
+                          <Pencil size={16} />
                         </button>
                       </div>
                     )}
@@ -191,7 +199,7 @@ export default function SuperAdminUsers() {
                   <p className="font-semibold text-slate-700 truncate">{u.name}</p>
                   <p className="text-sm text-slate-500 truncate">{u.email}</p>
                 </div>
-                <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_STYLE[u.role]}`}>{u.role}</span>
+                <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_STYLE[u.role] || 'bg-teal-50 text-teal-700'}`}>{u.role}</span>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-500">
@@ -214,20 +222,18 @@ export default function SuperAdminUsers() {
 
               {u.role !== 'super_admin' && u._id !== me._id && (
                 <div className="flex gap-2 mt-3">
-                  {u.role === 'student' ? (
-                    <button
-                      onClick={() => promote(u._id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-slate-300 text-sm text-brand-600"
+                  {canChangeRoleOf(u) && (
+                    <select
+                      value={u.role}
+                      onChange={(e) => changeRole(u._id, e.target.value)}
+                      className="flex-1 h-8 rounded-md border border-slate-300 px-1.5 text-xs"
                     >
-                      <UserCog size={14} /> Promote
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => demote(u._id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-slate-300 text-sm text-slate-600"
-                    >
-                      <UserCog size={14} /> To Student
-                    </button>
+                      <option value="student">Student</option>
+                      {adminTierRoles.map((r) => (
+                        <option key={r.key} value={r.key}>{r.name}</option>
+                      ))}
+                      {isSuperAdmin && <option value="administrator">Administrator</option>}
+                    </select>
                   )}
                   <button
                     onClick={() => toggleStatus(u)}
@@ -238,6 +244,9 @@ export default function SuperAdminUsers() {
                     {u.status === 'blocked' ? <ShieldCheck size={14} /> : <ShieldOff size={14} />}
                     {u.status === 'blocked' ? 'Unblock' : 'Block'}
                   </button>
+                  <button onClick={() => setEditing(u)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-slate-300 text-sm text-slate-600">
+                    <Pencil size={14} /> Edit
+                  </button>
                 </div>
               )}
             </div>
@@ -246,6 +255,123 @@ export default function SuperAdminUsers() {
       </div>
 
       {data?.pagination && <Pagination page={page} pages={data.pagination.pages} onChange={setPage} />}
+
+      {editing && (
+        <EditUserProfileModal
+          user={editing}
+          departments={departments?.data}
+          batches={batches?.data}
+          semesters={semesters?.data}
+          allCourses={allCourses?.data}
+          // 'admin' itself is unrestricted, so scoping fields are only
+          // meaningful for other admin-tier roles (e.g. "CR").
+          showScope={adminTierRoles.some((r) => r.key === editing.role) && editing.role !== 'admin'}
+          onClose={() => setEditing(null)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['super-admin-users'] })}
+        />
+      )}
+    </div>
+  );
+}
+
+// Super Admin can directly edit a user's academic/profile fields — password
+// is deliberately never editable here, only via the secure change-password
+// flow (server also enforces this: PATCH .../profile ignores a password field).
+function EditUserProfileModal({ user, departments, batches, semesters, allCourses, showScope, onClose, onSaved }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    name: user.name,
+    rollNo: user.rollNo || '',
+    department: user.department?._id || '',
+    batch: user.batch?._id || '',
+    semester: user.semester?._id || '',
+    assignedDepartments: (user.assignedDepartments || []).map(String),
+    assignedCourses: (user.assignedCourses || []).map(String),
+  });
+  const [saving, setSaving] = useState(false);
+
+  const toggleScope = (key) => (id) => {
+    setForm((f) => ({ ...f, [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id] }));
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await superAdminApi.updateUserProfile(user._id, form);
+      toast('Profile updated', 'success');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Update failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-800">Edit Profile — {user.name}</h2>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <form onSubmit={submit} className="space-y-3">
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name" className="input" required />
+          <input value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} placeholder="Roll No" className="input" />
+          <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="input">
+            <option value="">No department</option>
+            {(departments || []).map((d) => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
+          </select>
+          <select value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} className="input">
+            <option value="">No batch</option>
+            {(batches || []).map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+          </select>
+          <select value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} className="input">
+            <option value="">No semester</option>
+            {(semesters || []).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+
+          {showScope && (
+            <div className="space-y-3 border border-slate-200 rounded-lg p-3">
+              <p className="text-xs text-slate-500">
+                Scopes this role's Review/Approval access to the matching Department(s)/Course(s) — same as Faculty.
+              </p>
+              <ScopeGroup label="Department" items={departments} value={form.assignedDepartments} onToggle={toggleScope('assignedDepartments')} />
+              <ScopeGroup label="Course" items={allCourses} value={form.assignedCourses} onToggle={toggleScope('assignedCourses')} labelKey="courseId" />
+            </div>
+          )}
+
+          <p className="text-xs text-slate-400">Password cannot be changed here — the user must use the change-password / reset flow.</p>
+          <button disabled={saving} className="w-full h-10 rounded-lg bg-brand-600 text-white font-semibold disabled:opacity-60">
+            {saving ? 'Saving...' : 'Save changes'}
+          </button>
+        </form>
+      </div>
+      <style>{`.input { width: 100%; height: 2.5rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; padding: 0 0.75rem; font-size: 0.875rem; }`}</style>
+    </div>
+  );
+}
+
+function ScopeGroup({ label, items, value, onToggle, labelKey = 'name' }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-500 mb-1.5">{label}</p>
+      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+        {(items || []).map((item) => (
+          <button
+            type="button"
+            key={item._id}
+            onClick={() => onToggle(item._id)}
+            className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+              value.includes(item._id) ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-300 text-slate-600'
+            }`}
+          >
+            {item[labelKey] || item.name}
+          </button>
+        ))}
+        {!items?.length && <span className="text-xs text-slate-400">None available</span>}
+      </div>
     </div>
   );
 }

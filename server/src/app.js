@@ -10,6 +10,7 @@ import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import Course from './models/Course.js';
+import Question from './models/Question.js';
 
 const app = express();
 
@@ -78,6 +79,20 @@ async function start() {
     await Course.syncIndexes();
   } catch (err) {
     console.error('[db] Course.syncIndexes failed:', err.message);
+  }
+
+  // Self-heals a gap for the exam-builder's random question selection:
+  // `difficulty` only reads back as its schema default ('medium') for a
+  // document that never had the field written to Mongo — that default is
+  // applied by Mongoose on read, but a raw `find({ difficulty: 'medium' })`
+  // (which random-selection rules use) only matches documents where the
+  // field is actually *stored*. Backfilling it once here makes every
+  // pre-existing bank question properly filterable/selectable by
+  // difficulty without a manual migration step.
+  try {
+    await Question.updateMany({ difficulty: { $exists: false } }, { $set: { difficulty: 'medium' } });
+  } catch (err) {
+    console.error('[db] Question difficulty backfill failed:', err.message);
   }
 
   app.listen(env.port, () => {

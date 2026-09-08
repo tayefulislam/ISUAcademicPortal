@@ -11,6 +11,27 @@ export const authApi = {
   me: () => api.get('/auth/me').then((r) => r.data),
   changePassword: (data) => api.post('/auth/change-password', data).then((r) => r.data),
   publicSettings: () => api.get('/auth/settings').then((r) => r.data),
+  sendOtp: (email) => api.post('/auth/send-otp', { email }).then((r) => r.data),
+  verifyOtp: (data) => api.post('/auth/verify-otp', data).then((r) => r.data),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),
+  resetPassword: (data) => api.post('/auth/reset-password', data).then((r) => r.data),
+};
+
+// ----- Messages (Faculty <-> Student direct messaging) -----
+export const messageApi = {
+  contacts: (search) => api.get('/messages/contacts', { params: { search: search || undefined } }).then((r) => r.data),
+  conversations: () => api.get('/messages/conversations').then((r) => r.data),
+  startConversation: (recipientId) => api.post('/messages/conversations', { recipientId }).then((r) => r.data),
+  messages: (conversationId) => api.get(`/messages/conversations/${conversationId}/messages`).then((r) => r.data),
+  send: (conversationId, text) => api.post(`/messages/conversations/${conversationId}/messages`, { text }).then((r) => r.data),
+};
+
+// ----- Email (University broadcast email system) -----
+export const emailApi = {
+  list: () => api.get('/emails').then((r) => r.data),
+  get: (id) => api.get(`/emails/${id}`).then((r) => r.data),
+  send: (data) => api.post('/emails/send', data).then((r) => r.data),
+  contacts: (search) => api.get('/emails/contacts', { params: { search: search || undefined } }).then((r) => r.data),
 };
 
 // ----- Profile (self-service) -----
@@ -146,7 +167,10 @@ export const reviewApi = {
 
 // ----- Faculty's own scoped file management -----
 export const facultyApi = {
+  courses: () => api.get('/faculty/courses').then((r) => r.data),
   files: (params) => api.get('/faculty/files', { params }).then((r) => r.data),
+  upload: (formData, onProgress) =>
+    api.post('/faculty/files', formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: onProgress }).then((r) => r.data),
   updateFile: (id, data) => api.patch(`/faculty/files/${id}`, data).then((r) => r.data),
   removeFile: (id) => api.delete(`/faculty/files/${id}`).then((r) => r.data),
   getFileVersions: (id) => api.get(`/faculty/files/${id}/versions`).then((r) => r.data),
@@ -154,6 +178,129 @@ export const facultyApi = {
     api
       .post(`/faculty/files/${id}/versions`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: onProgress })
       .then((r) => r.data),
+};
+
+// ----- Notices & Announcements -----
+export const noticeApi = {
+  list: () => api.get('/notices').then((r) => r.data),
+  mine: () => api.get('/notices/mine').then((r) => r.data),
+  create: (formData) => api.post('/notices', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  update: (id, formData) => api.patch(`/notices/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  remove: (id) => api.delete(`/notices/${id}`).then((r) => r.data),
+};
+
+// ----- Assignments -----
+export const assignmentApi = {
+  // Audience view (any authenticated role) + creator/management view (staff).
+  list: () => api.get('/assignments').then((r) => r.data),
+  mine: () => api.get('/assignments/mine').then((r) => r.data),
+  get: (id) => api.get(`/assignments/${id}`).then((r) => r.data),
+  create: (formData) => api.post('/assignments', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  update: (id, formData) => api.patch(`/assignments/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  remove: (id) => api.delete(`/assignments/${id}`).then((r) => r.data),
+
+  // Submissions
+  submit: (id, formData) => api.post(`/assignments/${id}/submit`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  getMySubmission: (id) => api.get(`/assignments/${id}/my-submission`).then((r) => r.data),
+  listMySubmissions: () => api.get('/assignments/my-submissions').then((r) => r.data),
+  listSubmissions: (id) => api.get(`/assignments/${id}/submissions`).then((r) => r.data),
+  grade: (id, submissionId, data) => api.patch(`/assignments/${id}/submissions/${submissionId}/grade`, data).then((r) => r.data),
+};
+
+// ----- Course Enrollment (Regular + Additional: retake/extra/backlog/improvement/advance) -----
+export const courseEnrollmentApi = {
+  // Student-facing
+  request: (data) => api.post('/course-enrollments/request', data).then((r) => r.data),
+  my: () => api.get('/course-enrollments/my').then((r) => r.data),
+  myActive: () => api.get('/course-enrollments/my/active').then((r) => r.data),
+  myPending: () => api.get('/course-enrollments/my/pending').then((r) => r.data),
+
+  // Staff
+  list: (params) => api.get('/course-enrollments', { params }).then((r) => r.data),
+  summary: (params) => api.get('/course-enrollments/summary', { params }).then((r) => r.data),
+  get: (id) => api.get(`/course-enrollments/${id}`).then((r) => r.data),
+  approve: (id) => api.patch(`/course-enrollments/${id}/approve`).then((r) => r.data),
+  reject: (id, reason) => api.patch(`/course-enrollments/${id}/reject`, { reason }).then((r) => r.data),
+  activate: (id) => api.patch(`/course-enrollments/${id}/activate`).then((r) => r.data),
+  complete: (id) => api.patch(`/course-enrollments/${id}/complete`).then((r) => r.data),
+  drop: (id) => api.patch(`/course-enrollments/${id}/drop`).then((r) => r.data),
+  createDirect: (data) => api.post('/course-enrollments', data).then((r) => r.data),
+  bulkEnrollRegular: (data) => api.post('/course-enrollments/bulk-regular', data).then((r) => r.data),
+  remove: (id) => api.delete(`/course-enrollments/${id}`).then((r) => r.data),
+};
+
+// ----- Question bank -----
+export const questionApi = {
+  list: (params) => api.get('/questions', { params }).then((r) => r.data),
+  // Fuzzy/typo-tolerant search with ranking + "did you mean" — same engine
+  // as `list`'s own `q` param, shaped for a richer search UI.
+  search: (params) => api.get('/questions/search', { params }).then((r) => r.data),
+  suggestions: (params) => api.get('/questions/suggestions', { params }).then((r) => r.data),
+  get: (id) => api.get(`/questions/${id}`).then((r) => r.data),
+  create: (formData) => api.post('/questions', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  update: (id, formData) => api.patch(`/questions/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  remove: (id) => api.delete(`/questions/${id}`).then((r) => r.data),
+};
+
+// ----- Quizzes -----
+export const quizApi = {
+  list: () => api.get('/quizzes').then((r) => r.data),
+  mine: () => api.get('/quizzes/mine').then((r) => r.data),
+  getForManage: (id) => api.get(`/quizzes/${id}/manage`).then((r) => r.data),
+  create: (data) => api.post('/quizzes', data).then((r) => r.data),
+  update: (id, data) => api.patch(`/quizzes/${id}`, data).then((r) => r.data),
+  remove: (id) => api.delete(`/quizzes/${id}`).then((r) => r.data),
+
+  start: (id) => api.post(`/quizzes/${id}/start`).then((r) => r.data),
+  getAttempt: (id, attemptId) => api.get(`/quizzes/${id}/attempts/${attemptId}`).then((r) => r.data),
+  saveAnswer: (id, attemptId, data) => api.patch(`/quizzes/${id}/attempts/${attemptId}/answer`, data).then((r) => r.data),
+  submitAttempt: (id, attemptId) => api.post(`/quizzes/${id}/attempts/${attemptId}/submit`).then((r) => r.data),
+  myAttempts: () => api.get('/quizzes/my-attempts').then((r) => r.data),
+
+  listAttempts: (id) => api.get(`/quizzes/${id}/attempts`).then((r) => r.data),
+  gradeAttempt: (id, attemptId, data) => api.patch(`/quizzes/${id}/attempts/${attemptId}/grade`, data).then((r) => r.data),
+  analytics: (id) => api.get(`/quizzes/${id}/analytics`).then((r) => r.data),
+};
+
+// ----- Public Exams (guest-accessible, reuses the Quiz/QuizAttempt engine) -----
+// `token` is the guestToken returned by `start` for an anonymous participant
+// — sent as X-Attempt-Token so the server can verify attempt ownership
+// without an account. Logged-in participants don't need it (the normal
+// Authorization header already identifies them via `optionalAuth`).
+function attemptHeaders(token) {
+  return token ? { headers: { 'X-Attempt-Token': token } } : undefined;
+}
+export const publicExamApi = {
+  landing: (slug) => api.get(`/public-exams/${slug}`).then((r) => r.data),
+  verifyPassword: (slug, password) => api.post(`/public-exams/${slug}/password`, { password }).then((r) => r.data),
+  start: (slug, payload) => api.post(`/public-exams/${slug}/start`, payload).then((r) => r.data),
+  getAttempt: (slug, attemptId, token) => api.get(`/public-exams/${slug}/attempts/${attemptId}`, attemptHeaders(token)).then((r) => r.data),
+  saveAnswer: (slug, attemptId, token, data) =>
+    api.patch(`/public-exams/${slug}/attempts/${attemptId}/answer`, data, attemptHeaders(token)).then((r) => r.data),
+  submitAttempt: (slug, attemptId, token) =>
+    api.post(`/public-exams/${slug}/attempts/${attemptId}/submit`, {}, attemptHeaders(token)).then((r) => r.data),
+  result: (slug, attemptId, token) => api.get(`/public-exams/${slug}/attempts/${attemptId}/result`, attemptHeaders(token)).then((r) => r.data),
+};
+
+// ----- Feedback -----
+export const feedbackApi = {
+  submit: (data) => api.post('/feedback', data).then((r) => r.data),
+  list: (params) => api.get('/super-admin/feedback', { params }).then((r) => r.data),
+  updateStatus: (id, status) => api.patch(`/super-admin/feedback/${id}/status`, { status }).then((r) => r.data),
+  remove: (id) => api.delete(`/super-admin/feedback/${id}`).then((r) => r.data),
+  // Fetched as a blob (the export endpoint needs the Authorization header,
+  // which a plain <a href> can't send) then saved via a temporary object URL.
+  export: async (params) => {
+    const res = await api.get('/super-admin/feedback/export', { params, responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'feedback-export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ----- Search -----
@@ -168,6 +315,7 @@ export const superAdminApi = {
   getUser: (id) => api.get(`/super-admin/users/${id}`).then((r) => r.data),
   updateUserRole: (id, role) => api.patch(`/super-admin/users/${id}/role`, { role }).then((r) => r.data),
   updateUserStatus: (id, status) => api.patch(`/super-admin/users/${id}/status`, { status }).then((r) => r.data),
+  updateUserProfile: (id, data) => api.patch(`/super-admin/users/${id}/profile`, data).then((r) => r.data),
   listFiles: (params) => api.get('/super-admin/files', { params }).then((r) => r.data),
   getFile: (id) => api.get(`/super-admin/files/${id}`).then((r) => r.data),
   removeFile: (id) => api.delete(`/super-admin/files/${id}`).then((r) => r.data),
@@ -180,7 +328,36 @@ export const superAdminApi = {
   updateFaculty: (id, data) => api.patch(`/super-admin/faculty/${id}`, data).then((r) => r.data),
 };
 
+// ----- Roles & Permissions (admin-tier roles like Admin, CR, ...) -----
+export const roleApi = {
+  list: () => api.get('/roles').then((r) => r.data),
+  create: (data) => api.post('/roles', data).then((r) => r.data),
+  updatePermissions: (key, permissions) => api.patch(`/roles/${key}`, { permissions }).then((r) => r.data),
+  remove: (key) => api.delete(`/roles/${key}`).then((r) => r.data),
+};
+
 // ----- Analytics (super admin dashboard) -----
 export const analyticsApi = {
   dashboard: () => api.get('/analytics/dashboard').then((r) => r.data),
+};
+
+// ----- Notifications (self-service: in-app + PWA web push) -----
+export const notificationApi = {
+  list: (params) => api.get('/notifications', { params }).then((r) => r.data),
+  unreadCount: () => api.get('/notifications/unread-count').then((r) => r.data),
+  markRead: (id) => api.patch(`/notifications/${id}/read`).then((r) => r.data),
+  markAllRead: () => api.patch('/notifications/read-all').then((r) => r.data),
+  remove: (id) => api.delete(`/notifications/${id}`).then((r) => r.data),
+  getPreferences: () => api.get('/notifications/preferences').then((r) => r.data),
+  updatePreferences: (data) => api.put('/notifications/preferences', data).then((r) => r.data),
+  vapidPublicKey: () => api.get('/notifications/vapid-public-key').then((r) => r.data),
+  subscribePush: (subscription) => api.post('/notifications/subscribe', subscription).then((r) => r.data),
+  unsubscribePush: (endpoint) => api.delete('/notifications/subscribe', { data: { endpoint } }).then((r) => r.data),
+};
+
+// ----- Notifications (Super Admin -> Notifications management) -----
+export const adminNotificationApi = {
+  stats: () => api.get('/admin/notifications/stats').then((r) => r.data),
+  logs: (params) => api.get('/admin/notifications/logs', { params }).then((r) => r.data),
+  send: (data) => api.post('/admin/notifications/send', data).then((r) => r.data),
 };

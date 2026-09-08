@@ -1,7 +1,21 @@
 import Chapter from '../models/Chapter.js';
 import File from '../models/File.js';
+import Course from '../models/Course.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+
+// Faculty may only create a Chapter for a course within their own assigned
+// Department/Course — same rule already used for Notices/Assignments/etc.
+async function assertFacultyCourseScope(courseId, user) {
+  if (user.role !== 'faculty') return;
+  const course = await Course.findById(courseId);
+  if (!course) throw new ApiError(400, 'Invalid course');
+  const deptIds = new Set((user.assignedDepartments || []).map(String));
+  const courseIds = new Set((user.assignedCourses || []).map(String));
+  if (!deptIds.has(String(course.department)) && !courseIds.has(String(course._id))) {
+    throw new ApiError(403, 'You can only create chapters for your own assigned Department/Course', null, 'FORBIDDEN');
+  }
+}
 
 export const listChapters = asyncHandler(async (req, res) => {
   const { course } = req.query;
@@ -18,6 +32,7 @@ export const getChapter = asyncHandler(async (req, res) => {
 });
 
 export const createChapter = asyncHandler(async (req, res) => {
+  await assertFacultyCourseScope(req.body.course, req.user);
   const chapter = await Chapter.create(req.body);
   res.status(201).json({ success: true, data: chapter });
 });

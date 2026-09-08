@@ -21,7 +21,7 @@ import {
 // (see adminRoutes.js) — these routes are kept for backward compatibility
 // with the existing admin panel and point at the same controllers, which
 // enforce upload ownership internally regardless of which path is used.
-import { authenticate, optionalAuth, requireRole } from '../middleware/auth.js';
+import { authenticate, optionalAuth, requireRole, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 
@@ -42,7 +42,7 @@ router.post('/:id/download', optionalAuth, recordDownload);
 router.post(
   '/',
   authenticate,
-  requireRole('admin', 'super_admin'),
+  requirePermission('files'),
   upload.array('files', MAX_FILES_PER_UPLOAD),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
@@ -56,7 +56,7 @@ router.post(
 router.post(
   '/from-uploadcare',
   authenticate,
-  requireRole('admin', 'super_admin'),
+  requirePermission('files'),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
@@ -81,8 +81,8 @@ router.post(
   submitStudentFile
 );
 
-router.put('/:id', authenticate, requireRole('admin', 'super_admin'), updateFile);
-router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), deleteFile);
-router.post('/bulk-delete', authenticate, requireRole('admin', 'super_admin'), bulkDeleteFiles);
+router.put('/:id', authenticate, requirePermission('files'), updateFile);
+router.delete('/:id', authenticate, requirePermission('files'), deleteFile);
+router.post('/bulk-delete', authenticate, requirePermission('files'), bulkDeleteFiles);
 
 export default router;

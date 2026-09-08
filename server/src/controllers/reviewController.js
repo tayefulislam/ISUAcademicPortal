@@ -6,24 +6,29 @@ import { ApiError } from '../utils/ApiError.js';
 import { isFacultyScopedToFile } from '../services/fileQueryBuilder.js';
 import { deleteAllAttachments } from './fileController.js';
 
-// Faculty are scoped to their assigned Department(s)/Course(s); Admin and
-// Super Admin see/manage every pending submission.
+// 'admin' and Super Admin see/manage every pending submission. Faculty AND
+// any other admin-tier role (e.g. "CR") are scoped to their assigned
+// Department(s)/Course(s) — the same fields Faculty already uses — so a CR
+// only reviews submissions in their own matching department/course, while
+// Admin keeps full unrestricted access.
+function isUnrestrictedReviewer(user) {
+  return user.role === 'admin' || user.role === 'super_admin' || user.role === 'administrator';
+}
+
 function scopeFilter(user) {
-  if (user.role === 'faculty') {
-    return {
-      approvalStatus: 'pending',
-      $or: [
-        { department: { $in: user.assignedDepartments || [] } },
-        { course: { $in: user.assignedCourses || [] } },
-      ],
-    };
-  }
-  return { approvalStatus: 'pending' };
+  if (isUnrestrictedReviewer(user)) return { approvalStatus: 'pending' };
+  return {
+    approvalStatus: 'pending',
+    $or: [
+      { department: { $in: user.assignedDepartments || [] } },
+      { course: { $in: user.assignedCourses || [] } },
+    ],
+  };
 }
 
 function assertReviewAccess(file, user) {
-  if (user.role === 'admin' || user.role === 'super_admin') return;
-  if (user.role === 'faculty' && isFacultyScopedToFile(user, file)) return;
+  if (isUnrestrictedReviewer(user)) return;
+  if (isFacultyScopedToFile(user, file)) return;
   throw new ApiError(403, 'This submission is outside your assigned Department/Course', null, 'FORBIDDEN');
 }
 

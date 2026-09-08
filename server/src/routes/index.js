@@ -17,6 +17,18 @@ import searchRoutes from './searchRoutes.js';
 import analyticsRoutes from './analyticsRoutes.js';
 import reviewRoutes from './reviewRoutes.js';
 import facultyRoutes from './facultyRoutes.js';
+import feedbackRoutes from './feedbackRoutes.js';
+import noticeRoutes from './noticeRoutes.js';
+import assignmentRoutes from './assignmentRoutes.js';
+import questionRoutes from './questionRoutes.js';
+import quizRoutes from './quizRoutes.js';
+import messageRoutes from './messageRoutes.js';
+import emailRoutes from './emailRoutes.js';
+import roleRoutes from './roleRoutes.js';
+import courseEnrollmentRoutes from './courseEnrollmentRoutes.js';
+import publicExamRoutes from './publicExamRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
+import adminNotificationRoutes from './adminNotificationRoutes.js';
 
 const router = Router();
 
@@ -40,5 +52,17 @@ router.use('/search', searchRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/faculty', facultyRoutes);
+router.use('/feedback', feedbackRoutes);
+router.use('/notices', noticeRoutes);
+router.use('/assignments', assignmentRoutes);
+router.use('/questions', questionRoutes);
+router.use('/quizzes', quizRoutes);
+router.use('/messages', messageRoutes);
+router.use('/emails', emailRoutes);
+router.use('/roles', roleRoutes);
+router.use('/course-enrollments', courseEnrollmentRoutes);
+router.use('/public-exams', publicExamRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/admin/notifications', adminNotificationRoutes);
 
 export default router;

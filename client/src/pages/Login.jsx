@@ -19,6 +19,10 @@ export default function Login() {
       toast('Signed in successfully', 'success');
       navigate(location.state?.from?.pathname || '/');
     } catch (err) {
+      if (err.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
+        navigate('/verify-otp', { state: { email: form.email } });
+        return;
+      }
       toast(err.response?.data?.message || 'Login failed', 'error');
     } finally {
       setSubmitting(false);
@@ -42,7 +46,10 @@ export default function Login() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-slate-700">Password</label>
+            <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline">Forgot password?</Link>
+          </div>
           <input
             type="password"
             required

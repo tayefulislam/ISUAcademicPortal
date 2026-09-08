@@ -40,8 +40,10 @@ export default function Register() {
         fd.append('studentIdImage', studentIdImage);
         payload = fd;
       }
-      const user = await register(payload);
-      if (user.approvalStatus === 'pending') {
+      const result = await register(payload);
+      if (result.requiresOtp) {
+        navigate('/verify-otp', { state: { email: form.email } });
+      } else if (result.user.approvalStatus === 'pending') {
         setPending(true);
       } else {
         toast('Account created', 'success');

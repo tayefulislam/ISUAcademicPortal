@@ -13,6 +13,27 @@ import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
 import { resolveDocumentType } from '../utils/fileTypes.js';
 import { buildFileQuery, buildSortOption, userCanAccessFile, isFacultyScopedToFile } from '../services/fileQueryBuilder.js';
 import { getSettings } from '../models/Settings.js';
+import { emit } from '../services/notifications/notificationService.js';
+import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
+
+// Fire-and-forget: never blocks the response, never throws into the
+// controller — a notification failure must not fail a file upload.
+function notifyCourseMaterial(file, actor, type) {
+  resolveCourseScopedRecipients({ course: file.course, batches: file.allBatches ? [] : file.batches })
+    .then((recipients) =>
+      emit({
+        type,
+        actorId: actor._id,
+        entityType: 'FILE',
+        entityId: file._id,
+        course: file.course,
+        department: file.department,
+        vars: { actorName: actor.name, fileName: file.title, courseName: file.courseName, fileId: file._id },
+        recipients,
+      })
+    )
+    .catch((err) => console.error('[notify] file upload', err));
+}
 
 const LIST_FIELDS = [
   'title',
@@ -62,6 +83,13 @@ async function resolveUploadMetadata(body) {
   if (!category) throw new ApiError(400, 'Invalid category');
   if (chapterId && !chapter) throw new ApiError(400, 'Invalid chapter');
   if (topicId && !topic) throw new ApiError(400, 'Invalid topic');
+  // A course belongs to exactly one department — the client submits both
+  // ids separately, so without this check a caller could tag a File under
+  // a department that doesn't actually match its course (and, for Faculty,
+  // use an assigned course's id to smuggle in an unassigned departmentId).
+  if (String(course.department) !== String(department._id)) {
+    throw new ApiError(400, 'Course does not belong to the selected department');
+  }
 
   let batches = [];
   let batchCodes = [];
@@ -178,6 +206,7 @@ export const uploadFiles = asyncHandler(async (req, res) => {
     uploadedBy: req.user._id,
   });
 
+  notifyCourseMaterial(file, req.user, 'COURSE_MATERIAL');
   res.status(201).json({ success: true, data: file, failed: failed.length ? failed : undefined });
 });
 
@@ -224,6 +253,7 @@ export const attachUploadcareFiles = asyncHandler(async (req, res) => {
     uploadedBy: req.user._id,
   });
 
+  notifyCourseMaterial(file, req.user, 'COURSE_MATERIAL');
   res.status(201).json({ success: true, data: file });
 });
 
@@ -373,7 +403,7 @@ export const getRelatedFiles = asyncHandler(async (req, res) => {
 // assigned Department(s)/Course(s). Checked against the document fetched
 // from the database — never against anything the client claims.
 export function assertOwnership(file, user) {
-  if (user.role === 'super_admin') return;
+  if (user.role === 'super_admin' || user.role === 'administrator') return;
   if (user.role === 'faculty' && isFacultyScopedToFile(user, file)) return;
   if (!file.uploadedBy.equals(user._id)) {
     throw new ApiError(403, 'You can only manage files you uploaded', null, 'FORBIDDEN');
@@ -485,6 +515,7 @@ export const replaceFileVersion = asyncHandler(async (req, res) => {
 
   await file.save();
 
+  notifyCourseMaterial(file, req.user, 'FILE_UPDATED');
   res.status(201).json({ success: true, message: 'New version uploaded', data: file, failed: failed.length ? failed : undefined });
 });
 

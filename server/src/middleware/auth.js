@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 import User from '../models/User.js';
+import { getRole } from '../models/Role.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Verifies the JWT, then re-loads the user straight from the database on
@@ -74,3 +75,27 @@ export const requireRole = (...roles) => (req, res, next) => {
 };
 
 export const requireRoles = requireRole;
+
+// Every route that used to be requireRole('super_admin') — administrator has
+// the same route-level access; the super_admin-account-specific protections
+// (can't see/edit/promote-to a super_admin) live in the controllers instead.
+export const requireSuperAdminTier = requireRole('super_admin', 'administrator');
+
+// requirePermission('files') — gates a route by the requesting user's
+// admin-tier Role permissions instead of a fixed role name, so Super Admin
+// can grant/revoke access to a module (e.g. "CR" gets Notices but not
+// Emails) without a code change. super_admin/administrator always pass.
+// `allowRoles` lets routes that are also open to a fixed role (e.g. faculty
+// already has its own access to Notices/Quizzes/etc., independent of this
+// system) keep working unchanged.
+export const requirePermission = (moduleKey, { allowRoles = [] } = {}) =>
+  asyncHandler(async (req, res, next) => {
+    if (!req.user) throw new ApiError(401, 'Authentication required', null, 'UNAUTHORIZED');
+    if (req.user.role === 'super_admin' || req.user.role === 'administrator' || allowRoles.includes(req.user.role)) return next();
+
+    const role = await getRole(req.user.role);
+    if (!role || !role.permissions.includes(moduleKey)) {
+      throw new ApiError(403, 'Insufficient permissions', null, 'FORBIDDEN');
+    }
+    next();
+  });

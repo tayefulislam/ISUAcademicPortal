@@ -3,36 +3,52 @@ import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { deleteStoredFile } from '../services/storage/storageService.js';
-import { getSettings, updateSettings } from '../models/Settings.js';
+import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS } from '../models/Settings.js';
+import { roleExists } from '../models/Role.js';
 
-// ----- System settings -----
+// 'administrator' has every super_admin capability except visibility/control
+// over super_admin accounts themselves, and only an actual super_admin can
+// grant or revoke the 'administrator' role — see each guard below.
+function isRealSuperAdmin(user) {
+  return user.role === 'super_admin';
+}
+
+// ----- System settings / Feature Management -----
+//
+// Generic over FEATURE_FLAGS + NUMERIC_SETTINGS (models/Settings.js) so a
+// new toggle/limit is just a new entry there — no controller change needed.
+
+function flagsPayload(settings) {
+  return {
+    ...Object.fromEntries(FEATURE_FLAGS.map((f) => [f.key, !!settings[f.key]])),
+    ...Object.fromEntries(NUMERIC_SETTINGS.map((n) => [n.key, settings[n.key] || 0])),
+  };
+}
 
 export const getSystemSettings = asyncHandler(async (req, res) => {
   const settings = await getSettings();
-  res.json({
-    success: true,
-    data: { studentApprovalEnabled: settings.studentApprovalEnabled, studentUploadEnabled: settings.studentUploadEnabled },
-  });
+  res.json({ success: true, data: flagsPayload(settings), flags: FEATURE_FLAGS, numericSettings: NUMERIC_SETTINGS });
 });
 
 export const updateSystemSettings = asyncHandler(async (req, res) => {
-  const { studentApprovalEnabled, studentUploadEnabled } = req.body;
+  const validFlagKeys = new Set(FEATURE_FLAGS.map((f) => f.key));
+  const validNumericKeys = new Set(NUMERIC_SETTINGS.map((n) => n.key));
   const patch = {};
-  if (studentApprovalEnabled !== undefined) {
-    if (typeof studentApprovalEnabled !== 'boolean') throw new ApiError(400, 'studentApprovalEnabled must be a boolean');
-    patch.studentApprovalEnabled = studentApprovalEnabled;
-  }
-  if (studentUploadEnabled !== undefined) {
-    if (typeof studentUploadEnabled !== 'boolean') throw new ApiError(400, 'studentUploadEnabled must be a boolean');
-    patch.studentUploadEnabled = studentUploadEnabled;
+  for (const [key, value] of Object.entries(req.body || {})) {
+    if (validFlagKeys.has(key)) {
+      if (typeof value !== 'boolean') throw new ApiError(400, `${key} must be a boolean`);
+      patch[key] = value;
+    } else if (validNumericKeys.has(key)) {
+      const num = Number(value);
+      if (!Number.isInteger(num) || num < 0) throw new ApiError(400, `${key} must be a non-negative integer`);
+      patch[key] = num;
+    }
+    // unknown keys are silently ignored rather than erroring — forward-compatible
   }
   if (!Object.keys(patch).length) throw new ApiError(400, 'No valid settings provided');
 
   const settings = await updateSettings(patch);
-  res.json({
-    success: true,
-    data: { studentApprovalEnabled: settings.studentApprovalEnabled, studentUploadEnabled: settings.studentUploadEnabled },
-  });
+  res.json({ success: true, data: flagsPayload(settings) });
 });
 
 const POPULATE = [
@@ -66,6 +82,16 @@ export const listUsers = asyncHandler(async (req, res) => {
     filter.$or = [{ name: re }, { email: re }, { rollNo: re }];
   }
 
+  // administrator cannot see super_admin accounts at all — force-exclude
+  // them, or return an empty page outright if super_admin was explicitly
+  // requested via the role filter.
+  if (!isRealSuperAdmin(req.user)) {
+    if (role === 'super_admin') {
+      return res.json({ success: true, data: [], pagination: { page: Number(page), limit: Number(limit), total: 0, pages: 0 } });
+    }
+    filter.role = filter.role || { $ne: 'super_admin' };
+  }
+
   const skip = (Number(page) - 1) * Number(limit);
   const [users, total] = await Promise.all([
     User.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
@@ -82,24 +108,38 @@ export const listUsers = asyncHandler(async (req, res) => {
 export const getUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).populate(POPULATE);
   if (!user) throw new ApiError(404, 'User not found');
+  // administrator cannot see a super_admin's record — reported as 404 so
+  // its existence isn't confirmed either.
+  if (user.role === 'super_admin' && !isRealSuperAdmin(req.user)) {
+    throw new ApiError(404, 'User not found');
+  }
   res.json({ success: true, data: user.toSafeObject() });
 });
 
-// Promotes a student to admin, or demotes an admin back to student.
-// Deliberately cannot target or assign 'super_admin' — that role is only
-// ever set at the database level (seed script), never through this API,
-// so a Super Admin account can't be created or escalated to by anyone
-// operating through the app, including another Super Admin.
+// Promotes a student to an admin-tier role (Admin, Administrator, or any
+// role Super Admin has created — e.g. "CR"), or demotes one back to student.
+// Deliberately cannot target or assign 'super_admin' or 'faculty' —
+// super_admin is only ever set at the database level (seed script); faculty
+// accounts go through their own dedicated creation flow (assignedDepartments
+// /Courses setup). Granting/revoking 'administrator' — a super_admin-equivalent
+// role — is further restricted to an actual super_admin actor, so an
+// administrator can never mint another administrator or demote one.
 export const updateUserRole = asyncHandler(async (req, res) => {
   const { role } = req.body;
-  if (!['student', 'admin'].includes(role)) {
-    throw new ApiError(400, 'Role must be "student" or "admin"');
+  if (role !== 'student' && role !== 'administrator' && !(await roleExists(role))) {
+    throw new ApiError(400, 'Role must be "student", "administrator", or an existing admin-tier role');
+  }
+  if (role === 'administrator' && !isRealSuperAdmin(req.user)) {
+    throw new ApiError(403, 'Only Super Admin can grant the Administrator role', null, 'FORBIDDEN');
   }
 
   const target = await User.findById(req.params.id);
   if (!target) throw new ApiError(404, 'User not found');
   if (target.role === 'super_admin') {
     throw new ApiError(403, 'Super Admin role cannot be changed through the API', null, 'FORBIDDEN');
+  }
+  if (target.role === 'administrator' && !isRealSuperAdmin(req.user)) {
+    throw new ApiError(403, "Only Super Admin can change an Administrator's role", null, 'FORBIDDEN');
   }
   if (target._id.equals(req.user._id)) {
     throw new ApiError(403, 'You cannot change your own role', null, 'FORBIDDEN');
@@ -110,6 +150,35 @@ export const updateUserRole = asyncHandler(async (req, res) => {
   await target.save();
 
   res.json({ success: true, message: `User role updated to ${role}`, data: target.toSafeObject() });
+});
+
+// Super Admin can directly edit a user's academic/profile fields — deliberately
+// excludes password (must go through the change-password flow) and email/role
+// (handled by their own dedicated, more carefully-gated endpoints).
+export const updateUserProfile = asyncHandler(async (req, res) => {
+  const target = await User.findById(req.params.id);
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.role === 'super_admin' && !target._id.equals(req.user._id)) {
+    throw new ApiError(403, "Another Super Admin's profile cannot be edited here", null, 'FORBIDDEN');
+  }
+
+  const allowed = ['name', 'rollNo', 'department', 'batch', 'semester'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) target[key] = req.body[key] || null;
+  }
+  // rollNo/name are plain strings, not refs — null would fail validation.
+  if (req.body.name !== undefined) target.name = req.body.name;
+  if (req.body.rollNo !== undefined) target.rollNo = req.body.rollNo || '';
+
+  // assignedDepartments/assignedCourses scope Review/Approval access for any
+  // admin-tier role other than the unrestricted 'admin' (e.g. "CR") — same
+  // fields Faculty already uses, so a CR only reviews within their own
+  // matching Department/Course.
+  if (Array.isArray(req.body.assignedDepartments)) target.assignedDepartments = req.body.assignedDepartments;
+  if (Array.isArray(req.body.assignedCourses)) target.assignedCourses = req.body.assignedCourses;
+
+  await target.save();
+  res.json({ success: true, message: 'Profile updated', data: target.toSafeObject() });
 });
 
 export const updateUserStatus = asyncHandler(async (req, res) => {

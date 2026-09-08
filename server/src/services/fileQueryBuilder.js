@@ -1,5 +1,5 @@
-import Course from '../models/Course.js';
 import { getSettings } from '../models/Settings.js';
+import { getEffectiveCourseIds } from './courseAccessService.js';
 
 /**
  * Builds a MongoDB filter for the File collection from search/list query
@@ -83,12 +83,13 @@ export function buildSortOption(sort, hasTextSearch) {
 //   - visibility === 'login_required' AND the viewer is signed in AND
 //     (the file has no restrictions on any axis, OR every non-empty
 //     restriction axis matches the viewer's own department/batch/semester,
-//     using the department's own course list to stand in for "enrolled
-//     courses" since the platform has no per-student course-enrollment
-//     collection to check against directly) AND, only when the global
-//     student-approval system is ON, the viewer's approvalStatus is
-//     'approved' (a pending/rejected student can still see unrestricted
-//     login_required files, just not restricted ones).
+//     with the `course` axis matched via getEffectiveCourseIds — the
+//     department's own course list PLUS any course the viewer has an
+//     active/approved CourseEnrollment for, e.g. a retake outside their own
+//     department/semester) AND, only when the global student-approval
+//     system is ON, the viewer's approvalStatus is 'approved' (a
+//     pending/rejected student can still see unrestricted login_required
+//     files, just not restricted ones).
 // super_admin bypasses all of this (handled by the caller returning `bypass`).
 
 /**
@@ -96,13 +97,13 @@ export function buildSortOption(sort, hasTextSearch) {
  */
 export async function buildAccessContext(user) {
   if (!user) return { bypass: false, user: null, blockedFromRestricted: true, deptCourseIds: [] };
-  if (user.role === 'super_admin') return { bypass: true, user, blockedFromRestricted: false, deptCourseIds: [] };
+  if (user.role === 'super_admin' || user.role === 'administrator') return { bypass: true, user, blockedFromRestricted: false, deptCourseIds: [] };
 
   const settings = await getSettings();
   const blockedFromRestricted =
     settings.studentApprovalEnabled && user.role === 'student' && user.approvalStatus !== 'approved';
 
-  const deptCourseIds = user.department ? await Course.find({ department: user.department }).distinct('_id') : [];
+  const deptCourseIds = await getEffectiveCourseIds(user);
 
   return { bypass: false, user, blockedFromRestricted, deptCourseIds };
 }
@@ -144,12 +145,13 @@ function accessMongoFilter(ctx) {
  * admin viewing/downloading their own file regardless of restrictions.
  */
 export async function userCanAccessFile(file, user) {
-  if (user && user.role === 'super_admin') return true;
+  if (user && (user.role === 'super_admin' || user.role === 'administrator')) return true;
   if (user && file.uploadedBy && String(file.uploadedBy) === String(user._id)) return true;
 
   // Pending submissions are invisible to everyone except the uploader
-  // (checked above), super_admin, admin, or an in-scope faculty reviewer —
-  // regardless of visibility/restrictions, which only apply once approved.
+  // (checked above), super_admin, admin, administrator, or an in-scope
+  // faculty reviewer — regardless of visibility/restrictions, which only
+  // apply once approved.
   if (file.approvalStatus === 'pending') {
     if (!user) return false;
     if (user.role === 'admin') return true;
@@ -180,9 +182,9 @@ export async function userCanAccessFile(file, user) {
 
   let courseOk = true;
   if (r.courses?.length) {
-    const deptCourseIds = user.department ? await Course.find({ department: user.department }).distinct('_id') : [];
-    const deptCourseIdSet = new Set(deptCourseIds.map(String));
-    courseOk = r.courses.some((c) => deptCourseIdSet.has(String(c)));
+    const effectiveCourseIds = await getEffectiveCourseIds(user);
+    const effectiveCourseIdSet = new Set(effectiveCourseIds);
+    courseOk = r.courses.some((c) => effectiveCourseIdSet.has(String(c)));
   }
 
   return deptOk && batchOk && semOk && courseOk;

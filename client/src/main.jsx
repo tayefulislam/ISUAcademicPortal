@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import './index.css';
+import 'katex/dist/katex.min.css';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
