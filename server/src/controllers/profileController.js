@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { ApiError } from '../utils/ApiError.js';
 
 const POPULATE = [
   { path: 'department', select: 'name code' },
@@ -23,6 +24,15 @@ export const updateProfile = asyncHandler(async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] === undefined) continue;
     update[key] = key === 'rollNo' ? String(req.body[key] || '').trim() : req.body[key] || null;
+  }
+
+  // rollNo doubles as the institution's Student ID — globally unique across
+  // every department/batch (see models/User.js's unique index).
+  if (update.rollNo) {
+    const duplicate = await User.findOne({ rollNo: update.rollNo, _id: { $ne: req.user._id } });
+    if (duplicate) {
+      throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+    }
   }
 
   const user = await User.findByIdAndUpdate(req.user._id, update, {

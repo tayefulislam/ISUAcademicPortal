@@ -3,9 +3,10 @@ import { ChevronDown, ChevronUp, Download, ExternalLink, FileWarning } from 'luc
 import FileIcon from './FileIcon.jsx';
 import PdfViewer from './PdfViewer.jsx';
 import ImageViewer from './ImageViewer.jsx';
-import { resolveFileUrl, formatBytes } from '../utils/format.js';
+import OfficeViewer from './OfficeViewer.jsx';
+import { resolveFileUrl, buildPreviewPath, formatBytes, isOfficeType } from '../utils/format.js';
 
-export default function AttachmentItem({ attachment, onDownload }) {
+export default function AttachmentItem({ fileId, attachment, onDownload }) {
   const [expanded, setExpanded] = useState(false);
   const url = resolveFileUrl(attachment.fileUrl);
 
@@ -48,9 +49,11 @@ export default function AttachmentItem({ attachment, onDownload }) {
       {expanded && (
         <div className="border-t border-slate-200 p-3">
           {attachment.fileType === 'pdf' ? (
-            <PdfViewer fileUrl={url} onDownload={() => onDownload(attachment)} />
+            <PdfViewer fileUrl={url} previewPath={buildPreviewPath(fileId, attachment._id)} onDownload={() => onDownload(attachment)} />
           ) : attachment.fileType === 'image' ? (
             <ImageViewer fileUrl={url} title={attachment.originalName} onDownload={() => onDownload(attachment)} />
+          ) : isOfficeType(attachment.fileType) ? (
+            <OfficeViewer fileUrl={url} onDownload={() => onDownload(attachment)} />
           ) : (
             <div className="flex flex-col items-center text-center gap-2 py-8 text-slate-400">
               <FileWarning size={32} />

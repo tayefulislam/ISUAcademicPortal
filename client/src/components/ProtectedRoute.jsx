@@ -14,8 +14,16 @@ import { useAuth } from '../context/AuthContext.jsx';
 // roles={['student']} orAdminTier lets a "CR" act as a student too (same
 // precedent as Assignment submission / Quiz attempts / Course Enrollment
 // requests, all already open to admin-tier roles server-side).
-export default function ProtectedRoute({ children, roles, adminOnly = false, adminTier = false, orAdminTier = false }) {
-  const { user, loading, isAdmin } = useAuth();
+//
+// `orScopedAdminTier` is narrower — it lets through any admin-tier role
+// EXCEPT the unrestricted 'admin' role (and super_admin/administrator,
+// already excluded from isAdminTier). Use it for "act as a student, but
+// scoped to my own department/batch" features (e.g. Submit Material) where
+// letting the unrestricted 'admin' role in wouldn't make sense — 'admin'
+// already has its own unrestricted equivalent (the direct Upload page) and
+// typically has no department/batch of its own to scope by.
+export default function ProtectedRoute({ children, roles, adminOnly = false, adminTier = false, orAdminTier = false, orScopedAdminTier = false }) {
+  const { user, loading, isAdmin, isAdminTier: isScopedAdminTierRole } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -30,7 +38,8 @@ export default function ProtectedRoute({ children, roles, adminOnly = false, adm
   }
 
   const allowedRoles = roles || (adminOnly ? ['admin', 'super_admin'] : null);
-  if (allowedRoles && !allowedRoles.includes(user.role) && !(orAdminTier && isAdmin)) {
+  const scopedAdminTierOk = orScopedAdminTier && isScopedAdminTierRole && user.role !== 'admin';
+  if (allowedRoles && !allowedRoles.includes(user.role) && !(orAdminTier && isAdmin) && !scopedAdminTierOk) {
     return <Navigate to="/403" replace />;
   }
 

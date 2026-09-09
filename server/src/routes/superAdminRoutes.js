@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listUsers,
+  exportUsers,
   getUser,
   updateUserRole,
   updateUserStatus,
@@ -15,6 +16,7 @@ import {
   updateFaculty,
 } from '../controllers/superAdminController.js';
 import { listFeedback, updateFeedbackStatus, deleteFeedback, exportFeedback } from '../controllers/feedbackController.js';
+import { listLogs, getLog, deleteLog, clearLogs } from '../controllers/logController.js';
 import { authenticate, requireSuperAdminTier } from '../middleware/auth.js';
 
 const router = Router();
@@ -24,6 +26,8 @@ const router = Router();
 router.use(authenticate, requireSuperAdminTier);
 
 router.get('/users', listUsers);
+// Registered before /users/:id so this literal path isn't swallowed as an id param.
+router.get('/users/export', exportUsers);
 router.get('/users/:id', getUser);
 router.patch('/users/:id/role', updateUserRole);
 router.patch('/users/:id/status', updateUserStatus);
@@ -46,5 +50,11 @@ router.get('/feedback', listFeedback);
 router.get('/feedback/export', exportFeedback);
 router.patch('/feedback/:id/status', updateFeedbackStatus);
 router.delete('/feedback/:id', deleteFeedback);
+
+// ----- App-wide error/log viewer -----
+router.get('/logs', listLogs);
+router.delete('/logs', clearLogs);
+router.get('/logs/:id', getLog);
+router.delete('/logs/:id', deleteLog);
 
 export default router;

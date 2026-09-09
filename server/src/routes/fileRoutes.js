@@ -16,12 +16,13 @@ import {
   getDashboard,
   submitStudentFile,
   getMySubmittedFiles,
+  streamFilePreview,
 } from '../controllers/fileController.js';
 // NOTE: Admin/Super Admin file management also lives at /api/admin/files
 // (see adminRoutes.js) — these routes are kept for backward compatibility
 // with the existing admin panel and point at the same controllers, which
 // enforce upload ownership internally regardless of which path is used.
-import { authenticate, optionalAuth, requireRole, requirePermission } from '../middleware/auth.js';
+import { authenticate, optionalAuth, requirePermission, requireStudentOrScopedAdminTier } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 
@@ -36,6 +37,7 @@ router.get('/popular', optionalAuth, getPopularFiles);
 router.get('/dashboard', authenticate, getDashboard);
 router.get('/mine', authenticate, getMySubmittedFiles);
 router.get('/:id', optionalAuth, getFile);
+router.get('/:id/preview', optionalAuth, streamFilePreview);
 router.get('/:id/related', optionalAuth, getRelatedFiles);
 router.post('/:id/download', optionalAuth, recordDownload);
 
@@ -70,7 +72,7 @@ router.post(
 router.post(
   '/submit',
   authenticate,
-  requireRole('student'),
+  requireStudentOrScopedAdminTier,
   upload.array('files', MAX_FILES_PER_UPLOAD),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),

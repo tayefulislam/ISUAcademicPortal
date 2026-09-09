@@ -5,6 +5,7 @@ import Semester from '../models/Semester.js';
 import { getSettings } from '../models/Settings.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parsePagination } from '../utils/pagination.js';
 import { sendEmail } from '../services/email/emailService.js';
 import { enrollmentApprovedEmail, enrollmentRejectedEmail, enrollmentRequestedEmail } from '../services/email/templates.js';
 import { emit } from '../services/notifications/notificationService.js';
@@ -218,7 +219,8 @@ export const listMyPendingEnrollments = asyncHandler((req, res) => listMine(req,
 
 // GET /course-enrollments
 export const listEnrollments = asyncHandler(async (req, res) => {
-  const { status, enrollmentType, course, batch, semester, student, page = 1, limit = 20 } = req.query;
+  const { status, enrollmentType, course, batch, semester, student } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
 
   const filter = await scopeFilter(req.user);
   if (status) filter.status = status;
@@ -228,16 +230,15 @@ export const listEnrollments = asyncHandler(async (req, res) => {
   if (semester) filter.semester = semester;
   if (student) filter.student = student;
 
-  const skip = (Number(page) - 1) * Number(limit);
   const [enrollments, total] = await Promise.all([
-    CourseEnrollment.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    CourseEnrollment.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(limit),
     CourseEnrollment.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: enrollments,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 

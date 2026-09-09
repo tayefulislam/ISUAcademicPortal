@@ -2,6 +2,7 @@ import Question from '../models/Question.js';
 import Quiz from '../models/Quiz.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parsePagination } from '../utils/pagination.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
 import {
   tokenize,
@@ -250,22 +251,21 @@ async function fuzzyRank(req, q) {
 }
 
 export const listQuestions = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
   const q = sanitizeQuery(req.query.q);
 
   // No search term (or too short to search meaningfully) — the original,
   // fully DB-side paginated path, unchanged.
   if (q.length < 2) {
     const filter = buildScopeFilter(req);
-    const skip = (Number(page) - 1) * Number(limit);
     const [questions, total] = await Promise.all([
-      Question.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      Question.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(limit),
       Question.countDocuments(filter),
     ]);
     return res.json({
       success: true,
       data: questions,
-      pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   }
 
@@ -274,13 +274,13 @@ export const listQuestions = asyncHandler(async (req, res) => {
   // is applied in memory to that ranked list.
   const { ranked } = await fuzzyRank(req, q);
   const total = ranked.length;
-  const start = (Number(page) - 1) * Number(limit);
-  const pageItems = ranked.slice(start, start + Number(limit)).map((r) => r.doc);
+  const start = (page - 1) * limit;
+  const pageItems = ranked.slice(start, start + limit).map((r) => r.doc);
 
   res.json({
     success: true,
     data: pageItems,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
@@ -290,10 +290,10 @@ export const listQuestions = asyncHandler(async (req, res) => {
 // than the plain Question Bank list needs.
 export const searchQuestions = asyncHandler(async (req, res) => {
   const q = sanitizeQuery(req.query.q);
-  const { page = 1, limit = 20 } = req.query;
+  const { page, limit } = parsePagination(req.query);
 
   if (q.length < 2) {
-    return res.json({ query: q, correctedQuery: null, suggestion: null, results: [], pagination: { page: 1, limit: Number(limit), total: 0, totalPages: 0 } });
+    return res.json({ query: q, correctedQuery: null, suggestion: null, results: [], pagination: { page: 1, limit, total: 0, totalPages: 0 } });
   }
 
   const { ranked, queryTokens, candidates } = await fuzzyRank(req, q);
@@ -302,8 +302,8 @@ export const searchQuestions = asyncHandler(async (req, res) => {
   const suggestion = suggestCorrection(queryTokens, corpus, topType);
 
   const total = ranked.length;
-  const start = (Number(page) - 1) * Number(limit);
-  const pageItems = ranked.slice(start, start + Number(limit));
+  const start = (page - 1) * limit;
+  const pageItems = ranked.slice(start, start + limit);
 
   res.json({
     query: q,
@@ -320,7 +320,7 @@ export const searchQuestions = asyncHandler(async (req, res) => {
       score: Math.round((r.score / (FIELD_WEIGHTS.questionText * 3)) * 100) / 100, // roughly normalized 0..~1
       matchType: r.matchType,
     })),
-    pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
 

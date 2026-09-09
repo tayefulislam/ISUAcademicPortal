@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import SearchBar from '../components/SearchBar.jsx';
 import SearchFilters from '../components/SearchFilters.jsx';
 import FileCard from '../components/FileCard.jsx';
@@ -89,6 +90,16 @@ export default function SearchResults() {
       <div className="mb-6">
         <SearchFilters filters={filters} onChange={(next) => updateParams({ ...next, page: 1 })} onClear={clearFilters} />
       </div>
+
+      {data?.suggestion && data.suggestion !== (queryParams.q || '').trim().toLowerCase() && (
+        <button
+          type="button"
+          onClick={() => { setQ(data.suggestion); updateParams({ q: data.suggestion, page: 1 }); }}
+          className="flex items-center gap-1.5 text-xs text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-3 py-2 mb-3 hover:bg-brand-100"
+        >
+          <Search size={12} /> Did you mean <strong>"{data.suggestion}"</strong>?
+        </button>
+      )}
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-slate-500">

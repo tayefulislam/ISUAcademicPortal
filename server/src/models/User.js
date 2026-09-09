@@ -47,6 +47,7 @@ const userSchema = new mongoose.Schema(
     assignedCourses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
 
     lastLogin: { type: Date, default: null },
+    lastLoginIp: { type: String, default: null },
 
     // Bumped whenever a token-invalidating event happens (password change,
     // block/unblock, role change) — embedded in the JWT so old tokens issued
@@ -81,12 +82,20 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Roll numbers only need to be unique within the same department + batch —
-// two different classes can both have a "1", "2", "3" ... sequence.
-userSchema.index(
-  { department: 1, batch: 1, rollNo: 1 },
-  { unique: true, partialFilterExpression: { rollNo: { $type: 'string', $ne: '' } } }
-);
+// rollNo doubles as the institution's Student ID — globally unique across
+// every department/batch, not just within one class (a CSE student and a
+// BBA student can never share the same roll/student ID).
+// MongoDB's partialFilterExpression only supports a small operator subset
+// ($eq/$gt/$gte/$lt/$lte/$type/$exists/$and) — `$ne` is NOT one of them
+// (it's internally a $not, which is rejected), so `$gt: ''` is used instead
+// to mean "non-empty string" (any non-empty string sorts after ''). Using
+// $ne here previously made MongoDB reject the index at creation time, which
+// mongoose swallows silently unless something listens for the model's
+// 'index' event — so this constraint was defined but never actually built
+// or enforced. See the explicit pre-check in authController.js's register(),
+// profileController.js's updateProfile(), and superAdminController.js's
+// updateUserProfile() for the friendly, immediate version of this same rule.
+userSchema.index({ rollNo: 1 }, { unique: true, partialFilterExpression: { rollNo: { $type: 'string', $gt: '' } } });
 
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();

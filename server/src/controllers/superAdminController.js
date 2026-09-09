@@ -5,6 +5,9 @@ import { ApiError } from '../utils/ApiError.js';
 import { deleteStoredFile } from '../services/storage/storageService.js';
 import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS } from '../models/Settings.js';
 import { roleExists } from '../models/Role.js';
+import { rankFileCandidates } from '../services/fuzzyFileSearch.js';
+import { sanitizeQuery } from '../utils/textSearch.js';
+import { parsePagination } from '../utils/pagination.js';
 
 // 'administrator' has every super_admin capability except visibility/control
 // over super_admin accounts themselves, and only an actual super_admin can
@@ -63,8 +66,11 @@ function escapeRegex(str) {
 
 // ----- Users -----
 
-export const listUsers = asyncHandler(async (req, res) => {
-  const { q, name, email, rollNo, department, batch, semester, role, status, page = 1, limit = 20 } = req.query;
+// Shared by listUsers and exportUsers so the two never drift apart — the
+// exported CSV must reflect exactly the same filtered set a Super Admin
+// sees on screen, minus pagination.
+function buildUserFilter(req) {
+  const { q, name, email, rollNo, department, batch, semester, role, status } = req.query;
 
   const filter = {};
   if (department) filter.department = department;
@@ -83,26 +89,81 @@ export const listUsers = asyncHandler(async (req, res) => {
   }
 
   // administrator cannot see super_admin accounts at all — force-exclude
-  // them, or return an empty page outright if super_admin was explicitly
-  // requested via the role filter.
+  // them, or flag "no rows at all" if super_admin was explicitly requested
+  // via the role filter.
   if (!isRealSuperAdmin(req.user)) {
-    if (role === 'super_admin') {
-      return res.json({ success: true, data: [], pagination: { page: Number(page), limit: Number(limit), total: 0, pages: 0 } });
-    }
+    if (role === 'super_admin') return null;
     filter.role = filter.role || { $ne: 'super_admin' };
   }
 
-  const skip = (Number(page) - 1) * Number(limit);
+  return filter;
+}
+
+export const listUsers = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const filter = buildUserFilter(req);
+
+  if (!filter) {
+    return res.json({ success: true, data: [], pagination: { page, limit, total: 0, pages: 0 } });
+  }
+
   const [users, total] = await Promise.all([
-    User.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    User.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(skip).limit(limit),
     User.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: users.map((u) => u.toSafeObject()),
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
+});
+
+// GET /super-admin/users/export — CSV of every user matching the current
+// filters (same filter-building as listUsers, no pagination) — reuses the
+// exact same escape/response pattern as exportFeedback.js for consistency.
+export const exportUsers = asyncHandler(async (req, res) => {
+  const filter = buildUserFilter(req);
+  const users = filter ? await User.find(filter).populate(POPULATE).sort({ createdAt: -1 }) : [];
+
+  const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = [
+    'Name',
+    'Email',
+    'Role',
+    'Roll No',
+    'Department',
+    'Batch',
+    'Semester',
+    'Status',
+    'Approval Status',
+    'Last Login',
+    'Last Login IP',
+    'Created At',
+  ];
+  const rows = users.map((u) =>
+    [
+      u.name,
+      u.email,
+      u.role,
+      u.rollNo || '',
+      u.department?.code || u.department?.name || '',
+      u.batch?.code || u.batch?.name || '',
+      u.semester?.code || u.semester?.name || '',
+      u.status,
+      u.approvalStatus,
+      u.lastLogin ? u.lastLogin.toISOString() : '',
+      u.lastLoginIp || '',
+      u.createdAt.toISOString(),
+    ]
+      .map(escapeCsv)
+      .join(',')
+  );
+  const csv = [header.join(','), ...rows].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="users-export.csv"');
+  res.send(csv);
 });
 
 export const getUser = asyncHandler(async (req, res) => {
@@ -168,7 +229,18 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
   }
   // rollNo/name are plain strings, not refs — null would fail validation.
   if (req.body.name !== undefined) target.name = req.body.name;
-  if (req.body.rollNo !== undefined) target.rollNo = req.body.rollNo || '';
+  if (req.body.rollNo !== undefined) {
+    const trimmedRollNo = String(req.body.rollNo || '').trim();
+    // rollNo doubles as the institution's Student ID — globally unique
+    // across every department/batch (see models/User.js's unique index).
+    if (trimmedRollNo) {
+      const duplicate = await User.findOne({ rollNo: trimmedRollNo, _id: { $ne: target._id } });
+      if (duplicate) {
+        throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+      }
+    }
+    target.rollNo = trimmedRollNo;
+  }
 
   // assignedDepartments/assignedCourses scope Review/Approval access for any
   // admin-tier role other than the unrestricted 'admin' (e.g. "CR") — same
@@ -252,30 +324,56 @@ export const updateFaculty = asyncHandler(async (req, res) => {
 const FILE_LIST_FIELDS =
   'title originalName fileType mimeType fileSize fileUrl fileCount departmentCode courseName courseId batchCodes allBatches semester academicYear categoryName views downloads uploadedBy status createdAt';
 
+// Typo-tolerant, same engine as GET /search (see fuzzyFileSearch.js) —
+// short/absent `q` keeps the original fast DB-only path untouched.
 export const listAllFiles = asyncHandler(async (req, res) => {
-  const { q, department, course, uploadedBy, page = 1, limit = 20 } = req.query;
+  const { q, department, course, uploadedBy } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
 
   const filter = {};
   if (department) filter.department = department;
   if (course) filter.course = course;
   if (uploadedBy) filter.uploadedBy = uploadedBy;
-  if (q) filter.$text = { $search: q };
 
-  const skip = (Number(page) - 1) * Number(limit);
+  const cleanQuery = sanitizeQuery(q);
+  if (q && cleanQuery.length >= 2) {
+    const { ranked } = await rankFileCandidates(filter, q);
+    const rankedTotal = ranked.length;
+
+    const start = (page - 1) * limit;
+    const pageIds = ranked.slice(start, start + limit).map((r) => r.file._id);
+    const scoreById = new Map(ranked.map((r) => [String(r.file._id), { score: r.score, matchType: r.matchType }]));
+
+    // Re-fetch just this page's ids with the real projection/populate — the
+    // ranking pass itself works off full unprojected documents.
+    const files = await File.find({ _id: { $in: pageIds } }).select(FILE_LIST_FIELDS).populate('uploadedBy', 'name email role');
+    const byId = new Map(files.map((f) => [String(f._id), f]));
+    const data = pageIds
+      .map((id) => byId.get(String(id)))
+      .filter(Boolean)
+      .map((f) => ({ ...f.toObject(), ...scoreById.get(String(f._id)) }));
+
+    return res.json({
+      success: true,
+      data,
+      pagination: { page, limit, total: rankedTotal, pages: Math.ceil(rankedTotal / limit) },
+    });
+  }
+
   const [files, total] = await Promise.all([
     File.find(filter)
       .select(FILE_LIST_FIELDS)
       .populate('uploadedBy', 'name email role')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit)),
+      .limit(limit),
     File.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: files,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 

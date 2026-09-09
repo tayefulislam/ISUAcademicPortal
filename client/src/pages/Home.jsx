@@ -40,6 +40,13 @@ export default function Home() {
 
   return (
     <div>
+      {/* No z-index/stacking context on this section itself — giving the whole
+          hero a higher stacking context than the stats section below made its
+          blue gradient background paint over the stats cards' overlap area.
+          Instead only the form (which holds the dropdowns) is raised above
+          the stats section's z-10, via z-30 below, since without a
+          stacking-context ancestor that z-index is compared directly against
+          the stats section's in the shared root stacking context. */}
       <section className="bg-gradient-to-b from-brand-600 to-brand-700 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight">Find every academic file, instantly.</h1>
@@ -51,7 +58,7 @@ export default function Home() {
             <SearchBar />
           </div>
 
-          <form onSubmit={goSearch} className="mt-6 bg-white/10 backdrop-blur rounded-xl p-3 flex flex-col sm:flex-row gap-2 max-w-3xl mx-auto">
+          <form onSubmit={goSearch} className="relative z-30 mt-6 bg-white/10 backdrop-blur rounded-xl p-3 flex flex-col sm:flex-row gap-2 max-w-3xl mx-auto">
             <SearchableSelect
               className="flex-1"
               value={dept}

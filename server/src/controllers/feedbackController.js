@@ -2,6 +2,7 @@ import Feedback, { FEEDBACK_CATEGORIES } from '../models/Feedback.js';
 import { getSettings } from '../models/Settings.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parsePagination } from '../utils/pagination.js';
 
 // POST /feedback — open to anyone (guest or signed-in); gated by the
 // Feedback System toggle so Super Admin can disable it platform-wide.
@@ -32,7 +33,8 @@ export const submitFeedback = asyncHandler(async (req, res) => {
 // ----- Super Admin management -----
 
 export const listFeedback = asyncHandler(async (req, res) => {
-  const { q, category, status, dateFrom, dateTo, page = 1, limit = 20 } = req.query;
+  const { q, category, status, dateFrom, dateTo } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
 
   const filter = {};
   if (category) filter.category = category;
@@ -47,16 +49,15 @@ export const listFeedback = asyncHandler(async (req, res) => {
     filter.$or = [{ name: re }, { email: re }, { subject: re }, { message: re }];
   }
 
-  const skip = (Number(page) - 1) * Number(limit);
   const [items, total] = await Promise.all([
-    Feedback.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    Feedback.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Feedback.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: items,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 

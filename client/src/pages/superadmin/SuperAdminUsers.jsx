@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, ShieldCheck, ShieldOff, Clock, Pencil, X } from 'lucide-react';
+import { Search, ShieldCheck, ShieldOff, Clock, Pencil, X, Download } from 'lucide-react';
 import { superAdminApi, departmentApi, batchApi, semesterApi, roleApi, courseApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
@@ -74,7 +74,15 @@ export default function SuperAdminUsers() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-4">All Users</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-bold text-slate-800">All Users</h1>
+        <button
+          onClick={() => superAdminApi.exportUsers(params)}
+          className="flex items-center gap-1.5 h-10 px-4 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
+        >
+          <Download size={16} /> Export CSV
+        </button>
+      </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
         <div className="relative">
@@ -121,15 +129,17 @@ export default function SuperAdminUsers() {
               <th className="p-3 text-left">Batch</th>
               <th className="p-3 text-left">Role</th>
               <th className="p-3 text-left">Status</th>
+              <th className="p-3 text-left">Last Login</th>
+              <th className="p-3 text-left">Last Login IP</th>
               <th className="p-3 text-left">Joined</th>
               <th className="p-3 text-left">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={9} className="p-6 text-center text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={11} className="p-6 text-center text-slate-400">Loading...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={9} className="p-6 text-center text-slate-400">No users found.</td></tr>
+              <tr><td colSpan={11} className="p-6 text-center text-slate-400">No users found.</td></tr>
             ) : (
               users.map((u) => (
                 <tr key={u._id} className="border-t border-slate-100 hover:bg-slate-50">
@@ -146,6 +156,8 @@ export default function SuperAdminUsers() {
                       {u.status}
                     </span>
                   </td>
+                  <td className="p-3 text-slate-400">{u.lastLogin ? formatDate(u.lastLogin) : 'Never'}</td>
+                  <td className="p-3 text-slate-400 font-mono text-xs">{u.lastLoginIp || '-'}</td>
                   <td className="p-3 text-slate-400">{formatDate(u.createdAt)}</td>
                   <td className="p-3">
                     {u.role !== 'super_admin' && u._id !== me._id && (
@@ -214,8 +226,8 @@ export default function SuperAdminUsers() {
                   {u.status === 'blocked' ? <ShieldOff size={12} /> : <ShieldCheck size={12} />} {u.status}
                 </span>
                 {u.lastLogin && (
-                  <span className="flex items-center gap-1 text-xs text-slate-400">
-                    <Clock size={12} /> Last login {formatDate(u.lastLogin)}
+                  <span className="flex items-center gap-1 text-xs text-slate-400" title={u.lastLoginIp ? `IP: ${u.lastLoginIp}` : undefined}>
+                    <Clock size={12} /> Last login {formatDate(u.lastLogin)}{u.lastLoginIp ? ` (${u.lastLoginIp})` : ''}
                   </span>
                 )}
               </div>

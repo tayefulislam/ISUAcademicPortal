@@ -185,14 +185,17 @@ export function scoreDocument(queryTokens, fields) {
   // "1-3 characters: very strict") so a 2-3 char fragment can't match
   // merely by appearing mid-word somewhere in an unrelated sentence — short
   // queries still rely on the stricter per-token prefix logic above.
-  const primary = fields.find((f) => f.key === 'questionText');
+  // "Primary" is whichever field the caller weighted highest (questionText
+  // for questions, title for files, etc.) — not a hardcoded key — so this
+  // same scoring function works for any document shape callers pass in.
+  const primary = fields.reduce((best, f) => (!best || f.weight > best.weight ? f : best), null);
   if (primary) {
     const normQuery = queryTokens.join(' ');
     const normPrimary = normalize(Array.isArray(primary.value) ? primary.value.join(' ') : primary.value);
     if (normQuery.length >= 4 && normPrimary.includes(normQuery)) {
       total += primary.weight * 2;
       bestType = 'exact';
-      matchedField = 'questionText';
+      matchedField = primary.key;
       anyMatch = true;
     }
   }

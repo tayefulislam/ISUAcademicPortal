@@ -5,6 +5,7 @@ import Course from '../models/Course.js';
 import { isAdminTierRole, isSuperAdminTier } from '../models/Role.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parsePagination } from '../utils/pagination.js';
 import { emit } from '../services/notifications/notificationService.js';
 
 // Direct messaging is scoped to Faculty <-> Student pairs within the
@@ -130,14 +131,13 @@ export const listMessages = asyncHandler(async (req, res) => {
   if (!conversation) throw new ApiError(404, 'Conversation not found');
   await assertParticipant(conversation, req.user);
 
-  const { page = 1, limit = 50 } = req.query;
-  const skip = (Number(page) - 1) * Number(limit);
+  const { skip, limit } = parsePagination(req.query, { defaultLimit: 50 });
 
   const messages = await Message.find({ conversation: conversation._id })
     .populate('sender', 'name role')
     .sort({ createdAt: -1 })
     .skip(skip)
-    .limit(Number(limit));
+    .limit(limit);
 
   await Message.updateMany(
     { conversation: conversation._id, sender: { $ne: req.user._id }, readBy: { $ne: req.user._id } },

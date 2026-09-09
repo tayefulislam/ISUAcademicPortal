@@ -1,21 +1,23 @@
 import { useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, ExternalLink, FileWarning, Heart } from 'lucide-react';
 import { fileApi } from '../api/endpoints.js';
 import { useDownloadFile } from '../hooks/useDownloadFile.js';
 import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { resolveFileUrl, formatBytes, formatDate, formatTime } from '../utils/format.js';
+import { resolveFileUrl, buildPreviewPath, formatBytes, formatDate, formatTime, isOfficeType } from '../utils/format.js';
 import { trackEvent } from '../utils/analytics.js';
 import PdfViewer from '../components/PdfViewer.jsx';
 import ImageViewer from '../components/ImageViewer.jsx';
+import OfficeViewer from '../components/OfficeViewer.jsx';
 import FileIcon from '../components/FileIcon.jsx';
 import FileCard from '../components/FileCard.jsx';
 import AttachmentItem from '../components/AttachmentItem.jsx';
 
 export default function FileDetails() {
   const { id } = useParams();
+  const location = useLocation();
   const download = useDownloadFile();
   const { user } = useAuth();
   const bookmarkedIds = useBookmarkedIds();
@@ -43,6 +45,15 @@ export default function FileDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?._id]);
 
+  useEffect(() => {
+    if (!file?.title) return;
+    const previousTitle = document.title;
+    document.title = `${file.title} — Academic File Portal`;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [file?.title]);
+
   if (isLoading) {
     return <div className="max-w-5xl mx-auto px-4 py-16 text-center text-slate-400">Loading file...</div>;
   }
@@ -50,15 +61,19 @@ export default function FileDetails() {
     return (
       <div className="max-w-5xl mx-auto px-4 py-16 text-center">
         <FileWarning className="mx-auto text-slate-300 mb-3" size={40} />
-        <p className="text-slate-600 font-medium">This material is restricted.</p>
+        <p className="text-slate-600 font-medium">{user ? 'This material is restricted.' : 'Login Required'}</p>
         <p className="text-sm text-slate-400 mt-1">
           {user
             ? "You don't have access to this material — it may be limited to a specific department, batch, semester, or approved students only."
-            : 'Sign in to check whether you have access to this material.'}
+            : 'Sign in to view this file — you\'ll be brought right back here afterward.'}
         </p>
         {!user && (
-          <Link to="/login" className="inline-block mt-4 text-brand-600 font-medium hover:underline">
-            Sign in
+          <Link
+            to="/login"
+            state={{ from: location }}
+            className="inline-block mt-4 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
+          >
+            Sign in to view
           </Link>
         )}
       </div>
@@ -109,16 +124,18 @@ export default function FileDetails() {
         <div className="mb-6 space-y-2">
           <p className="text-sm font-medium text-slate-500 mb-2">{attachments.length} files in this upload</p>
           {attachments.map((a) => (
-            <AttachmentItem key={a._id} attachment={a} onDownload={downloadAttachment} />
+            <AttachmentItem key={a._id} fileId={file._id} attachment={a} onDownload={downloadAttachment} />
           ))}
         </div>
       ) : (
         <>
           <div className="mb-6">
             {file.fileType === 'pdf' ? (
-              <PdfViewer fileUrl={url} onDownload={() => download(file)} />
+              <PdfViewer fileUrl={url} previewPath={buildPreviewPath(file._id)} onDownload={() => download(file)} />
             ) : file.fileType === 'image' ? (
               <ImageViewer fileUrl={url} title={file.title} onDownload={() => download(file)} />
+            ) : isOfficeType(file.fileType) ? (
+              <OfficeViewer fileUrl={url} onDownload={() => download(file)} />
             ) : (
               <div className="bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center text-center gap-3">
                 <FileWarning className="text-slate-300" size={48} />

@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import { env } from '../../config/env.js';
+import { ApiError } from '../../utils/ApiError.js';
 import { isImageMime, resolveDocumentType } from '../../utils/fileTypes.js';
 import {
   uploadDocumentLocal,
@@ -76,13 +77,22 @@ export async function deleteStoredFile(file) {
 export async function storePrivateImage(buffer, originalName) {
   let quality = 82;
   let width = 900;
-  let resized = await sharp(buffer).resize({ width, withoutEnlargement: true }).jpeg({ quality }).toBuffer();
-
-  // Step quality/dimensions down until under target size, or we hit a floor.
-  while (resized.length > PRIVATE_IMAGE_TARGET_BYTES && (quality > 40 || width > 500)) {
-    if (quality > 40) quality -= 10;
-    else width -= 150;
+  let resized;
+  try {
     resized = await sharp(buffer).resize({ width, withoutEnlargement: true }).jpeg({ quality }).toBuffer();
+
+    // Step quality/dimensions down until under target size, or we hit a floor.
+    while (resized.length > PRIVATE_IMAGE_TARGET_BYTES && (quality > 40 || width > 500)) {
+      if (quality > 40) quality -= 10;
+      else width -= 150;
+      resized = await sharp(buffer).resize({ width, withoutEnlargement: true }).jpeg({ quality }).toBuffer();
+    }
+  } catch {
+    // A corrupted/non-image buffer makes sharp throw mid-decode (e.g.
+    // "Input buffer contains unsupported image format") — this used to
+    // propagate unhandled to a generic 500. The caller (registration) needs
+    // a clean, expected validation error instead.
+    throw new ApiError(400, 'Invalid or corrupted image file');
   }
 
   const jpegName = originalName.replace(/\.[^/.]+$/, '') + '.jpg';

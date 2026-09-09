@@ -19,6 +19,13 @@ export default defineConfig(({ mode }) => {
         filename: 'sw.js',
         injectManifest: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // The app's own JS bundle has grown past Workbox's 2 MiB default
+          // precache limit (this is a single-page app with a large feature
+          // set, not a real per-file size problem) — raised so the main
+          // bundle still gets precached for offline use instead of failing
+          // the build. Revisit with route-based code-splitting if this
+          // keeps growing rather than raising the limit indefinitely.
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         },
         includeAssets: ['favicon.png', 'icons/*.png'],
         manifest: {

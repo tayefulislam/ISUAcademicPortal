@@ -41,7 +41,13 @@ router.post(
     body('department').notEmpty().withMessage('Department is required'),
     body('batch').notEmpty().withMessage('Batch is required'),
     body('semester').notEmpty().withMessage('Semester is required'),
-    body('rollNo').trim().notEmpty().withMessage('Roll No is required'),
+    body('rollNo')
+      .trim()
+      .notEmpty()
+      .withMessage('Roll No is required')
+      .bail()
+      .matches(/^\d{16}$/)
+      .withMessage('Student ID must be exactly 16 digits'),
   ],
   validate,
   register

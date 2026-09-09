@@ -6,6 +6,7 @@ import {
   createCourse,
   updateCourse,
   deleteCourse,
+  getMyCourses,
 } from '../controllers/courseController.js';
 import { authenticate, requireSuperAdminTier } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -13,6 +14,8 @@ import { validate } from '../middleware/validate.js';
 const router = Router();
 
 router.get('/', listCourses);
+// Registered before /:id so this literal path isn't swallowed as an id param.
+router.get('/mine', authenticate, getMyCourses);
 router.get('/:id', getCourse);
 
 router.post(

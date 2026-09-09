@@ -9,9 +9,9 @@ import { getEffectiveCourseIds } from './courseAccessService.js';
  * enforcement point; nothing bypasses it except super_admin and a file's
  * own uploader (checked separately, see fileMatchesAccess below).
  */
-export async function buildFileQuery(query, user) {
+export async function buildFileQuery(query, user, opts = {}) {
+  const { includeLocked = false, accessCtx } = opts;
   const {
-    q,
     department,
     course,
     courseId,
@@ -33,7 +33,9 @@ export async function buildFileQuery(query, user) {
   // and reviewers via the dedicated /reviews queue — both bypass this filter.
   const filter = { status: 'active', approvalStatus: 'approved' };
 
-  if (q) filter.$text = { $search: String(q) };
+  // Free-text `q` matching is handled separately by fuzzyFileSearch.js
+  // (typo-tolerant scoring), not by MongoDB's plain $text index — this
+  // filter only ever expresses the exact/structured axes.
   if (department) filter.department = department;
   if (course) filter.course = course;
   if (courseId) filter.courseId = new RegExp(`^${escapeRegex(courseId)}$`, 'i');
@@ -51,9 +53,18 @@ export async function buildFileQuery(query, user) {
     if (dateTo) filter.createdAt.$lte = new Date(dateTo);
   }
 
-  const accessCtx = await buildAccessContext(user);
-  const accessFilter = accessMongoFilter(accessCtx);
-  if (accessFilter) filter.$and = (filter.$and || []).concat([accessFilter]);
+  // `includeLocked` is used by the public browsing surfaces (GET /files,
+  // /search, /files/recent, /files/popular, /files/dashboard,
+  // /files/:id/related) — instead of excluding restricted files a viewer
+  // can't open, the listing includes them (title/metadata visible to
+  // everyone) and the caller attaches a `locked` flag per item via
+  // attachFileLocks() below, so the UI can show "Login Required" in place of
+  // View/Download rather than hiding the file's existence entirely.
+  const ctx = accessCtx || (await buildAccessContext(user));
+  if (!includeLocked) {
+    const accessFilter = accessMongoFilter(ctx);
+    if (accessFilter) filter.$and = (filter.$and || []).concat([accessFilter]);
+  }
 
   return filter;
 }
@@ -136,6 +147,46 @@ function accessMongoFilter(ctx) {
   };
 
   return { $or: [{ visibility: 'public' }, { $and: [{ visibility: 'login_required' }, matches] }] };
+}
+
+/**
+ * Sync mirror of accessMongoFilter's rules, evaluated per-document (no extra
+ * DB calls — `ctx` already carries everything needed) — used by the public
+ * listing surfaces to mark a file `locked` instead of excluding it. A file's
+ * own uploader/admin bypass is handled by `ctx.bypass`; ownership isn't
+ * checked here since these listing paths never include pending/other users'
+ * unlisted content in the first place.
+ */
+export function computeFileLocked(file, ctx) {
+  if (ctx.bypass) return false;
+  if (file.visibility === 'public') return false;
+  if (!ctx.user) return true;
+
+  const r = file.restrictions || {};
+  const hasAnyRestriction = !!(r.departments?.length || r.batches?.length || r.semesters?.length || r.courses?.length);
+
+  if (ctx.blockedFromRestricted) return hasAnyRestriction;
+  if (!hasAnyRestriction) return false;
+
+  const deptOk = !r.departments?.length || r.departments.some((d) => String(d) === String(ctx.user.department));
+  const batchOk = !r.batches?.length || r.batches.some((b) => String(b) === String(ctx.user.batch));
+  const semOk = !r.semesters?.length || r.semesters.some((s) => String(s) === String(ctx.user.semester));
+  const courseOk = !r.courses?.length || r.courses.some((c) => ctx.deptCourseIds.includes(String(c)));
+
+  return !(deptOk && batchOk && semOk && courseOk);
+}
+
+/** Maps a list of File docs/plain objects to plain objects with a `locked`
+ * flag attached and the underlying `restrictions`/`visibility` fields
+ * stripped (the flag is all a viewer who can't access the file should see). */
+export function attachFileLocks(files, ctx) {
+  return files.map((f) => {
+    const obj = typeof f.toObject === 'function' ? f.toObject() : { ...f };
+    obj.locked = computeFileLocked(obj, ctx);
+    delete obj.restrictions;
+    delete obj.visibility;
+    return obj;
+  });
 }
 
 /**

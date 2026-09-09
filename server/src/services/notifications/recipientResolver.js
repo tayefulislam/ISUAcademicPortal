@@ -11,6 +11,24 @@ import CourseEnrollment, { ACCESS_GRANTING_STATUSES } from '../../models/CourseE
 //     that same rule, batched for "which students can reach THIS course" —
 //     needed because fan-out has to start from the course, not the student.
 
+// Accepts either a course id or an already-populated Course document and
+// always returns a real document with `.department` loaded.
+//
+// This used to be `course?._id ? course : await Course.findById(course)...`
+// — intended as "if it's already a populated doc, use it as-is". That check
+// is unsafe: every real call site passes a raw, UNPOPULATED Mongoose
+// ObjectId (e.g. `file.course`, an item from `assignment.courses[]`), and
+// Mongoose's ObjectId wrapper exposes a `._id` getter that returns itself —
+// so `course?._id` was truthy even for a bare id, `courseDoc` ended up being
+// the ObjectId itself (no `.department` field), and every department-based
+// recipient query silently matched zero students. Checking `.department`
+// instead (only ever present on a genuinely populated document, since the
+// field is `required: true` on the schema) is unambiguous.
+async function resolveCourseDoc(course) {
+  if (course && course.department) return course;
+  return Course.findById(course).select('department');
+}
+
 /**
  * Students who can reach `course` — union of (same-department students) and
  * (active/approved CourseEnrollment for this exact course), i.e. exactly the
@@ -34,7 +52,7 @@ async function studentsWithCourseAccess(course) {
  *   Course doc or a course id; batches/semesters are arrays of ids.
  */
 export async function resolveCourseScopedRecipients({ course, batches = [], semesters = [] }) {
-  const courseDoc = course?._id ? course : await Course.findById(course).select('department');
+  const courseDoc = await resolveCourseDoc(course);
   if (!courseDoc) return [];
 
   let studentIds = await studentsWithCourseAccess(courseDoc);
@@ -88,7 +106,7 @@ export function resolveSingleUser(userId) {
 
 /** Faculty assigned to (or overseeing) a course — for staff-facing events. */
 export async function resolveFacultyForCourse(course) {
-  const courseDoc = course?._id ? course : await Course.findById(course).select('department');
+  const courseDoc = await resolveCourseDoc(course);
   if (!courseDoc) return [];
   return User.find({
     role: 'faculty',

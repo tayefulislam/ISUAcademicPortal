@@ -28,6 +28,9 @@ export default function Register() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!/^\d{16}$/.test(form.rollNo.trim())) {
+      return toast('Student ID must be exactly 16 digits', 'error');
+    }
     if (approvalEnabled && !studentIdImage) {
       return toast('A Student ID photo is required', 'error');
     }
@@ -93,8 +96,21 @@ export default function Register() {
             className="input"
           />
         </Field>
-        <Field label="Roll No">
-          <input required value={form.rollNo} onChange={(e) => set('rollNo')(e.target.value)} className="input" placeholder="e.g. 142030" />
+        <Field label="Roll / Student ID">
+          <input
+            required
+            inputMode="numeric"
+            pattern="\d{16}"
+            maxLength={16}
+            title="Student ID must be exactly 16 digits"
+            value={form.rollNo}
+            onChange={(e) => set('rollNo')(e.target.value.replace(/\D/g, '').slice(0, 16))}
+            className="input"
+            placeholder="e.g. 0962610005101052 ( Enter 16 digit ID Number )"
+          />
+          {form.rollNo.length > 0 && form.rollNo.length !== 16 && (
+            <p className="text-xs text-red-600 mt-1">Student ID must be exactly 16 digits ({form.rollNo.length}/16)</p>
+          )}
         </Field>
         <Field label="Department">
           <SearchableSelect

@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 import User from '../models/User.js';
-import { getRole } from '../models/Role.js';
+import { getRole, isAdminTierRole } from '../models/Role.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Verifies the JWT, then re-loads the user straight from the database on
@@ -75,6 +75,20 @@ export const requireRole = (...roles) => (req, res, next) => {
 };
 
 export const requireRoles = requireRole;
+
+// Student, or a scoped/custom admin-tier role (e.g. "CR" — created via the
+// Roles & Permissions page) — NOT the unrestricted 'admin' role, which
+// already has its own unrestricted publish path (POST /files, gated by
+// requirePermission('files')). A "CR" account still carries its own
+// department/batch/semester from before promotion, so it's meaningful to
+// scope it the same way a student is scoped — see courseController.js's
+// GET /courses/mine and fileController.js's submitStudentFile.
+export const requireStudentOrScopedAdminTier = asyncHandler(async (req, res, next) => {
+  if (!req.user) throw new ApiError(401, 'Authentication required', null, 'UNAUTHORIZED');
+  if (req.user.role === 'student') return next();
+  if (req.user.role !== 'admin' && (await isAdminTierRole(req.user.role))) return next();
+  throw new ApiError(403, 'Insufficient permissions', null, 'FORBIDDEN');
+});
 
 // Every route that used to be requireRole('super_admin') — administrator has
 // the same route-level access; the super_admin-account-specific protections

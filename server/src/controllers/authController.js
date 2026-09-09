@@ -58,6 +58,20 @@ export const register = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'An account with this email already exists');
   }
 
+  // rollNo doubles as the institution's Student ID — globally unique across
+  // every department/batch (a CSE student and a BBA student can never share
+  // one), matching the User model's own unique index on `rollNo` alone. This
+  // is checked here explicitly so a duplicate is rejected with a clear
+  // message immediately, rather than depending solely on that index (or a
+  // 500/race if it's ever missing/rebuilding on a given deployment).
+  const trimmedRollNo = rollNo?.trim();
+  if (trimmedRollNo) {
+    const duplicateRollNo = await User.findOne({ rollNo: trimmedRollNo });
+    if (duplicateRollNo) {
+      throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+    }
+  }
+
   const settings = await getSettings();
   let studentIdImageKey = '';
   let approvalStatus = 'approved';
@@ -79,7 +93,7 @@ export const register = asyncHandler(async (req, res) => {
     department: department || null,
     batch: batch || null,
     semester: semester || null,
-    rollNo: rollNo || '',
+    rollNo: trimmedRollNo || '',
     role: 'student',
     studentIdImageKey,
     approvalStatus,
@@ -126,6 +140,7 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   user.lastLogin = new Date();
+  user.lastLoginIp = req.ip;
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user);
@@ -199,6 +214,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   user.otpCodeHash = '';
   user.otpExpiresAt = null;
   user.lastLogin = new Date();
+  user.lastLoginIp = req.ip;
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user);

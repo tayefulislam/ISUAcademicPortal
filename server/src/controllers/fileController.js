@@ -1,3 +1,4 @@
+import { Readable } from 'stream';
 import File from '../models/File.js';
 import Department from '../models/Department.js';
 import Course from '../models/Course.js';
@@ -11,10 +12,22 @@ import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
 import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
 import { resolveDocumentType } from '../utils/fileTypes.js';
-import { buildFileQuery, buildSortOption, userCanAccessFile, isFacultyScopedToFile } from '../services/fileQueryBuilder.js';
+import {
+  buildFileQuery,
+  buildSortOption,
+  buildAccessContext,
+  attachFileLocks,
+  userCanAccessFile,
+  isFacultyScopedToFile,
+} from '../services/fileQueryBuilder.js';
+import { fuzzyRankFiles, rankFileCandidates, suggestFileCorrection } from '../services/fuzzyFileSearch.js';
+import { sanitizeQuery } from '../utils/textSearch.js';
+import { parsePagination } from '../utils/pagination.js';
 import { getSettings } from '../models/Settings.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
+import { logger } from '../utils/logger.js';
+import { getEffectiveCourseIds } from '../services/courseAccessService.js';
 
 // Fire-and-forget: never blocks the response, never throws into the
 // controller — a notification failure must not fail a file upload.
@@ -32,7 +45,7 @@ function notifyCourseMaterial(file, actor, type) {
         recipients,
       })
     )
-    .catch((err) => console.error('[notify] file upload', err));
+    .catch((err) => logger.error(err, { source: 'notifyCourseMaterial' }));
 }
 
 const LIST_FIELDS = [
@@ -57,10 +70,45 @@ const LIST_FIELDS = [
 ];
 const LIST_SELECT = LIST_FIELDS.join(' ');
 
-function listProjection(withScore) {
-  const projection = Object.fromEntries(LIST_FIELDS.map((f) => [f, 1]));
-  if (withScore) projection.score = { $meta: 'textScore' };
-  return projection;
+function listProjection() {
+  return Object.fromEntries(LIST_FIELDS.map((f) => [f, 1]));
+}
+
+// `visibility`/`restrictions` are only ever fetched to compute the `locked`
+// flag (attachFileLocks strips them back off before the response is sent) —
+// used by every public listing surface that shows locked files instead of
+// excluding them.
+const LOCK_SELECT = `${LIST_SELECT} visibility restrictions`;
+function lockProjection() {
+  return { ...listProjection(), visibility: 1, restrictions: 1 };
+}
+
+// Shared by every "my files / assigned files" search box: fuzzy-ranks
+// `scopeFilter`'s candidates against `q` and sends the paginated response.
+// Callers only ever reach this once `q` has already cleared the
+// sanitizeQuery(q).length >= 2 gate.
+async function respondWithFuzzyFiles(res, scopeFilter, q, page, limit) {
+  const { ranked, queryTokens, candidates } = await rankFileCandidates(scopeFilter, q);
+  const total = ranked.length;
+  const start = (page - 1) * limit;
+  const pageItems = ranked.slice(start, start + limit);
+
+  const data = pageItems.map(({ file, score, matchType }) => {
+    const obj = file.toObject();
+    obj.score = score;
+    obj.matchType = matchType;
+    return obj;
+  });
+
+  const suggestion = suggestFileCorrection(queryTokens, candidates, pageItems[0]?.matchType || 'none');
+
+  res.json({
+    success: true,
+    data,
+    correctedQuery: suggestion || undefined,
+    suggestion: suggestion || undefined,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+  });
 }
 
 // Resolves the department/course/category/batches shared by every
@@ -257,10 +305,16 @@ export const attachUploadcareFiles = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: file });
 });
 
-// POST /files/submit — a student's own material submission. Always lands as
-// approvalStatus:'pending' with a safe default visibility/no restrictions,
-// regardless of anything the client sends for those fields — that decision
-// belongs to the reviewer at approval time, not the submitter.
+// POST /files/submit — a Student's (or a "CR"-tier admin account's) own
+// material submission. Always lands as approvalStatus:'pending' with a safe
+// default visibility/no restrictions, regardless of anything the client
+// sends for those fields — that decision belongs to the reviewer at approval
+// time, not the submitter. The submitter may only pick a course they can
+// actually reach — their own department's courses, plus any course they
+// hold an active/approved CourseEnrollment for (see courseAccessService.js,
+// the same rule GET /courses/mine uses to populate the form's dropdown) —
+// checked here server-side since the client's course list is only a UX
+// convenience, never the enforcement point.
 export const submitStudentFile = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   if (!settings.studentUploadEnabled) {
@@ -272,6 +326,12 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
 
   const { title, description } = req.body;
   const meta = await resolveUploadMetadata(req.body);
+
+  const effectiveCourseIds = await getEffectiveCourseIds(req.user);
+  if (!effectiveCourseIds.includes(String(meta.course._id))) {
+    throw new ApiError(403, 'You can only submit material for a course in your own department or one you are enrolled in', null, 'FORBIDDEN');
+  }
+
   meta.visibility = 'login_required';
   meta.restrictions = { departments: [], batches: [], semesters: [], courses: [] };
   meta.batches = [];
@@ -320,39 +380,62 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
 // including pending ones (unlike every other listing path). Used by
 // students to track their submission status.
 export const getMySubmittedFiles = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
   const filter = { uploadedBy: req.user._id };
 
-  const skip = (Number(page) - 1) * Number(limit);
   const [files, total] = await Promise.all([
-    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     File.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: files,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
+// Same typo-tolerant fuzzy engine as GET /search and Question Bank search
+// (server/src/utils/textSearch.js) — a short/absent `q` keeps the original
+// fast DB-only path so every non-search caller (plain browsing/filtering)
+// is completely unaffected.
 export const listFiles = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, sort, q } = req.query;
-  const query = await buildFileQuery(req.query, req.user);
+  const { sort, q } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
+  const cleanQuery = sanitizeQuery(q);
+  const accessCtx = await buildAccessContext(req.user);
 
-  const skip = (Number(page) - 1) * Number(limit);
-  const [files, total] = await Promise.all([
-    File.find(query, listProjection(Boolean(q)))
-      .sort(buildSortOption(sort, q))
-      .skip(skip)
-      .limit(Number(limit)),
-    File.countDocuments(query),
-  ]);
+  if (!q || cleanQuery.length < 2) {
+    const query = await buildFileQuery(req.query, req.user, { includeLocked: true, accessCtx });
+    const [files, total] = await Promise.all([
+      File.find(query, lockProjection()).sort(buildSortOption(sort, false)).skip(skip).limit(limit),
+      File.countDocuments(query),
+    ]);
+    return res.json({
+      success: true,
+      data: attachFileLocks(files, accessCtx),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  }
+
+  const { ranked, queryTokens, candidates } = await fuzzyRankFiles(req.query, req.user, q, { includeLocked: true, accessCtx });
+  const total = ranked.length;
+  const start = (page - 1) * limit;
+  const pageItems = ranked.slice(start, start + limit);
+
+  const data = attachFileLocks(
+    pageItems.map(({ file }) => file),
+    accessCtx
+  ).map((obj, i) => ({ ...obj, score: pageItems[i].score, matchType: pageItems[i].matchType }));
+
+  const suggestion = suggestFileCorrection(queryTokens, candidates, pageItems[0]?.matchType || 'none');
 
   res.json({
     success: true,
-    data: files,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    data,
+    correctedQuery: suggestion || undefined,
+    suggestion: suggestion || undefined,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
@@ -370,6 +453,58 @@ export const getFile = asyncHandler(async (req, res) => {
   res.json({ success: true, data: file });
 });
 
+// GET /files/:id/preview[?attachment=<id>] — streams the raw file bytes
+// through this server instead of the browser fetching the storage
+// provider's URL (R2/S3) directly. PdfViewer's client-side renderer (pdf.js)
+// fetches its `file` prop with XHR/fetch, which enforces CORS — and this
+// app's storage buckets don't (and needn't) send CORS headers for a URL
+// that's otherwise only ever used in a plain `<a href>`/`<img>`/download, so
+// a direct R2 URL reliably fails there with "blocked by CORS policy". This
+// endpoint re-serves those same bytes from this app's own origin, which
+// pdf.js's fetch is always allowed to read — same access check as getFile,
+// so this is never a way to reach a file the caller couldn't already GET.
+export const streamFilePreview = asyncHandler(async (req, res) => {
+  const file = await File.findById(req.params.id);
+  if (!file) throw new ApiError(404, 'File not found');
+  if (!(await userCanAccessFile(file, req.user))) {
+    throw new ApiError(403, 'You do not have access to this material', null, 'FORBIDDEN');
+  }
+
+  const { attachment: attachmentId } = req.query;
+  const target = attachmentId ? file.attachments?.find((a) => String(a._id) === String(attachmentId)) : file;
+  if (!target?.fileUrl) throw new ApiError(404, 'File not found');
+
+  const sourceUrl = target.fileUrl.startsWith('http') ? target.fileUrl : `${req.protocol}://${req.get('host')}${target.fileUrl}`;
+
+  let upstream;
+  try {
+    upstream = await fetch(sourceUrl);
+  } catch (err) {
+    logger.error(err, { req, source: 'streamFilePreview', meta: { fileId: file._id, sourceUrl } });
+    throw new ApiError(502, 'Failed to fetch the source file');
+  }
+  // A 404 here means the underlying object is gone from storage (deleted or
+  // expired at the provider — e.g. an Uploadcare-attached file whose CDN
+  // entry has since expired) even though the File document itself still
+  // exists — distinct from a transient fetch failure, so it gets its own
+  // message rather than the generic "failed to fetch" one.
+  if (upstream.status === 404) {
+    throw new ApiError(404, "This file's content is no longer available at its storage location");
+  }
+  if (!upstream.ok || !upstream.body) {
+    logger.warn(`Preview upstream fetch returned ${upstream.status}`, { req, source: 'streamFilePreview', meta: { fileId: file._id, sourceUrl, status: upstream.status } });
+    throw new ApiError(502, 'Failed to fetch the source file');
+  }
+
+  res.setHeader('Content-Type', target.mimeType || upstream.headers.get('content-type') || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  const contentLength = upstream.headers.get('content-length');
+  if (contentLength) res.setHeader('Content-Length', contentLength);
+
+  Readable.fromWeb(upstream.body).pipe(res);
+});
+
 export const recordDownload = asyncHandler(async (req, res) => {
   const existing = await File.findById(req.params.id);
   if (!existing) throw new ApiError(404, 'File not found');
@@ -385,17 +520,18 @@ export const getRelatedFiles = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'File not found');
 
-  const accessFilter = await buildFileQuery({}, req.user);
+  const accessCtx = await buildAccessContext(req.user);
+  const accessFilter = await buildFileQuery({}, req.user, { includeLocked: true, accessCtx });
   const related = await File.find({
     ...accessFilter,
     _id: { $ne: file._id },
     course: file.course,
   })
-    .select(LIST_SELECT)
+    .select(LOCK_SELECT)
     .sort({ createdAt: -1 })
     .limit(8);
 
-  res.json({ success: true, data: related });
+  res.json({ success: true, data: attachFileLocks(related, accessCtx) });
 });
 
 // Admins may only manage files they themselves uploaded; Super Admin bypasses
@@ -558,20 +694,24 @@ export const bulkDeleteFiles = asyncHandler(async (req, res) => {
 // GET /api/admin/files — an Admin's (or Super Admin's) own uploads only.
 // The filter is applied server-side, never left to the frontend to hide.
 export const getMyFiles = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, q } = req.query;
+  const { q } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
   const filter = { uploadedBy: req.user._id };
-  if (q) filter.$text = { $search: q };
+  const cleanQuery = sanitizeQuery(q);
 
-  const skip = (Number(page) - 1) * Number(limit);
+  if (q && cleanQuery.length >= 2) {
+    return respondWithFuzzyFiles(res, filter, q, page, limit);
+  }
+
   const [files, total] = await Promise.all([
-    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     File.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: files,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
@@ -579,7 +719,8 @@ export const getMyFiles = asyncHandler(async (req, res) => {
 // Department(s)/Course(s), for their "manage materials" view. Pending items
 // live in the separate /reviews queue, not here.
 export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, q } = req.query;
+  const { q } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
   const filter = {
     approvalStatus: 'approved',
     $or: [
@@ -587,33 +728,38 @@ export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
       { course: { $in: req.user.assignedCourses || [] } },
     ],
   };
-  if (q) filter.$text = { $search: q };
+  const cleanQuery = sanitizeQuery(q);
 
-  const skip = (Number(page) - 1) * Number(limit);
+  if (q && cleanQuery.length >= 2) {
+    return respondWithFuzzyFiles(res, filter, q, page, limit);
+  }
+
   const [files, total] = await Promise.all([
-    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    File.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     File.countDocuments(filter),
   ]);
 
   res.json({
     success: true,
     data: files,
-    pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
 export const getRecentFiles = asyncHandler(async (req, res) => {
   const limit = Number(req.query.limit) || 8;
-  const query = await buildFileQuery({}, req.user);
-  const files = await File.find(query).select(LIST_SELECT).sort({ createdAt: -1 }).limit(limit);
-  res.json({ success: true, data: files });
+  const accessCtx = await buildAccessContext(req.user);
+  const query = await buildFileQuery({}, req.user, { includeLocked: true, accessCtx });
+  const files = await File.find(query).select(LOCK_SELECT).sort({ createdAt: -1 }).limit(limit);
+  res.json({ success: true, data: attachFileLocks(files, accessCtx) });
 });
 
 export const getPopularFiles = asyncHandler(async (req, res) => {
   const limit = Number(req.query.limit) || 8;
-  const query = await buildFileQuery({}, req.user);
-  const files = await File.find(query).select(LIST_SELECT).sort({ views: -1, downloads: -1 }).limit(limit);
-  res.json({ success: true, data: files });
+  const accessCtx = await buildAccessContext(req.user);
+  const query = await buildFileQuery({}, req.user, { includeLocked: true, accessCtx });
+  const files = await File.find(query).select(LOCK_SELECT).sort({ views: -1, downloads: -1 }).limit(limit);
+  res.json({ success: true, data: attachFileLocks(files, accessCtx) });
 });
 
 // GET /files/dashboard — personalized landing sections for a signed-in
@@ -623,14 +769,15 @@ export const getPopularFiles = asyncHandler(async (req, res) => {
 // personally-viewed-recent), and Bookmarked (existing Bookmark collection).
 export const getDashboard = asyncHandler(async (req, res) => {
   const limit = Number(req.query.limit) || 8;
-  const baseQuery = await buildFileQuery({}, req.user);
+  const accessCtx = await buildAccessContext(req.user);
+  const baseQuery = await buildFileQuery({}, req.user, { includeLocked: true, accessCtx });
 
   const recommendedQuery = { ...baseQuery };
   if (req.user?.department) recommendedQuery.department = req.user.department;
 
   const [recommended, recent, bookmarks] = await Promise.all([
-    File.find(recommendedQuery).select(LIST_SELECT).sort({ createdAt: -1 }).limit(limit),
-    File.find(baseQuery).select(LIST_SELECT).sort({ createdAt: -1 }).limit(limit),
+    File.find(recommendedQuery).select(LOCK_SELECT).sort({ createdAt: -1 }).limit(limit),
+    File.find(baseQuery).select(LOCK_SELECT).sort({ createdAt: -1 }).limit(limit),
     req.user
       ? Bookmark.find({ user: req.user._id }).populate({ path: 'file', select: LIST_SELECT }).sort({ createdAt: -1 }).limit(limit)
       : Promise.resolve([]),
@@ -639,8 +786,9 @@ export const getDashboard = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      recommended,
-      recent,
+      recommended: attachFileLocks(recommended, accessCtx),
+      recent: attachFileLocks(recent, accessCtx),
+      // A user's own bookmarks are, by definition, files they can already see.
       bookmarked: bookmarks.filter((b) => b.file).map((b) => b.file),
     },
   });

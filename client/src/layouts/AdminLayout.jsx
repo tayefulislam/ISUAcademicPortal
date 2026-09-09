@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -19,6 +19,11 @@ const links = [
   // a student and request retake/extra/backlog/improvement/advance courses
   // for themselves, same as any Student account.
   { to: '/my-courses', label: 'My Courses', icon: BookOpen, flag: 'courseEnrollmentSystemEnabled' },
+  // Same "act as a student" precedent as My Courses above, but scoped to a
+  // custom admin-tier role (e.g. "CR") only — the unrestricted 'admin' role
+  // already has its own unrestricted equivalent (Upload File, above) and
+  // typically has no department/batch of its own to scope a submission by.
+  { to: '/submit-material', label: 'Submit Material', icon: UploadCloud, flag: 'studentUploadEnabled', excludeRoles: ['admin'] },
   // Same "act as a student" precedent as My Courses above — the backend
   // already lets any admin-tier role (e.g. CR) take a quiz/exam and see its
   // own graded result via the identical code path a Student uses (ownership

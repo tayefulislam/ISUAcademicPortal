@@ -20,16 +20,23 @@ const linkClass = ({ isActive }) =>
 //   - `permission`: a Role permission key — hidden unless the current
 //     admin-tier user's role (Admin, "CR", ...) has been granted it via the
 //     Permissions page. Ignored for Super Admin, who always has everything.
+//   - `excludeRoles`: an array of exact role strings — hidden for those
+//     roles specifically (e.g. hiding a "act as a student" link from the
+//     unrestricted 'admin' role while still showing it to a custom role
+//     like "CR").
 export default function DashboardShell({ title, links }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const closeMobile = () => setMobileOpen(false);
-  const { logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
 
   const visibleLinks = links.filter(
-    (l) => (!l.flag || settings?.data?.[l.flag] !== false) && (!l.permission || hasPermission(l.permission))
+    (l) =>
+      (!l.flag || settings?.data?.[l.flag] !== false) &&
+      (!l.permission || hasPermission(l.permission)) &&
+      (!l.excludeRoles || !l.excludeRoles.includes(user?.role))
   );
 
   return (

@@ -60,6 +60,10 @@ export const departmentApi = {
 // ----- Courses -----
 export const courseApi = {
   list: (params) => api.get('/courses', { params }).then((r) => r.data),
+  // The signed-in user's own reachable courses (their department's courses
+  // plus any they hold an active/approved CourseEnrollment for) — used by
+  // Submit Material to scope a Student/"CR" to their own department/batch.
+  mine: () => api.get('/courses/mine').then((r) => r.data),
   get: (id) => api.get(`/courses/${id}`).then((r) => r.data),
   create: (data) => api.post('/courses', data).then((r) => r.data),
   update: (id, data) => api.put(`/courses/${id}`, data).then((r) => r.data),
@@ -312,6 +316,19 @@ export const searchApi = {
 // ----- Super Admin -----
 export const superAdminApi = {
   listUsers: (params) => api.get('/super-admin/users', { params }).then((r) => r.data),
+  // Same blob + temporary-object-URL pattern as feedbackApi.export — the
+  // endpoint needs the Authorization header, which a plain <a href> can't send.
+  exportUsers: async (params) => {
+    const res = await api.get('/super-admin/users/export', { params, responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'users-export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
   getUser: (id) => api.get(`/super-admin/users/${id}`).then((r) => r.data),
   updateUserRole: (id, role) => api.patch(`/super-admin/users/${id}/role`, { role }).then((r) => r.data),
   updateUserStatus: (id, status) => api.patch(`/super-admin/users/${id}/status`, { status }).then((r) => r.data),
@@ -326,6 +343,12 @@ export const superAdminApi = {
   listFaculty: () => api.get('/super-admin/faculty').then((r) => r.data),
   createFaculty: (data) => api.post('/super-admin/faculty', data).then((r) => r.data),
   updateFaculty: (id, data) => api.patch(`/super-admin/faculty/${id}`, data).then((r) => r.data),
+
+  // ----- App-wide error/log viewer -----
+  listLogs: (params) => api.get('/super-admin/logs', { params }).then((r) => r.data),
+  getLog: (id) => api.get(`/super-admin/logs/${id}`).then((r) => r.data),
+  deleteLog: (id) => api.delete(`/super-admin/logs/${id}`).then((r) => r.data),
+  clearLogs: (level) => api.delete('/super-admin/logs', { params: level ? { level } : undefined }).then((r) => r.data),
 };
 
 // ----- Roles & Permissions (admin-tier roles like Admin, CR, ...) -----

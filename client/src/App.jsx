@@ -52,6 +52,7 @@ import SuperAdminFaculty from './pages/superadmin/SuperAdminFaculty.jsx';
 import SuperAdminFiles from './pages/superadmin/SuperAdminFiles.jsx';
 import SuperAdminSystem from './pages/superadmin/SuperAdminSystem.jsx';
 import SuperAdminFeedback from './pages/superadmin/SuperAdminFeedback.jsx';
+import SuperAdminErrorLogs from './pages/superadmin/SuperAdminErrorLogs.jsx';
 
 import FacultyDashboard from './pages/faculty/FacultyDashboard.jsx';
 import FacultyFiles from './pages/faculty/FacultyFiles.jsx';
@@ -157,7 +158,7 @@ export default function App() {
           <Route
             path="/submit-material"
             element={
-              <ProtectedRoute roles={['student']}>
+              <ProtectedRoute roles={['student']} orScopedAdminTier>
                 <StudentSubmitMaterial />
               </ProtectedRoute>
             }
@@ -256,6 +257,7 @@ export default function App() {
           <Route path="files" element={<SuperAdminFiles />} />
           <Route path="system" element={<SuperAdminSystem />} />
           <Route path="feedback" element={<SuperAdminFeedback />} />
+          <Route path="error-logs" element={<SuperAdminErrorLogs />} />
           <Route path="messages" element={<Messages />} />
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />

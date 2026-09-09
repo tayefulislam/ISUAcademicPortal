@@ -112,6 +112,22 @@ describe('resolveCourseScopedRecipients', () => {
     const ids = await resolveCourseScopedRecipients({ course: '000000000000000000000000' });
     assert.deepEqual(ids, []);
   });
+
+  // Regression for BUG-001: every real controller call site passes `course`
+  // as a raw, UNPOPULATED Mongoose ObjectId ref (e.g. `file.course`, an item
+  // from `assignment.courses[]`) — never the populated document the other
+  // tests in this block use. `course._id` here is exactly that shape (a bare
+  // ObjectId, the same type Mongoose hands back for an unpopulated ref
+  // field) — this is the fixture shape that would have caught the bug where
+  // Mongoose's ObjectId wrapper exposes a `._id` getter that returns itself,
+  // making a naive `course?._id ? course : ...` populated-doc check
+  // incorrectly treat the bare id as "already populated".
+  test('resolving with a raw ObjectId (not a populated document) still finds department-matched students', async () => {
+    const ids = (await resolveCourseScopedRecipients({ course: course._id })).map(String);
+    assert.ok(ids.includes(String(studentInDept._id)));
+    assert.ok(ids.includes(String(studentOutsideDeptEnrolled._id)));
+    assert.ok(!ids.includes(String(studentOutsideDeptNotEnrolled._id)));
+  });
 });
 
 describe('resolveNoticeRecipients (OR-across-axes)', () => {
@@ -169,6 +185,13 @@ describe('resolveFacultyForCourse', () => {
     const ids = (await resolveFacultyForCourse(course)).map(String);
     const unrelated = await User.findOne({ name: 'Unrelated Faculty' });
     assert.ok(!ids.includes(String(unrelated._id)));
+  });
+
+  // Regression for BUG-001 (see the equivalent test on resolveCourseScopedRecipients above).
+  test('resolving with a raw ObjectId (not a populated document) still finds assigned faculty', async () => {
+    const ids = (await resolveFacultyForCourse(course._id)).map(String);
+    assert.ok(ids.includes(String(facultyByCourse._id)));
+    assert.ok(ids.includes(String(faculty._id)));
   });
 });
 

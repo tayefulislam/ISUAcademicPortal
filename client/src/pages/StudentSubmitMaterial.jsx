@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
-import { departmentApi, courseApi, categoryApi, chapterApi, topicApi, fileApi, authApi } from '../api/endpoints.js';
+import { courseApi, categoryApi, chapterApi, topicApi, fileApi, authApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatBytes } from '../utils/format.js';
@@ -19,10 +19,17 @@ const initialState = {
 
 const MAX_FILES = 10;
 
-// Simplified upload form for students — no visibility/restriction/batch
-// controls (those stay a reviewer decision). Everything submitted here
-// lands as approvalStatus:'pending' and is invisible to everyone else
-// until an Admin/Super Admin/Faculty reviewer approves it.
+// Simplified upload form for students (and a "CR"-tier admin account acting
+// as one) — no visibility/restriction/batch controls (those stay a reviewer
+// decision). Everything submitted here lands as approvalStatus:'pending' and
+// is invisible to everyone else until an Admin/Super Admin/Faculty reviewer
+// approves it.
+//
+// Department/Course are NOT freely pickable — only courses the submitter can
+// actually reach (their own department's courses, plus any course they hold
+// an active CourseEnrollment for) are offered, via GET /courses/mine. The
+// server enforces the same rule independently (fileController.js's
+// submitStudentFile) — this is a UX convenience, not the real gate.
 export default function StudentSubmitMaterial() {
   const [form, setForm] = useState(initialState);
   const [files, setFiles] = useState([]);
@@ -33,12 +40,26 @@ export default function StudentSubmitMaterial() {
   const { data: settings, isLoading: loadingSettings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings });
   const enabled = !!settings?.data?.studentUploadEnabled;
 
-  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list, enabled });
-  const { data: courses } = useQuery({
-    queryKey: ['courses', form.departmentId],
-    queryFn: () => courseApi.list({ department: form.departmentId, limit: 200 }),
-    enabled: enabled && !!form.departmentId,
-  });
+  const { data: myCourses } = useQuery({ queryKey: ['my-reachable-courses'], queryFn: courseApi.mine, enabled });
+  const allMyCourses = myCourses?.data || [];
+
+  // Departments derived from the reachable course list itself, so the
+  // Department dropdown never offers a department with no reachable course
+  // in it (a plain department picker would let a student "select" a
+  // department they have zero courses in, only to find an empty Course list).
+  const myDepartments = useMemo(() => {
+    const byId = new Map();
+    for (const c of allMyCourses) {
+      if (c.department?._id) byId.set(c.department._id, c.department);
+    }
+    return [...byId.values()];
+  }, [allMyCourses]);
+
+  const coursesInSelectedDept = useMemo(
+    () => allMyCourses.filter((c) => String(c.department?._id) === String(form.departmentId)),
+    [allMyCourses, form.departmentId]
+  );
+
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list, enabled });
   const { data: chapters } = useQuery({
     queryKey: ['chapters', form.courseIdRef],
@@ -113,6 +134,18 @@ export default function StudentSubmitMaterial() {
     );
   }
 
+  if (myCourses && allMyCourses.length === 0) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">No Courses Available</h1>
+        <p className="text-sm text-slate-500">
+          You don't have any department or enrolled course to submit material for yet. Make sure your Department is
+          set on your Profile, or ask an Admin to enroll you in a course.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-slate-800 mb-1">Submit a Material</h1>
@@ -166,14 +199,14 @@ export default function StudentSubmitMaterial() {
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Field label="Department" required>
+          <Field label="Department" required hint="Only departments you have a reachable course in are listed">
             <SearchableSelect
               required
               value={form.departmentId}
               onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '' }))}
               placeholder="Select"
               searchPlaceholder="Search departments..."
-              options={(departments?.data || []).map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
+              options={myDepartments.map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
             />
           </Field>
           <Field label="Course" required>
@@ -184,7 +217,7 @@ export default function StudentSubmitMaterial() {
               onChange={(v) => setForm((f) => ({ ...f, courseIdRef: v, chapterId: '', topicId: '' }))}
               placeholder="Select"
               searchPlaceholder="Search courses..."
-              options={(courses?.data || []).map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
+              options={coursesInSelectedDept.map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
             />
           </Field>
           <Field label="Material Type" required>
