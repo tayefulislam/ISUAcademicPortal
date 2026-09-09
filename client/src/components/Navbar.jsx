@@ -51,6 +51,9 @@ export default function Navbar() {
               Feedback
             </NavLink>
           )}
+          <NavLink to="/manual" className={navLinkClass}>
+            Manual
+          </NavLink>
         </nav>
 
         <div className="hidden md:flex items-center gap-1">
@@ -98,6 +101,9 @@ export default function Navbar() {
               Feedback
             </NavLink>
           )}
+          <NavLink to="/manual" className={navLinkClass} onClick={() => setOpen(false)}>
+            Manual
+          </NavLink>
           {user ? (
             <NavLink to={dashboardPath} className={navLinkClass} onClick={() => setOpen(false)}>
               Dashboard

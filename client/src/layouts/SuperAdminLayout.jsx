@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell } from 'lucide-react';
+import { LayoutDashboard, Users2, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -13,6 +13,7 @@ const links = [
   { to: '/super-admin/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled' },
   { to: '/super-admin/notifications', label: 'Notifications', icon: Bell, permission: 'notifications' },
   { to: '/super-admin/system', label: 'System Management', icon: Settings },
+  { to: '/super-admin/manual', label: 'User Manual', icon: HelpCircle },
 ];
 
 export default function SuperAdminLayout() {

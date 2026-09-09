@@ -13,6 +13,7 @@ import { useAuth } from './context/AuthContext.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
 import SuperAdminNotifications from './pages/superadmin/SuperAdminNotifications.jsx';
+import Manual from './pages/Manual.jsx';
 
 import Home from './pages/Home.jsx';
 import SearchResults from './pages/SearchResults.jsx';
@@ -136,6 +137,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/manual" element={<Manual role="student" />} />
           <Route
             path="/my-bookmarks"
             element={
@@ -237,6 +239,7 @@ export default function App() {
           <Route path="messages" element={<Messages />} />
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
+          <Route path="manual" element={<Manual role="admin" />} />
         </Route>
 
         <Route
@@ -257,6 +260,7 @@ export default function App() {
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
           <Route path="notifications" element={<SuperAdminNotifications />} />
+          <Route path="manual" element={<Manual role="super_admin" />} />
         </Route>
 
         <Route
@@ -281,6 +285,7 @@ export default function App() {
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
           <Route path="enrollments/roster" element={<FacultyEnrollmentDashboard />} />
+          <Route path="manual" element={<Manual role="faculty" />} />
         </Route>
       </Routes>
     </ToastProvider>

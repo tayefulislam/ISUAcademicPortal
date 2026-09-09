@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users } from 'lucide-react';
+import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users, HelpCircle } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 
 const links = [
@@ -16,6 +16,7 @@ const links = [
   { to: '/faculty/emails', label: 'Email Center', icon: Mail, flag: 'emailSystemEnabled' },
   { to: '/faculty/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled' },
   { to: '/faculty/enrollments/roster', label: 'Enrolled Students', icon: Users, flag: 'courseEnrollmentSystemEnabled' },
+  { to: '/faculty/manual', label: 'User Manual', icon: HelpCircle },
 ];
 
 export default function FacultyLayout() {

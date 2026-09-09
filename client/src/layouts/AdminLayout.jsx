@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare } from 'lucide-react';
+import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -25,6 +25,7 @@ const links = [
   // is checked by `attempt.student`, never by role); this was previously
   // only reachable by typing the /quizzes URL directly.
   { to: '/quizzes', label: 'My Exams', icon: PenSquare, flag: 'quizSystemEnabled' },
+  { to: '/admin/manual', label: 'User Manual', icon: HelpCircle },
 ];
 
 // Shared by Admin and any further admin-tier role Super Admin creates (e.g.
