@@ -9,6 +9,13 @@ import { sendEmail } from '../services/email/emailService.js';
 import { otpEmail, passwordResetEmail } from '../services/email/templates.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { emailDomainMatches, isOfficialUniversityEmail, getNextRequiredStep, NEXT_STEP } from '../services/registrationFlowService.js';
+
+// Re-exported so any existing import site (including tests) that imports
+// these from authController.js keeps working — the actual implementation
+// now lives in registrationFlowService.js, reused (not duplicated) by
+// login()/verifyOtp()/register() below via getNextRequiredStep().
+export { emailDomainMatches, isOfficialUniversityEmail };
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
@@ -31,35 +38,19 @@ async function resolvePermissions(user) {
   return role ? role.permissions : [];
 }
 
-async function withPermissions(user) {
-  return { ...user.toSafeObject(), permissions: await resolvePermissions(user) };
+// `settings` is optional — omit it only where the caller has no reasonable
+// use for `nextStep` (there is no such call site left below, but keeping it
+// optional avoids a hard crash if one is ever added without remembering).
+async function withPermissions(user, settings) {
+  return {
+    ...user.toSafeObject(),
+    permissions: await resolvePermissions(user),
+    nextStep: settings ? getNextRequiredStep(user, settings) : undefined,
+  };
 }
 
 function generateOtpCode() {
   return String(crypto.randomInt(100000, 999999));
-}
-
-// Exact-domain match only — deliberately NOT `.endsWith()`/`.includes()`,
-// which would let "student@fakeisu.ac.bd" match a configured "isu.ac.bd"
-// (string suffix match), and deliberately NOT satisfied by a subdomain like
-// "mail.isu.ac.bd" unless an admin explicitly configures that exact string
-// as the domain — see spec's §1.6/§1.7. Both sides are lowercased/trimmed
-// (the User email is already lowercase on save; Settings.studentAutoApprovalDomain
-// is lowercase/trim by schema) so this only needs a straight equality check.
-export function emailDomainMatches(email, configuredDomain) {
-  if (!configuredDomain) return false;
-  const at = String(email || '').lastIndexOf('@');
-  if (at === -1) return false;
-  const domain = email.slice(at + 1).toLowerCase();
-  return domain === configuredDomain.toLowerCase();
-}
-
-// Named to match the spec exactly — a thin, readable wrapper around the
-// exact-match primitive above. Normalizes (lowercases/trims) internally via
-// emailDomainMatches; reads the configured domain from server-side Settings,
-// never from anything client-supplied.
-export function isOfficialUniversityEmail(email, settings) {
-  return emailDomainMatches(email, settings?.studentAutoApprovalDomain);
 }
 
 // The single choke point for the auto-approval decision — called from
@@ -123,9 +114,13 @@ export const register = asyncHandler(async (req, res) => {
   // are never accepted from the client, no matter what the body contains.
   const { name, email, password, department, batch, semester, rollNo, phone } = req.body;
 
-  const existing = await User.findOne({ email: email.toLowerCase() });
+  // Normalized the same way the schema stores it (lowercase, trimmed) before
+  // checking — two people typing "Name@Example.com" and "name@example.com"
+  // must collide, matching the unique index on this field.
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
-    throw new ApiError(409, 'An account with this email already exists');
+    throw new ApiError(409, 'This email address is already registered. Please use another email or log in to your existing account.');
   }
 
   // rollNo doubles as the institution's Student ID — globally unique across
@@ -133,12 +128,15 @@ export const register = asyncHandler(async (req, res) => {
   // one), matching the User model's own unique index on `rollNo` alone. This
   // is checked here explicitly so a duplicate is rejected with a clear
   // message immediately, rather than depending solely on that index (or a
-  // 500/race if it's ever missing/rebuilding on a given deployment).
+  // 500/race if it's ever missing/rebuilding on a given deployment) — the
+  // index (see models/User.js) is still the final authority against a
+  // genuine race between two simultaneous registrations; see the
+  // duplicate-key handling in middleware/errorHandler.js for that case.
   const trimmedRollNo = rollNo?.trim();
   if (trimmedRollNo) {
     const duplicateRollNo = await User.findOne({ rollNo: trimmedRollNo });
     if (duplicateRollNo) {
-      throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+      throw new ApiError(409, 'This Student ID is already registered with another account. Please check your Student ID or contact the administrator.');
     }
   }
 
@@ -148,7 +146,7 @@ export const register = asyncHandler(async (req, res) => {
   if (trimmedPhone) {
     const duplicatePhone = await User.findOne({ phone: trimmedPhone });
     if (duplicatePhone) {
-      throw new ApiError(409, 'This phone number is already registered to another account');
+      throw new ApiError(409, 'This phone number is already registered. Please use another phone number or log in to your existing account.');
     }
   }
 
@@ -185,7 +183,19 @@ export const register = asyncHandler(async (req, res) => {
     user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
     await user.save({ validateBeforeSave: false });
     const { subject, html, text } = otpEmail(code);
-    await sendEmail({ to: user.email, subject, html, text });
+    // Deliberately NOT awaited: the account is already created and the OTP
+    // hash already saved above, so the request is otherwise done — the
+    // frontend needs this response back immediately to navigate to the
+    // verify-OTP screen. Awaiting this used to mean a slow/unreachable SMTP
+    // server (e.g. a blocked port from the hosting provider) left the whole
+    // registration request hanging for nodemailer's ~2-minute connection
+    // timeout, which looked like a stuck "Creating..." button even though
+    // the account had already been created. A delivery failure here is
+    // logged, never thrown into the response — the user can always use
+    // "Resend code" (sendOtp below) once the mail issue is fixed.
+    sendEmail({ to: user.email, subject, html, text }).catch((err) =>
+      logger.error(err, { req, source: 'authController.register', meta: { userId: user._id, action: 'OTP_EMAIL_FAILED' } })
+    );
   } else {
     // No OTP step exists in this configuration — emailVerified is already
     // true from the moment the account was created above, so this is the
@@ -199,6 +209,7 @@ export const register = asyncHandler(async (req, res) => {
   // While OTP verification is required, no token is issued yet — the client
   // must call verify-otp first, which signs and returns the first token.
   const token = settings.otpVerificationEnabled ? null : signToken(user);
+  const nextStep = getNextRequiredStep(user, settings);
   res.status(201).json({
     success: true,
     message: settings.otpVerificationEnabled
@@ -208,7 +219,11 @@ export const register = asyncHandler(async (req, res) => {
         : approvalStatus === 'pending'
           ? 'Account created — please submit your Student ID to complete verification'
           : 'Account created',
-    data: { user: user.toSafeObject(), token, requiresOtp: settings.otpVerificationEnabled },
+    // `nextStep` is the single value the frontend should route on — see
+    // registrationFlowService.js's getNextRequiredStep for the full decision
+    // tree. `requiresOtp` is kept alongside it for any existing call site
+    // that only checks that boolean.
+    data: { user: user.toSafeObject(), token, requiresOtp: settings.otpVerificationEnabled, nextStep },
   });
 });
 
@@ -258,11 +273,12 @@ export const login = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user);
-  res.json({ success: true, message: 'Signed in', data: { user: await withPermissions(user), token } });
+  res.json({ success: true, message: 'Signed in', data: { user: await withPermissions(user, settings), token } });
 });
 
 export const me = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: { user: await withPermissions(req.user) } });
+  const settings = await getSettings();
+  res.json({ success: true, data: { user: await withPermissions(req.user, settings) } });
 });
 
 export const changePassword = asyncHandler(async (req, res) => {
@@ -304,7 +320,10 @@ export const sendOtp = asyncHandler(async (req, res) => {
     user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
     await user.save({ validateBeforeSave: false });
     const { subject, html, text } = otpEmail(code);
-    await sendEmail({ to: user.email, subject, html, text });
+    // Fire-and-forget — see register()'s identical comment for why.
+    sendEmail({ to: user.email, subject, html, text }).catch((err) =>
+      logger.error(err, { req, source: 'authController.sendOtp', meta: { userId: user._id, action: 'OTP_EMAIL_FAILED' } })
+    );
   }
 
   res.json({ success: true, message: 'If an account needs verification, a code has been sent to that email' });
@@ -339,7 +358,8 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user);
-  const requiresStudentId = user.role === 'student' && user.approvalStatus === 'pending';
+  const nextStep = getNextRequiredStep(user, settings);
+  const requiresStudentId = nextStep === NEXT_STEP.STUDENT_ID_SUBMISSION || nextStep === NEXT_STEP.WAITING_FOR_APPROVAL;
   res.json({
     success: true,
     message: autoApproved
@@ -347,7 +367,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
       : requiresStudentId
         ? 'Email verified. Your email is not an official university email — please submit your Student ID to complete verification.'
         : 'Email verified',
-    data: { user: await withPermissions(user), token, autoApproved, requiresStudentId },
+    data: { user: await withPermissions(user, settings), token, autoApproved, requiresStudentId },
   });
 });
 
@@ -371,7 +391,10 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
     const resetUrl = `${env.clientUrls[0]}/reset-password?token=${rawToken}`;
     const { subject, html, text } = passwordResetEmail(resetUrl);
-    await sendEmail({ to: user.email, subject, html, text });
+    // Fire-and-forget — see register()'s identical comment for why.
+    sendEmail({ to: user.email, subject, html, text }).catch((err) =>
+      logger.error(err, { req, source: 'authController.forgotPassword', meta: { userId: user._id, action: 'RESET_EMAIL_FAILED' } })
+    );
   }
 
   res.json({ success: true, message: 'If an account exists for that email, a reset link has been sent' });

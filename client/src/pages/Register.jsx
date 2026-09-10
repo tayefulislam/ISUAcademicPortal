@@ -38,18 +38,18 @@ export default function Register() {
     setSubmitting(true);
     try {
       const result = await register(form);
-      if (result.requiresOtp) {
+      // `nextStep` is computed server-side (registrationFlowService.js) —
+      // the single source of truth this page just routes on, rather than
+      // re-deriving the same decision from raw approvalStatus/requiresOtp
+      // fields here too.
+      if (result.nextStep === 'EMAIL_VERIFICATION') {
         navigate('/verify-otp', { state: { email: form.email } });
-        return;
-      }
-      // No OTP step — the decision (auto-approved vs. needs Student ID) is
-      // already final at this point (register() ran it synchronously).
-      if (result.user.approvalStatus === 'approved') {
-        toast('Account created — your student account has been automatically approved', 'success');
-        navigate('/dashboard');
-      } else {
+      } else if (result.nextStep === 'STUDENT_ID_SUBMISSION' || result.nextStep === 'WAITING_FOR_APPROVAL') {
         toast('Account created — please submit your Student ID to complete verification', 'success');
         navigate('/pending-approval');
+      } else {
+        toast('Account created — your student account has been automatically approved', 'success');
+        navigate('/dashboard');
       }
     } catch (err) {
       toast(err.response?.data?.message || 'Registration failed', 'error');

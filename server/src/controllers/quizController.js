@@ -17,6 +17,7 @@ import {
 import { buildPublicAccessUpdate } from '../services/publicExamShared.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parseAsDhakaTime } from '../utils/timezone.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
 
@@ -205,9 +206,16 @@ async function resolveQuestionsAndSelection(req) {
 
 export const createQuiz = asyncHandler(async (req, res) => {
   await assertQuizSystemEnabled();
-  const { title, description, startAt, endAt, duration, passingMarks, attemptsAllowed } = req.body;
-  if (!startAt || !endAt || !duration) throw new ApiError(400, 'startAt, endAt, and duration are required');
-  if (new Date(endAt) <= new Date(startAt)) throw new ApiError(400, 'endAt must be after startAt');
+  const { title, description, duration, passingMarks, attemptsAllowed } = req.body;
+  if (!req.body.startAt || !req.body.endAt || !duration) throw new ApiError(400, 'startAt, endAt, and duration are required');
+  // Every quiz schedule is entered/interpreted in Bangladesh Standard Time
+  // (see server/src/utils/timezone.js) — never the server process's own
+  // timezone, which is what a raw `new Date(startAt)` would have used for a
+  // bare "YYYY-MM-DDTHH:mm" string with no offset.
+  const startAt = parseAsDhakaTime(req.body.startAt);
+  const endAt = parseAsDhakaTime(req.body.endAt);
+  if (!startAt || !endAt) throw new ApiError(400, 'startAt and endAt must be valid dates');
+  if (endAt <= startAt) throw new ApiError(400, 'Quiz end time must be after the quiz start time');
 
   const isPublic = req.body.examType === 'public';
 
@@ -286,10 +294,21 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     }
   }
 
-  const scalar = ['title', 'description', 'startAt', 'endAt', 'passingMarks', 'attemptsAllowed', 'status'];
+  const scalar = ['title', 'description', 'passingMarks', 'attemptsAllowed', 'status'];
   for (const key of scalar) {
     if (req.body[key] !== undefined) quiz[key] = req.body[key];
   }
+  // Same Dhaka-local interpretation as createQuiz — an update sends the
+  // same kind of value (a bare `datetime-local` string, or the quiz's own
+  // unmodified UTC ISO string if that field wasn't touched), so it must go
+  // through the same parser rather than being assigned raw.
+  const nextStartAt = req.body.startAt !== undefined ? parseAsDhakaTime(req.body.startAt) : quiz.startAt;
+  const nextEndAt = req.body.endAt !== undefined ? parseAsDhakaTime(req.body.endAt) : quiz.endAt;
+  if (req.body.startAt !== undefined && !nextStartAt) throw new ApiError(400, 'startAt must be a valid date');
+  if (req.body.endAt !== undefined && !nextEndAt) throw new ApiError(400, 'endAt must be a valid date');
+  if (nextEndAt <= nextStartAt) throw new ApiError(400, 'Quiz end time must be after the quiz start time');
+  if (req.body.startAt !== undefined) quiz.startAt = nextStartAt;
+  if (req.body.endAt !== undefined) quiz.endAt = nextEndAt;
   if (req.body.duration !== undefined) quiz.duration = Number(req.body.duration);
   if (req.body.randomizeQuestions !== undefined) quiz.randomizeQuestions = !!req.body.randomizeQuestions;
   if (req.body.randomizeOptions !== undefined) quiz.randomizeOptions = !!req.body.randomizeOptions;

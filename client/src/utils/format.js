@@ -28,6 +28,35 @@ export function formatBST(dateStr) {
   return `${datePart}, ${timePart} BST`;
 }
 
+// Bangladesh has a fixed +06:00 offset year-round (no DST), so converting a
+// UTC instant to/from Dhaka wall-clock components is just +/- 6 hours of
+// epoch time — no timezone-database library needed. These two are the
+// write/edit-side counterpart to formatBST's read-only display: they let a
+// `<input type="datetime-local">` (which only ever holds a bare, offset-less
+// "YYYY-MM-DDTHH:mm" string, always meant here as Bangladesh time — see
+// QuizManager.jsx) round-trip correctly against the API's UTC ISO strings.
+const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+// UTC ISO string (from the API) -> "YYYY-MM-DDTHH:mm" Dhaka wall-clock, for
+// hydrating a datetime-local input when editing an existing quiz.
+export function toDhakaInputValue(isoString) {
+  if (!isoString) return '';
+  const utc = new Date(isoString);
+  if (Number.isNaN(utc.getTime())) return '';
+  return new Date(utc.getTime() + DHAKA_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+// A datetime-local input's bare "YYYY-MM-DDTHH:mm" value (always meant as
+// Bangladesh local time) -> an explicit UTC ISO string, so the payload sent
+// to the API is unambiguous even without relying on the backend's own
+// naive-string-means-Dhaka fallback (server/src/utils/timezone.js).
+export function dhakaInputToIso(inputValue) {
+  if (!inputValue) return '';
+  const withSeconds = inputValue.length === 16 ? `${inputValue}:00` : inputValue;
+  const d = new Date(`${withSeconds}+06:00`);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
 export function resolveFileUrl(fileUrl) {
   if (!fileUrl) return '';
   if (fileUrl.startsWith('http')) return fileUrl;

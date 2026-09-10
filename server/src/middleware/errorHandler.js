@@ -12,6 +12,13 @@ const MULTER_MESSAGES = {
   LIMIT_UNEXPECTED_FILE: 'Too many files in a single upload',
 };
 
+// Same wording as the explicit pre-checks in authController.js's register()
+// and profileController.js's updateProfile() — this is only ever reached
+// when a genuine race lets two requests slip past those pre-checks at
+// almost the same instant (see models/User.js's unique/partial-unique
+// indexes on email/rollNo/phone, which are the actual authority; the
+// pre-checks are just what makes the common case fail fast with a friendly
+// message before ever reaching the database).
 function duplicateKeyMessage(err) {
   const pattern = err.keyPattern || {};
   const field = Object.keys(pattern).join(', ');
@@ -20,13 +27,16 @@ function duplicateKeyMessage(err) {
     return 'This course ID is already used in that department. Choose a different ID, or pick the existing course.';
   }
   if (pattern.rollNo) {
-    return 'This Roll No / Student ID is already registered to another account.';
+    return 'This Student ID is already registered with another account. Please check your Student ID or contact the administrator.';
+  }
+  if (pattern.phone) {
+    return 'This phone number is already registered. Please use another phone number or log in to your existing account.';
   }
   if (pattern.user && pattern.file) {
     return 'You already bookmarked this file.';
   }
   if (pattern.email) {
-    return 'An account with this email already exists.';
+    return 'This email address is already registered. Please use another email or log in to your existing account.';
   }
   return `Duplicate value for field: ${field || 'unknown'}`;
 }

@@ -27,9 +27,18 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await login(form);
+      const user = await login(form);
       toast('Signed in successfully', 'success');
-      navigate(location.state?.from?.pathname || '/');
+      // `nextStep` is computed server-side (registrationFlowService.js) —
+      // the single source of truth for where an incompletely-verified
+      // student should land. Anyone already fully set up (or any non-student
+      // role, which never gets a nextStep at all) falls through to wherever
+      // they were headed before being sent to log in, same as before.
+      if (user.nextStep === 'STUDENT_ID_SUBMISSION' || user.nextStep === 'WAITING_FOR_APPROVAL') {
+        navigate('/pending-approval');
+      } else {
+        navigate(location.state?.from?.pathname || '/');
+      }
     } catch (err) {
       if (err.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
         // Only pre-fill the verify-OTP page's email when the typed

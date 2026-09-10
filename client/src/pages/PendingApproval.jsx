@@ -31,7 +31,12 @@ export default function PendingApproval() {
     setFile(null);
   }, [user?.approvalStatus]);
 
-  if (user?.approvalStatus === 'approved') {
+  // `nextStep` (registrationFlowService.js's getNextRequiredStep, attached
+  // to the cached user by every auth response) is DASHBOARD once nothing is
+  // left to do — covers plain approvalStatus==='approved' plus every other
+  // case that also resolves to "nothing required" (non-student roles,
+  // Student ID not required at all, etc).
+  if (user?.nextStep === 'DASHBOARD') {
     return <Navigate to="/dashboard" replace />;
   }
 

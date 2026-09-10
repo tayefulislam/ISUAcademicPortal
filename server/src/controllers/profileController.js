@@ -47,7 +47,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
   if (update.rollNo) {
     const duplicate = await User.findOne({ rollNo: update.rollNo, _id: { $ne: req.user._id } });
     if (duplicate) {
-      throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+      throw new ApiError(409, 'This Student ID is already registered with another account. Please check your Student ID or contact the administrator.');
     }
   }
 
@@ -59,7 +59,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
     }
     const duplicatePhone = await User.findOne({ phone: update.phone, _id: { $ne: req.user._id } });
     if (duplicatePhone) {
-      throw new ApiError(409, 'This phone number is already registered to another account');
+      throw new ApiError(409, 'This phone number is already registered. Please use another phone number or log in to your existing account.');
     }
   }
 

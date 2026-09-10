@@ -24,16 +24,22 @@ export default function Dashboard() {
     queryFn: assignmentApi.list,
     retry: false,
   });
-  const { data: settings, isLoading: loadingSettings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
+  const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
   const messagingEnabled = settings?.data?.messagingSystemEnabled !== false;
-  // Mirrors the server's own isBlockedByApproval() gate (courseAccessService.js)
-  // — a pending/rejected student is redirected away from the Dashboard
-  // entirely (spec: they must not see Dashboard, My Courses, Assignments,
-  // Quizzes, Messages, Submit Material, or other protected academic content
-  // — only Profile/Logout). The server-side gate is the real enforcement;
-  // this redirect is purely the matching UX so they land somewhere that
-  // explains why, instead of a broken-looking empty Dashboard.
-  const isPendingApproval = user?.role === 'student' && !!settings?.data?.studentApprovalEnabled && user?.approvalStatus !== 'approved';
+  // `nextStep` is computed server-side (registrationFlowService.js's
+  // getNextRequiredStep — the single source of truth for this decision) and
+  // attached to the cached user object by every auth response (login,
+  // register, verify-otp, /auth/me), so it's already available with no
+  // extra request — unlike the settings query above (kept only for
+  // messagingEnabled), nothing here needs to wait on a load. Mirrors the
+  // server's own isBlockedByApproval() gate (courseAccessService.js) — a
+  // pending/rejected student is redirected away from the Dashboard entirely
+  // (spec: they must not see Dashboard, My Courses, Assignments, Quizzes,
+  // Messages, Submit Material, or other protected academic content — only
+  // Profile/Logout). The server-side gate is the real enforcement; this
+  // redirect is purely the matching UX so they land somewhere that explains
+  // why, instead of a broken-looking empty Dashboard.
+  const isPendingApproval = user?.nextStep === 'STUDENT_ID_SUBMISSION' || user?.nextStep === 'WAITING_FOR_APPROVAL';
 
   const recommended = data?.data?.recommended || [];
   const recent = data?.data?.recent || [];
@@ -42,11 +48,6 @@ export default function Dashboard() {
   const notices = (noticesData?.data || []).slice(0, 3);
   const pendingAssignments = (assignmentsData?.data || []).filter((a) => a.status === 'published' && (!a.mySubmission || a.mySubmission.status !== 'graded')).slice(0, 3);
 
-  // Settings must resolve first — deciding too early (while still loading)
-  // would render the full Dashboard for a split second before redirecting.
-  if (loadingSettings) {
-    return <div className="max-w-7xl mx-auto px-4 py-16 text-center text-slate-400">Loading...</div>;
-  }
   if (isPendingApproval) {
     return <Navigate to="/pending-approval" replace />;
   }
