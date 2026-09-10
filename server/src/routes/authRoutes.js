@@ -14,7 +14,6 @@ import {
 } from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/auth.js';
-import { upload } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -33,7 +32,6 @@ router.get('/settings', getPublicSettings);
 router.post(
   '/register',
   authLimiter,
-  upload.single('studentIdImage'),
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
@@ -48,12 +46,21 @@ router.post(
       .bail()
       .matches(/^\d{16}$/)
       .withMessage('Student ID must be exactly 16 digits'),
+    body('phone')
+      .trim()
+      .notEmpty()
+      .withMessage('Phone number is required')
+      .bail()
+      .matches(/^01\d{9}$/)
+      .withMessage('Phone number must be exactly 11 digits and start with 01'),
   ],
   validate,
   register
 );
 
-router.post('/login', authLimiter, [body('email').isEmail(), body('password').notEmpty()], validate, login);
+// `identifier` accepts an email, Student ID (rollNo), or phone number — see
+// authController.js's login() for the lookup logic.
+router.post('/login', authLimiter, [body('identifier').trim().notEmpty().withMessage('Email, Student ID, or phone number is required'), body('password').notEmpty()], validate, login);
 
 router.get('/me', authenticate, me);
 

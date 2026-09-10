@@ -1,5 +1,4 @@
-import { getSettings } from '../models/Settings.js';
-import { getEffectiveCourseIds } from './courseAccessService.js';
+import { getEffectiveCourseIds, isBlockedByApproval } from './courseAccessService.js';
 
 /**
  * Builds a MongoDB filter for the File collection from search/list query
@@ -91,16 +90,17 @@ export function buildSortOption(sort, hasTextSearch) {
 //
 // A file is visible to a viewer if:
 //   - visibility === 'public', OR
-//   - visibility === 'login_required' AND the viewer is signed in AND
-//     (the file has no restrictions on any axis, OR every non-empty
-//     restriction axis matches the viewer's own department/batch/semester,
-//     with the `course` axis matched via getEffectiveCourseIds — the
-//     department's own course list PLUS any course the viewer has an
-//     active/approved CourseEnrollment for, e.g. a retake outside their own
-//     department/semester) AND, only when the global student-approval
-//     system is ON, the viewer's approvalStatus is 'approved' (a
-//     pending/rejected student can still see unrestricted login_required
-//     files, just not restricted ones).
+//   - visibility === 'login_required' AND the viewer is signed in AND NOT
+//     blocked-by-approval (see isBlockedByApproval — a pending/rejected
+//     student, only while the global approval system is ON, cannot see ANY
+//     login-required content, restricted or not — approval is an all-or-
+//     nothing gate on login-required content, same as it is for Assignment
+//     submission/Quiz attempts/Messaging) AND (the file has no restrictions
+//     on any axis, OR every non-empty restriction axis matches the viewer's
+//     own department/batch/semester, with the `course` axis matched via
+//     getEffectiveCourseIds — the department's own course list PLUS any
+//     course the viewer has an active/approved CourseEnrollment for, e.g. a
+//     retake outside their own department/semester).
 // super_admin bypasses all of this (handled by the caller returning `bypass`).
 
 /**
@@ -110,10 +110,7 @@ export async function buildAccessContext(user) {
   if (!user) return { bypass: false, user: null, blockedFromRestricted: true, deptCourseIds: [] };
   if (user.role === 'super_admin' || user.role === 'administrator') return { bypass: true, user, blockedFromRestricted: false, deptCourseIds: [] };
 
-  const settings = await getSettings();
-  const blockedFromRestricted =
-    settings.studentApprovalEnabled && user.role === 'student' && user.approvalStatus !== 'approved';
-
+  const blockedFromRestricted = await isBlockedByApproval(user);
   const deptCourseIds = await getEffectiveCourseIds(user);
 
   return { bypass: false, user, blockedFromRestricted, deptCourseIds };
@@ -124,17 +121,11 @@ function accessMongoFilter(ctx) {
 
   if (!ctx.user) return { visibility: 'public' };
 
-  const noRestriction = {
-    $and: [
-      { 'restrictions.departments.0': { $exists: false } },
-      { 'restrictions.batches.0': { $exists: false } },
-      { 'restrictions.semesters.0': { $exists: false } },
-      { 'restrictions.courses.0': { $exists: false } },
-    ],
-  };
-
+  // A pending/rejected student (blockedFromRestricted) can only see fully
+  // public content — no login-required file at all, restricted or not —
+  // until an Admin approves them.
   if (ctx.blockedFromRestricted) {
-    return { $or: [{ visibility: 'public' }, { $and: [{ visibility: 'login_required' }, noRestriction] }] };
+    return { visibility: 'public' };
   }
 
   const matches = {
@@ -161,11 +152,12 @@ export function computeFileLocked(file, ctx) {
   if (ctx.bypass) return false;
   if (file.visibility === 'public') return false;
   if (!ctx.user) return true;
+  // A pending/rejected student can't see ANY login-required content until
+  // approved — restricted or not (see buildAccessContext's comment).
+  if (ctx.blockedFromRestricted) return true;
 
   const r = file.restrictions || {};
   const hasAnyRestriction = !!(r.departments?.length || r.batches?.length || r.semesters?.length || r.courses?.length);
-
-  if (ctx.blockedFromRestricted) return hasAnyRestriction;
   if (!hasAnyRestriction) return false;
 
   const deptOk = !r.departments?.length || r.departments.some((d) => String(d) === String(ctx.user.department));
@@ -213,9 +205,9 @@ export async function userCanAccessFile(file, user) {
   if (file.visibility === 'public') return true;
   if (!user) return false;
 
-  const settings = await getSettings();
-  const blockedFromRestricted =
-    settings.studentApprovalEnabled && user.role === 'student' && user.approvalStatus !== 'approved';
+  // A pending/rejected student can't see ANY login-required content until
+  // approved — restricted or not (see buildAccessContext's comment).
+  if (await isBlockedByApproval(user)) return false;
 
   const r = file.restrictions || {};
   const hasAnyRestriction =
@@ -224,8 +216,7 @@ export async function userCanAccessFile(file, user) {
     (r.semesters && r.semesters.length) ||
     (r.courses && r.courses.length);
 
-  if (!hasAnyRestriction) return !blockedFromRestricted;
-  if (blockedFromRestricted) return false;
+  if (!hasAnyRestriction) return true;
 
   const deptOk = !r.departments?.length || r.departments.some((d) => String(d) === String(user.department));
   const batchOk = !r.batches?.length || r.batches.some((b) => String(b) === String(user.batch));

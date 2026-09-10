@@ -9,6 +9,7 @@ import {
   getFileVersions,
 } from '../controllers/fileController.js';
 import { getFacultyCourses } from '../controllers/facultyController.js';
+import { listPendingStudents, getStudentIdPhoto, approveStudent, rejectStudent } from '../controllers/studentApprovalController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
@@ -53,5 +54,15 @@ router.patch('/files/:id', updateFile);
 router.delete('/files/:id', deleteFile);
 router.get('/files/:id/versions', getFileVersions);
 router.post('/files/:id/versions', upload.array('files', MAX_FILES_PER_UPLOAD), replaceFileVersion);
+
+// Student ID approvals, scoped to this faculty member's assigned
+// Department(s)/Course(s) — enforced inside the controller itself
+// (studentApprovalController.js's resolveApprovalScope/assertApprovalScope
+// branch on req.user.role === 'faculty'), not by anything route-level, so
+// there is no separate scope check to keep in sync here.
+router.get('/students/pending', listPendingStudents);
+router.get('/students/:id/id-photo', getStudentIdPhoto);
+router.patch('/students/:id/approve', approveStudent);
+router.patch('/students/:id/reject', rejectStudent);
 
 export default router;

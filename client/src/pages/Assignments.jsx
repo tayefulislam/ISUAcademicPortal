@@ -12,6 +12,7 @@ export default function Assignments() {
   const [submittingFor, setSubmittingFor] = useState(null);
   const { data, isLoading } = useQuery({ queryKey: ['assignments'], queryFn: assignmentApi.list });
   const assignments = data?.data || [];
+  const blockedByApproval = !!data?.blockedByApproval;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
@@ -23,6 +24,10 @@ export default function Assignments() {
 
       {isLoading ? (
         <p className="text-slate-400">Loading...</p>
+      ) : blockedByApproval ? (
+        <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          Assignments unlock once an Admin approves your Student ID.
+        </p>
       ) : assignments.length === 0 ? (
         <p className="text-slate-400">No assignments right now.</p>
       ) : (

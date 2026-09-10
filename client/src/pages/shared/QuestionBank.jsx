@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Pencil, X, Search } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Search, FileUp, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { questionApi, departmentApi, courseApi, chapterApi, topicApi, facultyApi } from '../../api/endpoints.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -53,6 +53,7 @@ export default function QuestionBank() {
   const [search, setSearch] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [showImport, setShowImport] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -209,7 +210,18 @@ export default function QuestionBank() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-1">
-        <h1 className="text-2xl font-bold text-slate-800 mb-4">Question Bank</h1>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <h1 className="text-2xl font-bold text-slate-800">Question Bank</h1>
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            disabled={!form.course}
+            title={!form.course ? 'Pick a Department and Course first' : 'Bulk-import questions from a .docx file'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            <FileUp size={15} /> Import DOCX
+          </button>
+        </div>
         <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <select required value={form.department} onChange={(e) => setForm((f) => ({ ...emptyForm, department: e.target.value }))} className="input">
@@ -448,8 +460,148 @@ export default function QuestionBank() {
         )}
       </div>
 
+      {showImport && (
+        <ImportDocxModal
+          department={form.department}
+          course={form.course}
+          chapter={form.chapter}
+          topic={form.topic}
+          onClose={() => setShowImport(false)}
+          onImported={() => qc.invalidateQueries({ queryKey: ['question-bank'] })}
+        />
+      )}
+
       <style>{`.input { width: 100%; height: 2.5rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; padding: 0 0.75rem; font-size: 0.875rem; }
       .input:disabled { background-color: #f1f5f9; color: #94a3b8; }`}</style>
+    </div>
+  );
+}
+
+// Bulk-imports questions parsed out of a .docx file (server/src/utils/
+// docxQuestionParser.js) into the Department/Course/Chapter/Topic already
+// selected in the main form — that scope can't be inferred from the
+// document itself, so it's carried over rather than asked twice. Malformed
+// individual questions are skipped with a reason rather than failing the
+// whole batch (see importQuestionsFromDocx in questionController.js); the
+// result view lists both so a faculty member knows exactly what landed and
+// what to fix before re-uploading just the leftovers.
+function ImportDocxModal({ department, course, chapter, topic, onClose, onImported }) {
+  const [file, setFile] = useState(null);
+  const [visibility, setVisibility] = useState('private');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const { toast } = useToast();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!file) return toast('Please choose a .docx file', 'error');
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('department', department);
+      fd.append('course', course);
+      if (chapter) fd.append('chapter', chapter);
+      if (topic) fd.append('topic', topic);
+      fd.append('visibility', visibility);
+      fd.append('file', file);
+      const res = await questionApi.importDocx(fd);
+      setResult(res.data);
+      if (res.data.created.length) {
+        toast(res.message, 'success');
+        onImported();
+      } else {
+        toast(res.message, 'error');
+      }
+    } catch (err) {
+      toast(err.response?.data?.message || 'Import failed', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-800">Import Questions from DOCX</h2>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        {!result ? (
+          <form onSubmit={submit} className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Every question in the file starts with a line like <code>Q1.</code>, followed by options (
+              <code>A) text</code>, mark the correct one with a trailing <code>*</code>) or an <code>Answer:</code>{' '}
+              line. An optional <code>Type:</code> line picks the question type explicitly when it can't be guessed
+              from context (e.g. <code>long_answer</code>).
+            </p>
+            <a
+              href="/templates/question-import-example.docx"
+              download
+              className="flex items-center gap-1.5 text-sm text-brand-600 hover:underline"
+            >
+              <Download size={14} /> Download an example .docx (covers every question type)
+            </a>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">.docx file</label>
+              <input
+                required
+                type="file"
+                accept=".docx"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Visibility for all imported questions</label>
+              <div className="flex gap-4 text-sm">
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="import-visibility" checked={visibility === 'private'} onChange={() => setVisibility('private')} />
+                  Private
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="import-visibility" checked={visibility === 'public'} onChange={() => setVisibility('public')} />
+                  Public
+                </label>
+              </div>
+            </div>
+
+            <button disabled={submitting} className="w-full h-10 rounded-lg bg-brand-600 text-white font-semibold disabled:opacity-60">
+              {submitting ? 'Importing...' : 'Import'}
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-sm">
+              <CheckCircle2 size={16} className="shrink-0" />
+              {result.created.length} of {result.total} question(s) imported.
+            </div>
+
+            {result.skipped.length > 0 && (
+              <div>
+                <p className="flex items-center gap-1.5 text-sm font-medium text-amber-700 mb-1.5">
+                  <AlertTriangle size={15} /> {result.skipped.length} skipped
+                </p>
+                <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                  {result.skipped.map((s) => (
+                    <div key={s.index} className="text-xs bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                      <span className="font-medium text-amber-800">#{s.index}</span>{' '}
+                      <span className="text-slate-500 truncate">{s.text}</span>
+                      <p className="text-amber-700 mt-0.5">{s.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={onClose} className="w-full h-10 rounded-lg bg-brand-600 text-white font-semibold">
+              Done
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

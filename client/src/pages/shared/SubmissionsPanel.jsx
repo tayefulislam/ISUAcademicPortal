@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, Paperclip } from 'lucide-react';
+import { X, Paperclip, Download } from 'lucide-react';
 import { assignmentApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDate } from '../../utils/format.js';
@@ -37,7 +37,17 @@ export default function SubmissionsPanel({ assignment, onClose }) {
             <h2 className="text-lg font-bold text-slate-800">Submissions — {assignment.title}</h2>
             <p className="text-xs text-slate-500">Max marks: {assignment.maxMarks}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {submissions.length > 0 && (
+              <button
+                onClick={() => assignmentApi.exportSubmissions(assignment._id)}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
+              >
+                <Download size={15} /> Export CSV
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+          </div>
         </div>
 
         {isLoading ? (

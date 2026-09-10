@@ -154,11 +154,21 @@ export const adminApi = {
   // ----- Student approvals -----
   pendingStudents: () => api.get('/admin/students/pending').then((r) => r.data),
   approveStudent: (id) => api.patch(`/admin/students/${id}/approve`).then((r) => r.data),
-  rejectStudent: (id) => api.patch(`/admin/students/${id}/reject`).then((r) => r.data),
+  rejectStudent: (id, reason) => api.patch(`/admin/students/${id}/reject`, { reason }).then((r) => r.data),
   // Fetched as a blob (not a plain <img src>) so the Authorization header is
   // actually sent — the endpoint is a private, authenticated proxy, not a
   // public/signed URL.
   studentIdPhotoUrl: (id) => api.get(`/admin/students/${id}/id-photo`, { responseType: 'blob' }).then((r) => URL.createObjectURL(r.data)),
+};
+
+// ----- Student ID verification (self-service, own request only) -----
+export const studentIdApi = {
+  status: () => api.get('/student-id/status').then((r) => r.data),
+  // One endpoint for both a first-ever submission and a resubmission after
+  // rejection — the server decides which it is from the account's current
+  // approvalStatus.
+  submit: (formData) =>
+    api.post('/student-id/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
 };
 
 // ----- Reviews (Admin / Super Admin / Faculty — pending student submissions) -----
@@ -182,6 +192,12 @@ export const facultyApi = {
     api
       .post(`/faculty/files/${id}/versions`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: onProgress })
       .then((r) => r.data),
+
+  // ----- Student ID approvals (scoped to this faculty member's assigned Department/Course) -----
+  pendingStudents: () => api.get('/faculty/students/pending').then((r) => r.data),
+  approveStudent: (id) => api.patch(`/faculty/students/${id}/approve`).then((r) => r.data),
+  rejectStudent: (id, reason) => api.patch(`/faculty/students/${id}/reject`, { reason }).then((r) => r.data),
+  studentIdPhotoUrl: (id) => api.get(`/faculty/students/${id}/id-photo`, { responseType: 'blob' }).then((r) => URL.createObjectURL(r.data)),
 };
 
 // ----- Notices & Announcements -----
@@ -209,6 +225,20 @@ export const assignmentApi = {
   listMySubmissions: () => api.get('/assignments/my-submissions').then((r) => r.data),
   listSubmissions: (id) => api.get(`/assignments/${id}/submissions`).then((r) => r.data),
   grade: (id, submissionId, data) => api.patch(`/assignments/${id}/submissions/${submissionId}/grade`, data).then((r) => r.data),
+  // Same blob + temporary-object-URL pattern as feedbackApi.export/
+  // superAdminApi.exportUsers — the endpoint needs the Authorization header,
+  // which a plain <a href> can't send.
+  exportSubmissions: async (id) => {
+    const res = await api.get(`/assignments/${id}/submissions/export`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'submissions-export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ----- Course Enrollment (Regular + Additional: retake/extra/backlog/improvement/advance) -----
@@ -244,6 +274,9 @@ export const questionApi = {
   create: (formData) => api.post('/questions', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   update: (id, formData) => api.patch(`/questions/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   remove: (id) => api.delete(`/questions/${id}`).then((r) => r.data),
+  // Bulk-creates questions parsed from a .docx file — see
+  // server/src/utils/docxQuestionParser.js for the markup it understands.
+  importDocx: (formData) => api.post('/questions/import-docx', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
 };
 
 // ----- Quizzes -----
@@ -264,6 +297,20 @@ export const quizApi = {
   listAttempts: (id) => api.get(`/quizzes/${id}/attempts`).then((r) => r.data),
   gradeAttempt: (id, attemptId, data) => api.patch(`/quizzes/${id}/attempts/${attemptId}/grade`, data).then((r) => r.data),
   analytics: (id) => api.get(`/quizzes/${id}/analytics`).then((r) => r.data),
+  // Same blob + temporary-object-URL pattern as feedbackApi.export/
+  // superAdminApi.exportUsers — the endpoint needs the Authorization header,
+  // which a plain <a href> can't send.
+  exportAttempts: async (id) => {
+    const res = await api.get(`/quizzes/${id}/attempts/export`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'attempts-export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ----- Public Exams (guest-accessible, reuses the Quiz/QuizAttempt engine) -----
@@ -332,6 +379,11 @@ export const superAdminApi = {
   getUser: (id) => api.get(`/super-admin/users/${id}`).then((r) => r.data),
   updateUserRole: (id, role) => api.patch(`/super-admin/users/${id}/role`, { role }).then((r) => r.data),
   updateUserStatus: (id, status) => api.patch(`/super-admin/users/${id}/status`, { status }).then((r) => r.data),
+  // Manual Student ID approval override — student accounts only. Distinct
+  // from adminApi.approveStudent/rejectStudent (queue-driven, pending-only);
+  // this can move any student to any approvalStatus directly.
+  updateUserApproval: (id, approvalStatus, reason) =>
+    api.patch(`/super-admin/users/${id}/approval`, { approvalStatus, reason }).then((r) => r.data),
   updateUserProfile: (id, data) => api.patch(`/super-admin/users/${id}/profile`, data).then((r) => r.data),
   listFiles: (params) => api.get('/super-admin/files', { params }).then((r) => r.data),
   getFile: (id) => api.get(`/super-admin/files/${id}`).then((r) => r.data),

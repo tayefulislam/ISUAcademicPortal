@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, BarChart3 } from 'lucide-react';
+import { X, BarChart3, Download } from 'lucide-react';
 import { quizApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDate } from '../../utils/format.js';
@@ -43,7 +43,17 @@ export default function QuizAttemptsPanel({ quiz, onClose }) {
       <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-slate-800">{quiz.title} — Attempts</h2>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {tab === 'attempts' && attempts.length > 0 && (
+              <button
+                onClick={() => quizApi.exportAttempts(quiz._id)}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
+              >
+                <Download size={15} /> Export CSV
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100"><X size={18} /></button>
+          </div>
         </div>
 
         <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit mb-4">

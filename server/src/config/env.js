@@ -25,6 +25,15 @@ export const env = {
 
   imgbbApiKey: process.env.IMGBB_API_KEY || '',
 
+  // Default for Settings.studentIdStorageProvider (DB-driven, admin-editable
+  // — see models/Settings.js) the first time it's ever read. Falls back to
+  // whatever the general file-storage provider already effectively used for
+  // student-ID photos before this setting existed (s3 if FILE_STORAGE_PROVIDER
+  // was already 's3', imgbb otherwise), so existing deployments see no
+  // behavior change until an admin explicitly picks something else.
+  studentIdStorageProvider:
+    process.env.STUDENT_ID_STORAGE_PROVIDER || (process.env.FILE_STORAGE_PROVIDER === 's3' ? 's3' : 'imgbb'),
+
   uploadcarePublicKey: process.env.UPLOADCARE_PUBLIC_KEY || '',
   uploadcareSecretKey: process.env.UPLOADCARE_SECRET_KEY || '',
 

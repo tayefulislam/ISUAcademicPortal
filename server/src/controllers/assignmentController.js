@@ -2,7 +2,7 @@ import Assignment from '../models/Assignment.js';
 import Submission from '../models/Submission.js';
 import { getSettings } from '../models/Settings.js';
 import { isAdminTierRole, isSuperAdminTier } from '../models/Role.js';
-import { getEffectiveCourseIds } from '../services/courseAccessService.js';
+import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
@@ -244,6 +244,14 @@ export const listMyAssignments = asyncHandler(async (req, res) => {
 // their own department/batch/semester too.
 export const listRelevantAssignments = asyncHandler(async (req, res) => {
   await assertAssignmentSystemEnabled();
+
+  // A pending/rejected student can't see assignments at all (they're always
+  // login-required, no public/restricted split like Files) until an Admin
+  // approves them — same all-or-nothing gate as file content.
+  if (await isBlockedByApproval(req.user)) {
+    return res.json({ success: true, data: [], blockedByApproval: true });
+  }
+
   let filter = { status: { $in: ['published', 'closed'] } };
   if (!isSuperAdminTier(req.user.role) && !(await isAdminTierRole(req.user.role))) {
     filter = { ...filter, ...(await audienceMongoFilter(req.user)) };
@@ -270,8 +278,13 @@ export const getAssignment = asyncHandler(async (req, res) => {
   const isManager = isSuperAdminTier(req.user.role) || assignment.createdBy._id.equals(req.user._id);
   if (!isManager) {
     if (assignment.status === 'draft') throw new ApiError(403, 'This assignment is not published', null, 'FORBIDDEN');
-    if (!(await isAdminTierRole(req.user.role)) && !(await userMatchesTargeting(req.user, assignment))) {
-      throw new ApiError(403, 'This assignment is not targeted to you', null, 'FORBIDDEN');
+    if (!(await isAdminTierRole(req.user.role))) {
+      if (await isBlockedByApproval(req.user)) {
+        throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
+      }
+      if (!(await userMatchesTargeting(req.user, assignment))) {
+        throw new ApiError(403, 'This assignment is not targeted to you', null, 'FORBIDDEN');
+      }
     }
   }
 
@@ -287,8 +300,13 @@ export const submitAssignment = asyncHandler(async (req, res) => {
   if (assignment.status !== 'published') throw new ApiError(400, 'This assignment is not accepting submissions');
 
   const isManager = isSuperAdminTier(req.user.role) || assignment.createdBy.equals(req.user._id);
-  if (!isManager && !(await isAdminTierRole(req.user.role)) && !(await userMatchesTargeting(req.user, assignment))) {
-    throw new ApiError(403, 'This assignment is not targeted to you', null, 'FORBIDDEN');
+  if (!isManager && !(await isAdminTierRole(req.user.role))) {
+    if (await isBlockedByApproval(req.user)) {
+      throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
+    }
+    if (!(await userMatchesTargeting(req.user, assignment))) {
+      throw new ApiError(403, 'This assignment is not targeted to you', null, 'FORBIDDEN');
+    }
   }
 
   const existing = await Submission.findOne({ assignment: assignment._id, student: req.user._id });
@@ -355,6 +373,44 @@ export const listSubmissions = asyncHandler(async (req, res) => {
     .sort({ submittedAt: -1 });
 
   res.json({ success: true, data: submissions });
+});
+
+// GET /assignments/:id/submissions/export — CSV of every submission and its
+// grade, same scope/access rule and query as listSubmissions.
+export const exportSubmissions = asyncHandler(async (req, res) => {
+  const assignment = await Assignment.findById(req.params.id);
+  if (!assignment) throw new ApiError(404, 'Assignment not found');
+  assertManageAccess(assignment, req.user);
+
+  const submissions = await Submission.find({ assignment: assignment._id })
+    .populate({ path: 'student', select: 'name email rollNo department batch', populate: [{ path: 'department', select: 'code' }, { path: 'batch', select: 'name' }] })
+    .sort({ submittedAt: -1 });
+
+  const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = ['Name', 'Email', 'Roll No', 'Department', 'Batch', 'Status', 'Marks', 'Max Marks', 'Feedback', 'Submitted At', 'Graded At'];
+  const rows = submissions.map((s) =>
+    [
+      s.student?.name || '',
+      s.student?.email || '',
+      s.student?.rollNo || '',
+      s.student?.department?.code || '',
+      s.student?.batch?.name || '',
+      s.status,
+      s.marks ?? '',
+      assignment.maxMarks,
+      s.feedback || '',
+      s.submittedAt ? s.submittedAt.toISOString() : '',
+      s.gradedAt ? s.gradedAt.toISOString() : '',
+    ]
+      .map(escapeCsv)
+      .join(',')
+  );
+  const csv = [header.join(','), ...rows].join('\n');
+
+  const safeTitle = assignment.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'assignment';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}-submissions.csv"`);
+  res.send(csv);
 });
 
 export const gradeSubmission = asyncHandler(async (req, res) => {

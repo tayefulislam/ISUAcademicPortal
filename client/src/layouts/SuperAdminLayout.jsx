@@ -1,10 +1,11 @@
-import { LayoutDashboard, Users2, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const links = [
   { to: '/super-admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/super-admin/users', label: 'All Users', icon: Users2 },
+  { to: '/super-admin/approvals', label: 'Student Approvals', icon: UserCheck },
   { to: '/super-admin/faculty', label: 'Faculty', icon: GraduationCap },
   { to: '/super-admin/files', label: 'All Files', icon: FileStack },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquareText },

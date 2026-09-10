@@ -24,6 +24,12 @@ const linkClass = ({ isActive }) =>
 //     roles specifically (e.g. hiding a "act as a student" link from the
 //     unrestricted 'admin' role while still showing it to a custom role
 //     like "CR").
+//   - `hideIfPermission`: a Role permission key — hidden for whoever already
+//     HAS it (the inverse of `permission`). E.g. "Submit Material" is hidden
+//     for anyone who already has the `files` permission (Upload Files is
+//     strictly more capable, so showing both would be redundant/confusing)
+//     — permission-driven rather than a hardcoded role check, per this
+//     app's own navigation-must-be-permission-based rule.
 export default function DashboardShell({ title, links }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -36,6 +42,7 @@ export default function DashboardShell({ title, links }) {
     (l) =>
       (!l.flag || settings?.data?.[l.flag] !== false) &&
       (!l.permission || hasPermission(l.permission)) &&
+      (!l.hideIfPermission || !hasPermission(l.hideIfPermission)) &&
       (!l.excludeRoles || !l.excludeRoles.includes(user?.role))
   );
 

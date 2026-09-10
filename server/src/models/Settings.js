@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { env } from '../config/env.js';
 
 // Singleton document (one row, key: 'global') holding system-wide toggles
 // managed by Super Admin. Accessed only through getSettings/updateSettings
@@ -95,6 +96,18 @@ export const FEATURE_FLAGS = [
     label: 'Allow Advance Course Enrollment',
     description: 'When ON, students can request a course ahead of their current semester.',
   },
+  {
+    key: 'phoneLoginEnabled',
+    label: 'Login with Phone Number',
+    description: 'When ON, users can sign in with their phone number (in addition to email). When OFF, a phone number is never accepted at login, even if one is on file.',
+    default: true,
+  },
+  {
+    key: 'studentIdLoginEnabled',
+    label: 'Login with Student ID',
+    description: 'When ON, users can sign in with their Student ID / Roll No (in addition to email). When OFF, a Student ID is never accepted at login, even if one is on file.',
+    default: true,
+  },
 ];
 
 // Numeric business-rule limits for the Course Enrollment system — separate
@@ -120,9 +133,65 @@ export const NUMERIC_SETTINGS = [
   },
 ];
 
+// Admin-editable single-choice settings — same generic-list pattern as
+// FEATURE_FLAGS/NUMERIC_SETTINGS above (add an entry here + a schema field,
+// no controller change needed), but for a fixed set of string options
+// instead of on/off or a number. Currently just the one setting from the
+// Student ID Storage system spec (§2/§3): which provider new Student ID
+// photos are uploaded to. Switching it never touches already-stored photos
+// (each keeps its own `provider` on User.studentIdImage) — see
+// storageService.js's uploadStudentIdImage/deleteStudentIdImage, which
+// always dispatch on the per-record provider, never this live setting.
+export const STRING_SETTINGS = [
+  {
+    key: 'studentIdStorageProvider',
+    label: 'Student ID Image Storage Provider',
+    description: 'Where newly submitted/resubmitted Student ID photos are uploaded. Changing this does not move or affect already-stored photos.',
+    options: ['imgbb', 's3'],
+    default: env.studentIdStorageProvider,
+  },
+];
+
+// Free-text admin-editable settings validated by a regex rather than a
+// fixed option list — same generic-list contract as FEATURE_FLAGS/
+// NUMERIC_SETTINGS/STRING_SETTINGS above. Currently just the official
+// university email domain: whenever studentApprovalEnabled (above) is ON, a
+// student whose verified email matches this domain is APPROVED automatically
+// the moment their email is verified — unconditionally, no separate enable
+// toggle (see authController.js's maybeAutoApproveStudent/
+// isOfficialUniversityEmail; a prior separate "studentAutoApprovalEnabled"
+// toggle was removed because it was the actual cause of official-domain
+// students getting stuck pending Student ID review — nobody had turned the
+// second toggle on). Everyone else falls through to the normal Student ID
+// submission/approval workflow. Stored WITHOUT the leading '@' (e.g.
+// "isu.ac.bd"), matched by exact host-string equality so a subdomain or a
+// deceptive longer domain never matches unless explicitly configured to.
+export const TEXT_SETTINGS = [
+  {
+    key: 'studentAutoApprovalDomain',
+    label: 'Official University Email Domain',
+    description: 'A student whose verified email ends in @<this domain> is approved automatically — no Student ID submission needed. Stored without the "@". Matched exactly (no automatic subdomain matching) and case-insensitively.',
+    default: 'isu.ac.bd',
+    // Loose hostname shape: labels of letters/digits/hyphens separated by
+    // dots, at least one dot (a bare word is rejected — "localhost" isn't a
+    // real email domain here, and it also guards against someone pasting a
+    // stray "@" or an email address into this field by mistake).
+    pattern: /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i,
+  },
+];
+
 const schemaFields = { key: { type: String, required: true, unique: true, default: 'global' } };
+for (const setting of STRING_SETTINGS) {
+  schemaFields[setting.key] = { type: String, enum: setting.options, default: setting.default };
+}
+for (const setting of TEXT_SETTINGS) {
+  schemaFields[setting.key] = { type: String, default: setting.default, trim: true, lowercase: true };
+}
 for (const flag of FEATURE_FLAGS) {
-  schemaFields[flag.key] = { type: Boolean, default: false };
+  // Every flag defaults OFF unless it opts into `default: true` — used for
+  // flags gating something that should just work out of the box (e.g. the
+  // phone/Student ID login identifiers), rather than an opt-in feature.
+  schemaFields[flag.key] = { type: Boolean, default: flag.default ?? false };
 }
 for (const setting of NUMERIC_SETTINGS) {
   schemaFields[setting.key] = { type: Number, default: 0, min: 0 };

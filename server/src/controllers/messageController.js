@@ -7,6 +7,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
 import { emit } from '../services/notifications/notificationService.js';
+import { isBlockedByApproval } from '../services/courseAccessService.js';
 
 // Direct messaging is scoped to Faculty <-> Student pairs within the
 // faculty's assigned Department/Course (the same heuristic used for
@@ -49,6 +50,13 @@ function pairKeyFor(idA, idB) {
 // GET /messages/contacts — who the current user is allowed to start a new
 // conversation with.
 export const listContacts = asyncHandler(async (req, res) => {
+  // A pending/rejected student can't message anyone (Messaging is always
+  // login-required) until an Admin approves them — same all-or-nothing gate
+  // as file content/Assignments/Quizzes.
+  if (await isBlockedByApproval(req.user)) {
+    return res.json({ success: true, data: [], blockedByApproval: true });
+  }
+
   const { search } = req.query;
   const nameFilter = search ? { name: new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') } : {};
 
@@ -97,6 +105,10 @@ export const listConversations = asyncHandler(async (req, res) => {
 
 // POST /messages/conversations { recipientId }
 export const startConversation = asyncHandler(async (req, res) => {
+  if (await isBlockedByApproval(req.user)) {
+    throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
+  }
+
   const { recipientId } = req.body;
   if (!recipientId) throw new ApiError(400, 'recipientId is required');
   if (String(recipientId) === String(req.user._id)) throw new ApiError(400, 'You cannot message yourself');
@@ -152,6 +164,13 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const conversation = await Conversation.findById(req.params.id);
   if (!conversation) throw new ApiError(404, 'Conversation not found');
   await assertParticipant(conversation, req.user);
+
+  // Only the sender's own approval status matters here — a faculty member
+  // must still be able to reply to a student even if that student later
+  // became pending, so this never blocks based on the *other* participant.
+  if (await isBlockedByApproval(req.user)) {
+    throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
+  }
 
   const { text } = req.body;
   if (!text || !text.trim()) throw new ApiError(400, 'Message text is required');

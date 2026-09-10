@@ -27,7 +27,8 @@ import { getSettings } from '../models/Settings.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
 import { logger } from '../utils/logger.js';
-import { getEffectiveCourseIds } from '../services/courseAccessService.js';
+import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
+import { isSuperAdminTier } from '../models/Role.js';
 
 // Fire-and-forget: never blocks the response, never throws into the
 // controller — a notification failure must not fail a file upload.
@@ -207,6 +208,26 @@ function stripExtension(name) {
   return name.replace(/\.[^/.]+$/, '');
 }
 
+// Course-scope guard for the direct-publish upload paths (uploadFiles /
+// attachUploadcareFiles), shared by /files (admin-tier) and /faculty/files.
+// The unrestricted 'admin' role and super_admin/administrator can upload to
+// any department/course, as before. Faculty's existing behavior is left
+// exactly as it was (out of scope here — see the flagged follow-up).
+// A custom admin-tier Role (e.g. "CR") is new ground: previously completely
+// unrestricted, now scoped to the same "reachable courses" rule Submit
+// Material already enforces (own department's courses, plus any course held
+// via an active/approved CourseEnrollment) — closing a real gap where a CR
+// with just the 'files' permission could otherwise publish into any course
+// in the university by simply typing a different department/course id.
+export async function assertUploadScope(user, meta) {
+  if (user.role === 'admin' || isSuperAdminTier(user.role) || user.role === 'faculty') return;
+
+  const effectiveCourseIds = await getEffectiveCourseIds(user);
+  if (!effectiveCourseIds.includes(String(meta.course._id))) {
+    throw new ApiError(403, 'You can only upload to a course in your own department or one you are enrolled in', null, 'FORBIDDEN');
+  }
+}
+
 // Accepts one or more files (req.files) uploaded together under one shared
 // title and metadata (department/course/batch/category/etc). All of them
 // become a single File document — its `attachments` array holds each
@@ -218,6 +239,7 @@ export const uploadFiles = asyncHandler(async (req, res) => {
 
   const { title, description, semester, academicYear } = req.body;
   const meta = await resolveUploadMetadata(req.body);
+  await assertUploadScope(req.user, meta);
 
   const attachments = [];
   const failed = [];
@@ -272,6 +294,7 @@ export const attachUploadcareFiles = asyncHandler(async (req, res) => {
   }
 
   const meta = await resolveUploadMetadata(req.body);
+  await assertUploadScope(req.user, meta);
 
   const attachments = files.map((f) => {
     if (!f.uuid) throw new ApiError(400, 'Each file needs an Uploadcare uuid');
@@ -319,6 +342,13 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   if (!settings.studentUploadEnabled) {
     throw new ApiError(400, 'Student material uploads are currently disabled');
+  }
+
+  // A pending/rejected student can't submit material either — Submit
+  // Material is login-required like everything else gated by
+  // isBlockedByApproval (Files, Assignments, Quizzes, Messaging).
+  if (await isBlockedByApproval(req.user)) {
+    throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
   }
 
   const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
@@ -625,8 +655,14 @@ export const replaceFileVersion = asyncHandler(async (req, res) => {
   }
   if (!attachments.length) throw new ApiError(502, 'All uploads failed', failed);
 
+  // Snapshot exactly which objects are being superseded before touching the
+  // document — deletion below (after save succeeds) targets only these
+  // specific storageRefs, never anything derived after the fact, so a
+  // concurrent replace on a different file can't have its objects deleted.
+  const outgoingAttachments = file.attachments;
+
   file.versions.push({
-    attachments: file.attachments,
+    attachments: outgoingAttachments,
     title: file.title,
     description: file.description,
     fileSize: file.fileSize,
@@ -649,7 +685,28 @@ export const replaceFileVersion = asyncHandler(async (req, res) => {
   file.storageRef = primary.storageRef;
   file.currentVersion += 1;
 
-  await file.save();
+  try {
+    await file.save();
+  } catch (err) {
+    // The new file(s) uploaded successfully but the database update failed —
+    // clean up the orphan(s) we just created rather than leaving them
+    // unreferenced in storage. The document was never mutated in the DB (the
+    // save() that would have persisted `file.attachments` above never
+    // completed), so the old file/version history remains exactly as it was.
+    await Promise.all(attachments.map((a) => deleteStoredFile(a).catch(() => null)));
+    throw err;
+  }
+
+  // Only now — after the database durably points at the new attachments —
+  // remove the superseded ones from storage. Best-effort: a deletion
+  // failure here must not undo an already-successful replace; it's logged
+  // and the new file stays active (see spec's "do not roll back on cleanup
+  // failure" rule).
+  Promise.all(outgoingAttachments.map((a) => deleteStoredFile(a).catch((err) => {
+    logger.error(err, { req, source: 'fileController.replaceFileVersion', meta: { action: 'FILE_CLEANUP_FAILED', targetId: file._id, storageRef: a.storageRef } });
+  }))).then(() => {
+    logger.info('Old material file version deleted', { req, source: 'fileController.replaceFileVersion', meta: { action: 'OLD_FILE_DELETED', targetId: file._id } });
+  });
 
   notifyCourseMaterial(file, req.user, 'FILE_UPDATED');
   res.status(201).json({ success: true, message: 'New version uploaded', data: file, failed: failed.length ? failed : undefined });

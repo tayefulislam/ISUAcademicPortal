@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3 } from 'lucide-react';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
@@ -24,8 +24,16 @@ export default function Dashboard() {
     queryFn: assignmentApi.list,
     retry: false,
   });
-  const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
+  const { data: settings, isLoading: loadingSettings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
   const messagingEnabled = settings?.data?.messagingSystemEnabled !== false;
+  // Mirrors the server's own isBlockedByApproval() gate (courseAccessService.js)
+  // — a pending/rejected student is redirected away from the Dashboard
+  // entirely (spec: they must not see Dashboard, My Courses, Assignments,
+  // Quizzes, Messages, Submit Material, or other protected academic content
+  // — only Profile/Logout). The server-side gate is the real enforcement;
+  // this redirect is purely the matching UX so they land somewhere that
+  // explains why, instead of a broken-looking empty Dashboard.
+  const isPendingApproval = user?.role === 'student' && !!settings?.data?.studentApprovalEnabled && user?.approvalStatus !== 'approved';
 
   const recommended = data?.data?.recommended || [];
   const recent = data?.data?.recent || [];
@@ -33,6 +41,15 @@ export default function Dashboard() {
   const submissions = mine?.data || [];
   const notices = (noticesData?.data || []).slice(0, 3);
   const pendingAssignments = (assignmentsData?.data || []).filter((a) => a.status === 'published' && (!a.mySubmission || a.mySubmission.status !== 'graded')).slice(0, 3);
+
+  // Settings must resolve first — deciding too early (while still loading)
+  // would render the full Dashboard for a split second before redirecting.
+  if (loadingSettings) {
+    return <div className="max-w-7xl mx-auto px-4 py-16 text-center text-slate-400">Loading...</div>;
+  }
+  if (isPendingApproval) {
+    return <Navigate to="/pending-approval" replace />;
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">

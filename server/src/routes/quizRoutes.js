@@ -12,6 +12,7 @@ import {
   submitAttempt,
   listMyAttempts,
   listAttemptsForQuiz,
+  exportAttempts,
   gradeAttempt,
   getQuizAnalytics,
 } from '../controllers/quizController.js';
@@ -33,6 +34,9 @@ router.patch('/:id', isStaff, updateQuiz);
 router.delete('/:id', isStaff, deleteQuiz);
 
 router.post('/:id/start', startAttempt);
+// Registered before /:id/attempts/:attemptId so this literal path isn't
+// swallowed as an attemptId param.
+router.get('/:id/attempts/export', isStaff, exportAttempts);
 router.get('/:id/attempts/:attemptId', getAttempt);
 router.patch('/:id/attempts/:attemptId/answer', saveAnswer);
 router.post('/:id/attempts/:attemptId/submit', submitAttempt);

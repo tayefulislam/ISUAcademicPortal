@@ -17,6 +17,11 @@ export default function QuizAttempt() {
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // In-app confirmation instead of window.confirm() — the native dialog is a
+  // known silent no-op (returns undefined, never actually prompts) when this
+  // app is running as an installed PWA in standalone display mode on iOS
+  // Safari, which made "Submit Quiz" appear completely dead on those devices.
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
   const saveTimers = useRef({});
 
   useEffect(() => {
@@ -144,7 +149,7 @@ export default function QuizAttempt() {
             ) : (
               <button
                 disabled={submitting}
-                onClick={() => confirm('Submit the quiz? You cannot change answers after this.') && doSubmit(false)}
+                onClick={() => setConfirmingSubmit(true)}
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-60"
               >
                 {submitting ? 'Submitting...' : 'Submit Quiz'}
@@ -178,13 +183,36 @@ export default function QuizAttempt() {
           </div>
           <button
             disabled={submitting}
-            onClick={() => confirm('Submit the quiz? You cannot change answers after this.') && doSubmit(false)}
+            onClick={() => setConfirmingSubmit(true)}
             className="w-full mt-4 h-9 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-60"
           >
             Submit Quiz
           </button>
         </div>
       </div>
+
+      {confirmingSubmit && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmingSubmit(false)}>
+          <div className="bg-white rounded-xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-slate-800 mb-2">Submit the quiz?</h2>
+            <p className="text-sm text-slate-500 mb-5">You cannot change your answers after this.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmingSubmit(false)} className="flex-1 h-10 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmingSubmit(false);
+                  doSubmit(false);
+                }}
+                className="flex-1 h-10 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

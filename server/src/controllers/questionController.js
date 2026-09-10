@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { parseDocxQuestions } from '../utils/docxQuestionParser.js';
 import {
   tokenize,
   scoreDocument,
@@ -118,6 +119,56 @@ export const createQuestion = asyncHandler(async (req, res) => {
   });
 
   res.status(201).json({ success: true, data: question });
+});
+
+// POST /questions/import-docx — bulk-creates questions parsed out of a
+// single .docx file (see utils/docxQuestionParser.js for the markup it
+// understands) into one shared Department/Course/Chapter/Topic scope, since
+// none of that can be reliably inferred from the document text itself —
+// the same scope a faculty member would pick in the regular create form.
+// Malformed individual questions are skipped (with a reason) rather than
+// failing the whole import, so one typo doesn't cost the other 49 questions.
+export const importQuestionsFromDocx = asyncHandler(async (req, res) => {
+  const { department, course, chapter, topic } = req.body;
+  if (!department || !course) throw new ApiError(400, 'Department and course are required');
+  if (req.user.role === 'faculty') assertFacultyScope(department, course, req.user);
+  if (!req.file) throw new ApiError(400, 'A .docx file is required');
+
+  const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (req.file.mimetype !== DOCX_MIME && !req.file.originalname?.toLowerCase().endsWith('.docx')) {
+    throw new ApiError(400, 'Only .docx files are supported');
+  }
+
+  const { results } = await parseDocxQuestions(req.file.buffer);
+
+  const created = [];
+  const skipped = [];
+  for (const result of results) {
+    if (!result.ok) {
+      skipped.push({ index: result.index + 1, text: result.rawText, reason: result.message });
+      continue;
+    }
+    try {
+      const question = await Question.create({
+        ...result.data,
+        department,
+        course,
+        chapter: chapter || null,
+        topic: topic || null,
+        visibility: req.body.visibility === 'public' ? 'public' : 'private',
+        createdBy: req.user._id,
+      });
+      created.push({ index: result.index + 1, id: question._id, text: question.text });
+    } catch (err) {
+      skipped.push({ index: result.index + 1, text: result.data.text, reason: err.message });
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    message: `${created.length} of ${results.length} question(s) imported${skipped.length ? `, ${skipped.length} skipped` : ''}`,
+    data: { created, skipped, total: results.length },
+  });
 });
 
 export const updateQuestion = asyncHandler(async (req, res) => {

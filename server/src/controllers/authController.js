@@ -5,10 +5,10 @@ import { ApiError } from '../utils/ApiError.js';
 import { signToken } from '../utils/jwt.js';
 import { getSettings, FEATURE_FLAGS } from '../models/Settings.js';
 import { getRole, PERMISSION_MODULES } from '../models/Role.js';
-import { storePrivateImage } from '../services/storage/storageService.js';
 import { sendEmail } from '../services/email/emailService.js';
 import { otpEmail, passwordResetEmail } from '../services/email/templates.js';
 import { env } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
@@ -39,6 +39,76 @@ function generateOtpCode() {
   return String(crypto.randomInt(100000, 999999));
 }
 
+// Exact-domain match only — deliberately NOT `.endsWith()`/`.includes()`,
+// which would let "student@fakeisu.ac.bd" match a configured "isu.ac.bd"
+// (string suffix match), and deliberately NOT satisfied by a subdomain like
+// "mail.isu.ac.bd" unless an admin explicitly configures that exact string
+// as the domain — see spec's §1.6/§1.7. Both sides are lowercased/trimmed
+// (the User email is already lowercase on save; Settings.studentAutoApprovalDomain
+// is lowercase/trim by schema) so this only needs a straight equality check.
+export function emailDomainMatches(email, configuredDomain) {
+  if (!configuredDomain) return false;
+  const at = String(email || '').lastIndexOf('@');
+  if (at === -1) return false;
+  const domain = email.slice(at + 1).toLowerCase();
+  return domain === configuredDomain.toLowerCase();
+}
+
+// Named to match the spec exactly — a thin, readable wrapper around the
+// exact-match primitive above. Normalizes (lowercases/trims) internally via
+// emailDomainMatches; reads the configured domain from server-side Settings,
+// never from anything client-supplied.
+export function isOfficialUniversityEmail(email, settings) {
+  return emailDomainMatches(email, settings?.studentAutoApprovalDomain);
+}
+
+// The single choke point for the auto-approval decision — called from
+// register() (when OTP verification is globally OFF, so emailVerified is
+// already true at account creation) and from verifyOtp() (when it's ON,
+// right after a real OTP is confirmed). Reuses the EXISTING approvalStatus
+// field/workflow (the same one Student ID review drives — see
+// studentApprovalController.js) rather than adding a second parallel
+// "account approved" flag: this only ever fires while that field is still
+// 'pending', so it's just a different, automatic path to the same status a
+// human reviewer would otherwise set, never a status human review can't
+// also reach or override.
+//
+// Unconditional whenever the general studentApprovalEnabled system is ON —
+// there is deliberately NO separate "auto-approval enabled" toggle. An
+// earlier version had one, defaulted OFF, and that second toggle being left
+// off was exactly why official-university-email students were getting
+// stuck waiting for manual Student ID review despite a verified official
+// email — the bug this function's current shape fixes.
+//
+// Every condition is re-checked against the DATABASE user record and
+// server-side Settings — never anything the client sent (no
+// `emailVerified`/`approved`/`approvalStatus` field in any request body is
+// ever read here).
+export async function maybeAutoApproveStudent(user, settings, req) {
+  if (user.role !== 'student') return;
+  if (user.approvalStatus !== 'pending') return; // nothing to auto-approve
+  if (!user.emailVerified) return; // OTP/email verification is mandatory, never skippable
+  if (!isOfficialUniversityEmail(user.email, settings)) return;
+
+  user.approvalStatus = 'approved';
+  user.approvedBy = null; // system-triggered, not a human reviewer
+  user.approvedAt = new Date();
+  user.approvalRole = 'system';
+  user.rejectionReason = '';
+  user.approvalHistory.push({ action: 'AUTO_APPROVED', performedBy: null, performedAt: new Date() });
+
+  logger.info('Student auto-approved via verified university email', {
+    req,
+    source: 'studentId',
+    meta: {
+      action: 'AUTO_APPROVED',
+      reason: 'VERIFIED_UNIVERSITY_EMAIL',
+      emailDomain: settings.studentAutoApprovalDomain,
+      userId: user._id,
+    },
+  });
+}
+
 // Public (unauthenticated) read of feature toggles — client pages use this
 // to show/hide gated UI (registration photo requirement, Submit Material,
 // Feedback form, etc). Never exposes anything beyond the boolean flags.
@@ -51,7 +121,7 @@ export const getPublicSettings = asyncHandler(async (req, res) => {
 export const register = asyncHandler(async (req, res) => {
   // Only these fields are ever read from the request — role/status/tokenVersion
   // are never accepted from the client, no matter what the body contains.
-  const { name, email, password, department, batch, semester, rollNo } = req.body;
+  const { name, email, password, department, batch, semester, rollNo, phone } = req.body;
 
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) {
@@ -72,17 +142,25 @@ export const register = asyncHandler(async (req, res) => {
     }
   }
 
-  const settings = await getSettings();
-  let studentIdImageKey = '';
-  let approvalStatus = 'approved';
-
-  if (settings.studentApprovalEnabled) {
-    if (!req.file) {
-      throw new ApiError(400, 'A Student ID photo is required while the approval system is enabled');
+  // Phone is also usable as a login identifier (see login() below), so it
+  // needs the same uniqueness guarantee/pre-check as rollNo/email.
+  const trimmedPhone = phone?.trim();
+  if (trimmedPhone) {
+    const duplicatePhone = await User.findOne({ phone: trimmedPhone });
+    if (duplicatePhone) {
+      throw new ApiError(409, 'This phone number is already registered to another account');
     }
-    studentIdImageKey = await storePrivateImage(req.file.buffer, req.file.originalname);
-    approvalStatus = 'pending';
   }
+
+  const settings = await getSettings();
+  // Student ID (the verification photo) is NOT collected here — registration
+  // only ever creates the account. Whether this student ends up needing to
+  // submit one is decided after their email is verified (see
+  // maybeAutoApproveStudent below and /student-id/submit in
+  // studentApprovalController.js): an official-university-email student
+  // never needs one at all; anyone else is routed to submit one
+  // post-registration, not during it.
+  const approvalStatus = settings.studentApprovalEnabled ? 'pending' : 'approved';
 
   // Public registration always creates a student account; admin/super_admin
   // are provisioned via the seed script or by an existing Super Admin.
@@ -94,11 +172,12 @@ export const register = asyncHandler(async (req, res) => {
     batch: batch || null,
     semester: semester || null,
     rollNo: trimmedRollNo || '',
+    phone: trimmedPhone || '',
     role: 'student',
-    studentIdImageKey,
     approvalStatus,
     emailVerified: !settings.otpVerificationEnabled,
   });
+  logger.info('Student registered', { req, source: 'studentId', meta: { userId: user._id, action: 'STUDENT_REGISTERED' } });
 
   if (settings.otpVerificationEnabled) {
     const code = generateOtpCode();
@@ -107,6 +186,14 @@ export const register = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
     const { subject, html, text } = otpEmail(code);
     await sendEmail({ to: user.email, subject, html, text });
+  } else {
+    // No OTP step exists in this configuration — emailVerified is already
+    // true from the moment the account was created above, so this is the
+    // right (and only) place to run the auto-approval check for this path.
+    // When OTP IS enabled, emailVerified is still false here and this is a
+    // guaranteed no-op — the real check for that path runs in verifyOtp().
+    await maybeAutoApproveStudent(user, settings, req);
+    if (user.isModified()) await user.save({ validateBeforeSave: false });
   }
 
   // While OTP verification is required, no token is issued yet — the client
@@ -116,25 +203,52 @@ export const register = asyncHandler(async (req, res) => {
     success: true,
     message: settings.otpVerificationEnabled
       ? 'Account created — check your email for a verification code'
-      : approvalStatus === 'pending'
-        ? 'Account created, pending admin approval'
-        : 'Account created',
+      : user.approvalStatus === 'approved' && approvalStatus === 'pending'
+        ? 'Account created — your student account has been automatically approved'
+        : approvalStatus === 'pending'
+          ? 'Account created — please submit your Student ID to complete verification'
+          : 'Account created',
     data: { user: user.toSafeObject(), token, requiresOtp: settings.otpVerificationEnabled },
   });
 });
 
+// Signing in accepts email, Student ID (rollNo), or phone number — all in
+// the one `identifier` field — since a student may not always remember
+// which one they registered/are expected to use. Matched as: email
+// case-insensitively (mirrors its lowercase-on-save storage), rollNo/phone
+// as exact strings (neither is lowercased). The empty-string guard below
+// keeps this correct even if ever called without going through the route's
+// own express-validator notEmpty() check — see that guard's own comment.
+//
+// Super Admin can turn rollNo/phone login off independently
+// (Settings.studentIdLoginEnabled / phoneLoginEnabled, both default ON) —
+// when off, that identifier is never matched at login even though it's
+// still stored on the account (e.g. still usable for e.g. contact info or
+// re-enabled later), so a user can't work around the toggle by just typing
+// their disabled identifier.
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { identifier, password } = req.body;
+  const cleaned = String(identifier || '').trim();
+  // Never trust the route's express-validator notEmpty() check alone here —
+  // an empty `cleaned` would otherwise build a query matching rollNo/phone's
+  // own blank ('') schema default, i.e. any account that has never set
+  // either, rather than matching nothing as intended.
+  if (!cleaned) throw new ApiError(401, 'Invalid credentials');
 
-  const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+  const settings = await getSettings();
+
+  const or = [{ email: cleaned.toLowerCase() }];
+  if (settings.studentIdLoginEnabled) or.push({ rollNo: cleaned });
+  if (settings.phoneLoginEnabled) or.push({ phone: cleaned });
+
+  const user = await User.findOne({ $or: or }).select('+password');
   if (!user || !(await user.comparePassword(password))) {
-    throw new ApiError(401, 'Invalid email or password');
+    throw new ApiError(401, 'Invalid credentials');
   }
   if (user.status === 'blocked') {
     throw new ApiError(403, 'Your account has been blocked', null, 'FORBIDDEN');
   }
 
-  const settings = await getSettings();
   if (settings.otpVerificationEnabled && !user.emailVerified) {
     throw new ApiError(403, 'Please verify your email before logging in', null, 'EMAIL_NOT_VERIFIED');
   }
@@ -215,10 +329,26 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   user.otpExpiresAt = null;
   user.lastLogin = new Date();
   user.lastLoginIp = req.ip;
+  logger.info('Email verified via OTP', { req, source: 'studentId', meta: { userId: user._id, action: 'EMAIL_VERIFIED' } });
+
+  const settings = await getSettings();
+  const wasPending = user.approvalStatus === 'pending';
+  await maybeAutoApproveStudent(user, settings, req);
+  const autoApproved = wasPending && user.approvalStatus === 'approved';
+
   await user.save({ validateBeforeSave: false });
 
   const token = signToken(user);
-  res.json({ success: true, message: 'Email verified', data: { user: await withPermissions(user), token } });
+  const requiresStudentId = user.role === 'student' && user.approvalStatus === 'pending';
+  res.json({
+    success: true,
+    message: autoApproved
+      ? 'Email verified successfully. Your student account has been automatically approved.'
+      : requiresStudentId
+        ? 'Email verified. Your email is not an official university email — please submit your Student ID to complete verification.'
+        : 'Email verified',
+    data: { user: await withPermissions(user), token, autoApproved, requiresStudentId },
+  });
 });
 
 // ----- Password reset -----

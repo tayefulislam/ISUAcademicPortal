@@ -11,6 +11,7 @@ import {
   getMySubmission,
   listMySubmissions,
   listSubmissions,
+  exportSubmissions,
   gradeSubmission,
 } from '../controllers/assignmentController.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
@@ -50,6 +51,9 @@ router.delete('/:id', isStaff, deleteAssignment);
 router.post('/:id/submit', upload.array('files', MAX_FILES_PER_UPLOAD), submitAssignment);
 router.get('/:id/my-submission', getMySubmission);
 
+// Registered before /:id/submissions/:submissionId/... so this literal path
+// isn't swallowed as a submissionId param.
+router.get('/:id/submissions/export', isStaff, exportSubmissions);
 router.get('/:id/submissions', isStaff, listSubmissions);
 router.patch('/:id/submissions/:submissionId/grade', isStaff, gradeSubmission);
 

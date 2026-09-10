@@ -5,6 +5,7 @@ import {
   getUser,
   updateUserRole,
   updateUserStatus,
+  updateUserApproval,
   updateUserProfile,
   listAllFiles,
   getAnyFile,
@@ -31,6 +32,7 @@ router.get('/users/export', exportUsers);
 router.get('/users/:id', getUser);
 router.patch('/users/:id/role', updateUserRole);
 router.patch('/users/:id/status', updateUserStatus);
+router.patch('/users/:id/approval', updateUserApproval);
 router.patch('/users/:id/profile', updateUserProfile);
 
 router.get('/files', listAllFiles);

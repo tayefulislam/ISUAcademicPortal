@@ -3,7 +3,7 @@ import QuizAttempt from '../models/QuizAttempt.js';
 import Question from '../models/Question.js';
 import { getSettings } from '../models/Settings.js';
 import { isAdminTierRole, isSuperAdminTier } from '../models/Role.js';
-import { getEffectiveCourseIds } from '../services/courseAccessService.js';
+import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
 import {
   generateAttemptSnapshot,
   hydrateAttemptForStudent,
@@ -389,6 +389,14 @@ export const getQuizForManage = asyncHandler(async (req, res) => {
 // metadata only (no questions/answers).
 export const listRelevantQuizzes = asyncHandler(async (req, res) => {
   await assertQuizSystemEnabled();
+
+  // A pending/rejected student can't see quizzes at all (always
+  // login-required, no public/restricted split like Files) until an Admin
+  // approves them — same all-or-nothing gate as file content.
+  if (await isBlockedByApproval(req.user)) {
+    return res.json({ success: true, data: [], blockedByApproval: true });
+  }
+
   let filter = { status: { $in: ['published', 'closed'] } };
   if (!isSuperAdminTier(req.user.role) && !(await isAdminTierRole(req.user.role))) {
     filter = { ...filter, ...(await audienceMongoFilter(req.user)) };
@@ -433,8 +441,13 @@ export const startAttempt = asyncHandler(async (req, res) => {
   if (now > quiz.endAt) throw new ApiError(400, 'This quiz window has closed');
 
   const isManager = isSuperAdminTier(req.user.role) || quiz.createdBy.equals(req.user._id);
-  if (!isManager && !(await isAdminTierRole(req.user.role)) && !(await userMatchesTargeting(req.user, quiz))) {
-    throw new ApiError(403, 'This quiz is not targeted to you', null, 'FORBIDDEN');
+  if (!isManager && !(await isAdminTierRole(req.user.role))) {
+    if (await isBlockedByApproval(req.user)) {
+      throw new ApiError(403, 'Your account is pending admin approval', null, 'FORBIDDEN');
+    }
+    if (!(await userMatchesTargeting(req.user, quiz))) {
+      throw new ApiError(403, 'This quiz is not targeted to you', null, 'FORBIDDEN');
+    }
   }
 
   const existing = await QuizAttempt.findOne({ quiz: quiz._id, student: req.user._id, status: 'in_progress' });
@@ -547,6 +560,47 @@ export const listAttemptsForQuiz = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 });
 
   res.json({ success: true, data: attempts });
+});
+
+// GET /quizzes/:id/attempts/export — CSV of every attempt and its score,
+// same scope/access rule as listAttemptsForQuiz. A guest (public exam)
+// attempt has no `student` — its `participant` name/email is used instead.
+export const exportAttempts = asyncHandler(async (req, res) => {
+  const quiz = await Quiz.findById(req.params.id);
+  if (!quiz) throw new ApiError(404, 'Quiz not found');
+  assertManageAccess(quiz, req.user);
+
+  const attempts = await QuizAttempt.find({ quiz: quiz._id })
+    .populate({ path: 'student', select: 'name email rollNo department batch', populate: [{ path: 'department', select: 'code' }, { path: 'batch', select: 'name' }] })
+    .sort({ createdAt: -1 });
+
+  const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = ['Name', 'Email', 'Roll No', 'Department', 'Batch', 'Attempt #', 'Status', 'Score', 'Total Marks', 'Passing Marks', 'Started At', 'Submitted At', 'Graded At'];
+  const rows = attempts.map((a) =>
+    [
+      (a.isGuestAttempt ? a.participant?.name : a.student?.name) || '',
+      (a.isGuestAttempt ? a.participant?.email : a.student?.email) || '',
+      a.isGuestAttempt ? '' : a.student?.rollNo || '',
+      a.isGuestAttempt ? '' : a.student?.department?.code || '',
+      a.isGuestAttempt ? '' : a.student?.batch?.name || '',
+      a.attemptNumber,
+      a.status,
+      a.totalScore ?? '',
+      quiz.totalMarks,
+      quiz.passingMarks ?? '',
+      a.startedAt ? a.startedAt.toISOString() : '',
+      a.submittedAt ? a.submittedAt.toISOString() : '',
+      a.gradedAt ? a.gradedAt.toISOString() : '',
+    ]
+      .map(escapeCsv)
+      .join(',')
+  );
+  const csv = [header.join(','), ...rows].join('\n');
+
+  const safeTitle = quiz.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'quiz';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}-attempts.csv"`);
+  res.send(csv);
 });
 
 // PATCH /quizzes/:id/attempts/:attemptId/grade — manual grading for

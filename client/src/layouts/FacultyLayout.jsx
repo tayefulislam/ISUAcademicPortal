@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users, HelpCircle, UserCheck } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 
 const links = [
@@ -6,6 +6,7 @@ const links = [
   { to: '/faculty/courses', label: 'My Courses', icon: BookOpen },
   { to: '/faculty/upload', label: 'Upload Material', icon: Upload },
   { to: '/faculty/reviews', label: 'Review Submissions', icon: ClipboardCheck },
+  { to: '/faculty/student-id-approvals', label: 'Student ID Approvals', icon: UserCheck },
   { to: '/faculty/files', label: 'Assigned Materials', icon: FileStack },
   { to: '/faculty/chapters-topics', label: 'Chapters & Topics', icon: Layers, flag: 'facultyChapterTopicEnabled' },
   { to: '/faculty/notices', label: 'Notices', icon: Megaphone },

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide, CloudUpload, HardDrive } from 'lucide-react';
 import { FileUploaderRegular } from '@uploadcare/react-uploader';
@@ -6,6 +6,7 @@ import '@uploadcare/react-uploader/core.css';
 import { departmentApi, courseApi, batchApi, categoryApi, chapterApi, topicApi, semesterApi, adminApi, fileApi } from '../../api/endpoints.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { formatBytes } from '../../utils/format.js';
 
 const UPLOADCARE_PUBKEY = import.meta.env.VITE_UPLOADCARE_PUBLIC_KEY;
@@ -42,13 +43,40 @@ export default function AdminUpload() {
   const [submitting, setSubmitting] = useState(false);
   const uploaderRef = useRef(null);
   const { toast } = useToast();
+  const { user, isAdminTier } = useAuth();
 
-  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
+  // The unrestricted 'admin' role (and Super Admin/Administrator, who don't
+  // reach this page as `isAdminTier` normally) can upload to any department/
+  // course, same as always. Any OTHER admin-tier role (e.g. "CR") is scoped
+  // to their own reachable courses — server-side enforced independently
+  // (fileController.js's assertUploadScope), this is just the matching UX so
+  // the dropdown never offers a course the upload would then 403 on. Mirrors
+  // StudentSubmitMaterial.jsx's identical courseApi.mine() pattern exactly.
+  const scoped = isAdminTier && user?.role !== 'admin';
+
+  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list, enabled: !scoped });
   const { data: courses } = useQuery({
     queryKey: ['courses', form.departmentId],
     queryFn: () => courseApi.list({ department: form.departmentId, limit: 200 }),
-    enabled: !!form.departmentId,
+    enabled: !scoped && !!form.departmentId,
   });
+
+  const { data: myCourses } = useQuery({ queryKey: ['my-reachable-courses'], queryFn: courseApi.mine, enabled: scoped });
+  const allMyCourses = myCourses?.data || [];
+  const myDepartments = useMemo(() => {
+    const byId = new Map();
+    for (const c of allMyCourses) {
+      if (c.department?._id) byId.set(c.department._id, c.department);
+    }
+    return [...byId.values()];
+  }, [allMyCourses]);
+  const myCoursesInSelectedDept = useMemo(
+    () => allMyCourses.filter((c) => String(c.department?._id) === String(form.departmentId)),
+    [allMyCourses, form.departmentId]
+  );
+
+  const departmentOptions = scoped ? myDepartments : departments?.data || [];
+  const courseOptions = scoped ? myCoursesInSelectedDept : courses?.data || [];
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list });
   const { data: chapters } = useQuery({
@@ -277,7 +305,7 @@ export default function AdminUpload() {
               onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '' }))}
               placeholder="Select"
               searchPlaceholder="Search departments..."
-              options={(departments?.data || []).map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
+              options={departmentOptions.map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
             />
           </Field>
           <Field label="Course" required>
@@ -288,7 +316,7 @@ export default function AdminUpload() {
               onChange={(v) => setForm((f) => ({ ...f, courseIdRef: v, chapterId: '', topicId: '' }))}
               placeholder="Select"
               searchPlaceholder="Search courses..."
-              options={(courses?.data || []).map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
+              options={courseOptions.map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
             />
           </Field>
           <Field label="Material Type" required>

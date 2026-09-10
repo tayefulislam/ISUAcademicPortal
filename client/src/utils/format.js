@@ -13,6 +13,21 @@ export function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+// Exact date+time in Bangladesh Standard Time (UTC+6, no DST) — deliberately
+// fixed to this one timezone rather than the viewer's own (unlike
+// formatDate/formatTime above), for exam start/end times: every student is
+// in the same institution, so an absolute time stated in the institution's
+// own timezone is unambiguous, where "your local time" would silently shift
+// per viewer and no longer match what a countdown next to it is counting
+// down to.
+export function formatBST(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const datePart = d.toLocaleDateString('en-US', { timeZone: 'Asia/Dhaka', year: 'numeric', month: 'short', day: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit' });
+  return `${datePart}, ${timePart} BST`;
+}
+
 export function resolveFileUrl(fileUrl) {
   if (!fileUrl) return '';
   if (fileUrl.startsWith('http')) return fileUrl;

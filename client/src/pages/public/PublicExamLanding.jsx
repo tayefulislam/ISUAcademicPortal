@@ -5,7 +5,8 @@ import { Lock, Clock, FileQuestion, Award, GraduationCap } from 'lucide-react';
 import { publicExamApi } from '../../api/endpoints.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
-import { formatDate } from '../../utils/format.js';
+import { useCountdownTo } from '../../components/exam/useCountdown.js';
+import { formatBST } from '../../utils/format.js';
 
 const UNAVAILABLE_MESSAGE = {
   disabled: 'This exam is currently unavailable.',
@@ -21,7 +22,7 @@ export default function PublicExamLanding() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { data, isLoading, isError } = useQuery({ queryKey: ['public-exam', slug], queryFn: () => publicExamApi.landing(slug), retry: false });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['public-exam', slug], queryFn: () => publicExamApi.landing(slug), retry: false });
   const exam = data?.data;
 
   const [passwordToken, setPasswordToken] = useState(null);
@@ -29,6 +30,14 @@ export default function PublicExamLanding() {
   const [verifying, setVerifying] = useState(false);
   const [participant, setParticipant] = useState({ name: user?.name || '', email: user?.email || '', phone: '' });
   const [starting, setStarting] = useState(false);
+
+  // Re-fetches the landing data once the countdown reaches zero — the
+  // server derives `status` ('scheduled' -> 'active') itself, so the page
+  // asks it again rather than guessing the flip client-side (other
+  // status-dependent fields, e.g. password/login gating, could theoretically
+  // change between now and startAt too).
+  const isScheduled = exam?.status === 'scheduled';
+  const { label: startsInLabel } = useCountdownTo(isScheduled ? exam.startAt : null, () => refetch());
 
   if (isLoading) return <div className="max-w-2xl mx-auto px-4 py-16 text-center text-slate-400">Loading exam...</div>;
   if (isError || !exam) {
@@ -86,12 +95,17 @@ export default function PublicExamLanding() {
           <span className="flex items-center gap-1.5"><Clock size={16} className="text-brand-600" /> {exam.duration} Minutes</span>
           <span className="flex items-center gap-1.5"><Award size={16} className="text-brand-600" /> {exam.totalMarks} Marks</span>
         </div>
-        <p className="text-xs text-slate-400 mt-3">Available: {formatDate(exam.startAt)} &ndash; {formatDate(exam.endAt)}</p>
+        <p className="text-xs text-slate-400 mt-3">Available: {formatBST(exam.startAt)} &ndash; {formatBST(exam.endAt)}</p>
       </div>
 
       {!canStart ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center text-amber-800">
-          {UNAVAILABLE_MESSAGE[exam.status] || 'This exam is currently unavailable.'}
+          <p>{UNAVAILABLE_MESSAGE[exam.status] || 'This exam is currently unavailable.'}</p>
+          {isScheduled && (
+            <p className="flex items-center justify-center gap-2 mt-3 text-2xl font-mono font-semibold" title={`Opens ${formatBST(exam.startAt)}`}>
+              <Clock size={20} /> {startsInLabel}
+            </p>
+          )}
         </div>
       ) : loginRequired ? (
         <div className="bg-white border border-slate-200 rounded-xl p-6 text-center">

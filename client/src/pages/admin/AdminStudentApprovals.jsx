@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, X } from 'lucide-react';
+import { Check, X, RotateCcw } from 'lucide-react';
 import { adminApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDate } from '../../utils/format.js';
 
-export default function AdminStudentApprovals() {
+// Shared by the Admin ("Student Approvals", /admin/approvals) and Faculty
+// ("Student ID Approvals", /faculty/student-id-approvals) pages — same
+// EditFileModal-style `api` prop pattern already used elsewhere in this
+// project. Faculty's queue is pre-scoped server-side (their assigned
+// Department/Course — see studentApprovalController.js), so this component
+// itself never needs to know which role is viewing it.
+export default function AdminStudentApprovals({ api = adminApi }) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ['pending-students'], queryFn: adminApi.pendingStudents });
+  const { data, isLoading } = useQuery({ queryKey: ['pending-students', api === adminApi ? 'admin' : 'faculty'], queryFn: api.pendingStudents });
 
   const students = data?.data || [];
 
-  const act = async (id, action) => {
+  const act = async (id, action, reason) => {
     try {
-      if (action === 'approve') await adminApi.approveStudent(id);
-      else await adminApi.rejectStudent(id);
+      if (action === 'approve') await api.approveStudent(id);
+      else await api.rejectStudent(id, reason);
       toast(`Student ${action === 'approve' ? 'approved' : 'rejected'}`, 'success');
       qc.invalidateQueries({ queryKey: ['pending-students'] });
     } catch (err) {
@@ -25,7 +31,7 @@ export default function AdminStudentApprovals() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-4">Pending Student Approvals</h1>
+      <h1 className="text-2xl font-bold text-slate-800 mb-4">Pending Student ID Approvals</h1>
       {isLoading ? (
         <p className="text-slate-400">Loading...</p>
       ) : students.length === 0 ? (
@@ -33,7 +39,7 @@ export default function AdminStudentApprovals() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {students.map((s) => (
-            <StudentCard key={s._id} student={s} onAct={act} />
+            <StudentCard key={s._id} student={s} api={api} onAct={act} />
           ))}
         </div>
       )}
@@ -41,12 +47,14 @@ export default function AdminStudentApprovals() {
   );
 }
 
-function StudentCard({ student, onAct }) {
+function StudentCard({ student, api, onAct }) {
   const [photoUrl, setPhotoUrl] = useState(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
 
   useEffect(() => {
     let objectUrl;
-    adminApi
+    api
       .studentIdPhotoUrl(student._id)
       .then((url) => {
         objectUrl = url;
@@ -54,7 +62,13 @@ function StudentCard({ student, onAct }) {
       })
       .catch(() => setPhotoUrl(''));
     return () => objectUrl && URL.revokeObjectURL(objectUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student._id]);
+
+  // A student who was rejected and has since resubmitted shows a
+  // RESUBMITTED entry after their most recent REJECTED one — surfaced so a
+  // reviewer knows this isn't a first-time submission.
+  const wasResubmitted = (student.approvalHistory || []).some((h) => h.action === 'RESUBMITTED');
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -67,27 +81,68 @@ function StudentCard({ student, onAct }) {
           <span className="text-xs text-slate-400">No photo on file</span>
         )}
       </div>
-      <p className="font-semibold text-slate-700">{student.name}</p>
+      <div className="flex items-center gap-2">
+        <p className="font-semibold text-slate-700">{student.name}</p>
+        {wasResubmitted && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+            <RotateCcw size={10} /> Resubmitted
+          </span>
+        )}
+      </div>
       <p className="text-xs text-slate-500">{student.email}</p>
       <p className="text-xs text-slate-500 mt-1">
         Roll {student.rollNo || '—'} &middot; {student.department?.code || '—'} &middot; {student.batch?.name || '—'} &middot;{' '}
         {student.semester?.name || '—'}
       </p>
       <p className="text-xs text-slate-400 mt-1">Registered {formatDate(student.createdAt)}</p>
-      <div className="flex gap-2 mt-3">
-        <button
-          onClick={() => onAct(student._id, 'approve')}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700"
-        >
-          <Check size={14} /> Approve
-        </button>
-        <button
-          onClick={() => onAct(student._id, 'reject')}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-red-50 text-red-600 border border-red-200 text-sm font-medium hover:bg-red-100"
-        >
-          <X size={14} /> Reject
-        </button>
-      </div>
+
+      {!rejecting ? (
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => onAct(student._id, 'approve')}
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700"
+          >
+            <Check size={14} /> Approve
+          </button>
+          <button
+            onClick={() => setRejecting(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-red-50 text-red-600 border border-red-200 text-sm font-medium hover:bg-red-100"
+          >
+            <X size={14} /> Reject
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Rejection reason (optional) — e.g. Student ID picture is not readable."
+            rows={2}
+            className="w-full text-sm rounded-lg border border-slate-300 px-2.5 py-1.5"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                onAct(student._id, 'reject', reason);
+                setRejecting(false);
+                setReason('');
+              }}
+              className="flex-1 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+            >
+              Confirm reject
+            </button>
+            <button
+              onClick={() => {
+                setRejecting(false);
+                setReason('');
+              }}
+              className="flex-1 py-1.5 rounded-md border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import Profile from './pages/Profile.jsx';
 import Bookmarks from './pages/Bookmarks.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import PendingApproval from './pages/PendingApproval.jsx';
 import MyCourses from './pages/MyCourses.jsx';
 import StudentSubmitMaterial from './pages/StudentSubmitMaterial.jsx';
 import Notices from './pages/Notices.jsx';
@@ -34,6 +35,7 @@ import Assignments from './pages/Assignments.jsx';
 import Quizzes from './pages/Quizzes.jsx';
 import QuizAttempt from './pages/QuizAttempt.jsx';
 import QuizResult from './pages/QuizResult.jsx';
+import StudentResultRedirect from './pages/StudentResultRedirect.jsx';
 import PublicExamLanding from './pages/public/PublicExamLanding.jsx';
 import PublicExamAttempt from './pages/public/PublicExamAttempt.jsx';
 import PublicExamResult from './pages/public/PublicExamResult.jsx';
@@ -45,6 +47,7 @@ import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 import AdminFiles from './pages/admin/AdminFiles.jsx';
 import AdminUpload from './pages/admin/AdminUpload.jsx';
 import AdminStudentApprovals from './pages/admin/AdminStudentApprovals.jsx';
+import { facultyApi } from './api/endpoints.js';
 
 import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard.jsx';
 import SuperAdminUsers from './pages/superadmin/SuperAdminUsers.jsx';
@@ -156,6 +159,14 @@ export default function App() {
             }
           />
           <Route
+            path="/pending-approval"
+            element={
+              <ProtectedRoute>
+                <PendingApproval />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/submit-material"
             element={
               <ProtectedRoute roles={['student']} orScopedAdminTier>
@@ -201,6 +212,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <QuizResult />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/results/:attemptId"
+            element={
+              <ProtectedRoute>
+                <StudentResultRedirect />
               </ProtectedRoute>
             }
           />
@@ -253,6 +272,7 @@ export default function App() {
         >
           <Route index element={<SuperAdminDashboard />} />
           <Route path="users" element={<SuperAdminUsers />} />
+          <Route path="approvals" element={<AdminStudentApprovals />} />
           <Route path="faculty" element={<SuperAdminFaculty />} />
           <Route path="files" element={<SuperAdminFiles />} />
           <Route path="system" element={<SuperAdminSystem />} />
@@ -278,6 +298,7 @@ export default function App() {
           <Route path="chapters-topics" element={<FacultyChapterTopics />} />
           <Route path="upload" element={<FacultyUpload />} />
           <Route path="reviews" element={<ReviewQueue />} />
+          <Route path="student-id-approvals" element={<AdminStudentApprovals api={facultyApi} />} />
           <Route path="files" element={<FacultyFiles />} />
           <Route path="notices" element={<NoticeManager />} />
           <Route path="assignments" element={<AssignmentManager />} />

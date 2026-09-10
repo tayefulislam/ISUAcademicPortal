@@ -4,6 +4,7 @@ import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
 import { courseApi, categoryApi, chapterApi, topicApi, fileApi, authApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import { formatBytes } from '../utils/format.js';
 
 const initialState = {
@@ -36,11 +37,16 @@ export default function StudentSubmitMaterial() {
   const [progress, setProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: settings, isLoading: loadingSettings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings });
   const enabled = !!settings?.data?.studentUploadEnabled;
+  // Mirrors the server's own isBlockedByApproval() gate (courseAccessService.js,
+  // enforced independently in submitStudentFile) — a pending/rejected
+  // student can't submit material until an Admin approves their Student ID.
+  const approvalBlocked = user?.role === 'student' && !!settings?.data?.studentApprovalEnabled && user?.approvalStatus !== 'approved';
 
-  const { data: myCourses } = useQuery({ queryKey: ['my-reachable-courses'], queryFn: courseApi.mine, enabled });
+  const { data: myCourses } = useQuery({ queryKey: ['my-reachable-courses'], queryFn: courseApi.mine, enabled: enabled && !approvalBlocked });
   const allMyCourses = myCourses?.data || [];
 
   // Departments derived from the reachable course list itself, so the
@@ -129,6 +135,17 @@ export default function StudentSubmitMaterial() {
         <p className="text-sm text-slate-500">
           The Student Material Upload system is currently turned off by the site administrators. Please check back
           later.
+        </p>
+      </div>
+    );
+  }
+
+  if (approvalBlocked) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">Submission Locked</h1>
+        <p className="text-sm text-slate-500">
+          Submit Material unlocks once an Admin approves your Student ID.
         </p>
       </div>
     );

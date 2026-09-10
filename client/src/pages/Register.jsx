@@ -3,16 +3,20 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { departmentApi, batchApi, semesterApi, authApi } from '../api/endpoints.js';
+import { departmentApi, batchApi, semesterApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 
-const initialForm = { name: '', email: '', password: '', rollNo: '', department: '', batch: '', semester: '' };
+const initialForm = { name: '', email: '', password: '', rollNo: '', phone: '', department: '', batch: '', semester: '' };
 
+// Student ID (the verification photo) is deliberately NOT collected here —
+// it's a post-registration workflow now (see PendingApproval.jsx / the
+// /student-id/submit endpoint). Whether a given student ends up needing one
+// at all is decided server-side, after their email is verified, based on
+// whether it's an official university email (see authController.js's
+// isOfficialUniversityEmail) — registration itself never has to know or ask.
 export default function Register() {
   const [form, setForm] = useState(initialForm);
-  const [studentIdImage, setStudentIdImage] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [pending, setPending] = useState(false);
   const { register } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -20,9 +24,6 @@ export default function Register() {
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
-  const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings });
-
-  const approvalEnabled = !!settings?.data?.studentApprovalEnabled;
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -31,26 +32,24 @@ export default function Register() {
     if (!/^\d{16}$/.test(form.rollNo.trim())) {
       return toast('Student ID must be exactly 16 digits', 'error');
     }
-    if (approvalEnabled && !studentIdImage) {
-      return toast('A Student ID photo is required', 'error');
+    if (!/^01\d{9}$/.test(form.phone.trim())) {
+      return toast('Phone number must be exactly 11 digits and start with 01', 'error');
     }
     setSubmitting(true);
     try {
-      let payload = form;
-      if (approvalEnabled) {
-        const fd = new FormData();
-        Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-        fd.append('studentIdImage', studentIdImage);
-        payload = fd;
-      }
-      const result = await register(payload);
+      const result = await register(form);
       if (result.requiresOtp) {
         navigate('/verify-otp', { state: { email: form.email } });
-      } else if (result.user.approvalStatus === 'pending') {
-        setPending(true);
+        return;
+      }
+      // No OTP step — the decision (auto-approved vs. needs Student ID) is
+      // already final at this point (register() ran it synchronously).
+      if (result.user.approvalStatus === 'approved') {
+        toast('Account created — your student account has been automatically approved', 'success');
+        navigate('/dashboard');
       } else {
-        toast('Account created', 'success');
-        navigate('/');
+        toast('Account created — please submit your Student ID to complete verification', 'success');
+        navigate('/pending-approval');
       }
     } catch (err) {
       toast(err.response?.data?.message || 'Registration failed', 'error');
@@ -58,21 +57,6 @@ export default function Register() {
       setSubmitting(false);
     }
   };
-
-  if (pending) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">Account created</h1>
-        <p className="text-sm text-slate-500">
-          Your account is pending Admin approval. You can sign in and browse public materials now, but
-          department/batch/semester-restricted materials will unlock once an Admin approves your Student ID.
-        </p>
-        <Link to="/" className="inline-block mt-6 text-brand-600 font-medium hover:underline">
-          Continue to the site
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-md mx-auto px-4 py-16">
@@ -112,6 +96,22 @@ export default function Register() {
             <p className="text-xs text-red-600 mt-1">Student ID must be exactly 16 digits ({form.rollNo.length}/16)</p>
           )}
         </Field>
+        <Field label="Phone Number">
+          <input
+            required
+            inputMode="numeric"
+            pattern="01\d{9}"
+            maxLength={11}
+            title="Phone number must be exactly 11 digits and start with 01"
+            value={form.phone}
+            onChange={(e) => set('phone')(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            className="input"
+            placeholder="e.g. 01712345678"
+          />
+          {form.phone.length > 0 && (form.phone.length !== 11 || !form.phone.startsWith('01')) && (
+            <p className="text-xs text-red-600 mt-1">Must be exactly 11 digits and start with 01 ({form.phone.length}/11)</p>
+          )}
+        </Field>
         <Field label="Department">
           <SearchableSelect
             required
@@ -140,21 +140,6 @@ export default function Register() {
             ))}
           </select>
         </Field>
-
-        {approvalEnabled && (
-          <Field label="Student ID Photo">
-            <input
-              type="file"
-              accept="image/*"
-              required
-              onChange={(e) => setStudentIdImage(e.target.files?.[0] || null)}
-              className="input"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Used only to verify your identity — Admin will review it to approve your account.
-            </p>
-          </Field>
-        )}
 
         <button
           disabled={submitting}

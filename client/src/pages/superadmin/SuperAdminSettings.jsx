@@ -50,6 +50,53 @@ function NumericLimitCard({ title, description, value, onSave }) {
   );
 }
 
+// A fixed set of mutually-exclusive string options (see Settings.js
+// STRING_SETTINGS) — radio-group UI, saves immediately on selection like
+// ToggleCard. Currently just the Student ID Image Storage provider.
+function StringSettingCard({ title, description, options, value, onSave }) {
+  return (
+    <div className="max-w-xl bg-white border border-slate-200 rounded-xl p-6">
+      <h2 className="text-lg font-semibold text-slate-800 mb-1">{title}</h2>
+      <p className="text-sm text-slate-500 mb-4">{description}</p>
+      <div className="flex gap-4">
+        {options.map((opt) => (
+          <label key={opt} className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+            <input type="radio" checked={value === opt} onChange={() => onSave(opt)} />
+            {opt === 'imgbb' ? 'ImgBB' : opt.toUpperCase()}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Free-text setting (see Settings.js TEXT_SETTINGS) — saves on blur, not on
+// every keystroke, same convention as NumericLimitCard.
+function TextSettingCard({ title, description, value, onSave }) {
+  const [draft, setDraft] = useState(value || '');
+  return (
+    <div className="max-w-xl bg-white border border-slate-200 rounded-xl p-6">
+      <h2 className="text-lg font-semibold text-slate-800 mb-1">{title}</h2>
+      <p className="text-sm text-slate-500 mb-4">{description}</p>
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-slate-400">@</span>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const cleaned = draft.trim().toLowerCase();
+            setDraft(cleaned);
+            if (cleaned && cleaned !== value) onSave(cleaned);
+          }}
+          placeholder="isu.ac.bd"
+          className="w-56 h-10 rounded-lg border border-slate-300 px-3 text-sm"
+        />
+      </div>
+    </div>
+  );
+}
+
 // Feature Management — generic over whatever GET /super-admin/settings
 // returns as `flags` (see server models/Settings.js FEATURE_FLAGS). Adding a
 // new toggle server-side makes it appear here automatically, no client change.
@@ -61,6 +108,8 @@ export default function SuperAdminSettings() {
   const values = data?.data || {};
   const flags = data?.flags || [];
   const numericSettings = data?.numericSettings || [];
+  const stringSettings = data?.stringSettings || [];
+  const textSettings = data?.textSettings || [];
 
   const toggle = async (key, current, label) => {
     try {
@@ -86,9 +135,28 @@ export default function SuperAdminSettings() {
 
   return (
     <div>
+      {stringSettings.length > 0 && (
+        <>
+          <h1 className="text-2xl font-bold text-slate-800 mb-1">Student ID Image Storage</h1>
+          <p className="text-sm text-slate-500 mb-6">Credentials stay server-side — this only picks which configured provider new/resubmitted photos go to.</p>
+          <div className="space-y-6 mb-10">
+            {stringSettings.map((s) => (
+              <StringSettingCard
+                key={s.key}
+                title={s.label}
+                description={s.description}
+                options={s.options}
+                value={values[s.key]}
+                onSave={(v) => saveLimit(s.key, v, s.label)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
       <h1 className="text-2xl font-bold text-slate-800 mb-1">Feature Management</h1>
       <p className="text-sm text-slate-500 mb-6">Turn platform-wide features ON or OFF. Changes take effect immediately.</p>
-      <div className="space-y-6 mb-10">
+      <div className="space-y-6 mb-6">
         {flags.map((f) => (
           <ToggleCard
             key={f.key}
@@ -99,6 +167,20 @@ export default function SuperAdminSettings() {
           />
         ))}
       </div>
+
+      {textSettings.length > 0 && (
+        <div className="space-y-6 mb-10">
+          {textSettings.map((t) => (
+            <TextSettingCard
+              key={t.key}
+              title={t.label}
+              description={t.description}
+              value={values[t.key]}
+              onSave={(v) => saveLimit(t.key, v, t.label)}
+            />
+          ))}
+        </div>
+      )}
 
       {numericSettings.length > 0 && (
         <>

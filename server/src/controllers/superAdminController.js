@@ -2,12 +2,14 @@ import User from '../models/User.js';
 import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { deleteStoredFile } from '../services/storage/storageService.js';
-import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS } from '../models/Settings.js';
+import { deleteStoredFile, deleteStudentIdImage, deletePrivateImage } from '../services/storage/storageService.js';
+import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS, STRING_SETTINGS, TEXT_SETTINGS } from '../models/Settings.js';
 import { roleExists } from '../models/Role.js';
 import { rankFileCandidates } from '../services/fuzzyFileSearch.js';
 import { sanitizeQuery } from '../utils/textSearch.js';
 import { parsePagination } from '../utils/pagination.js';
+import { logger } from '../utils/logger.js';
+import { emit } from '../services/notifications/notificationService.js';
 
 // 'administrator' has every super_admin capability except visibility/control
 // over super_admin accounts themselves, and only an actual super_admin can
@@ -25,17 +27,28 @@ function flagsPayload(settings) {
   return {
     ...Object.fromEntries(FEATURE_FLAGS.map((f) => [f.key, !!settings[f.key]])),
     ...Object.fromEntries(NUMERIC_SETTINGS.map((n) => [n.key, settings[n.key] || 0])),
+    ...Object.fromEntries(STRING_SETTINGS.map((s) => [s.key, settings[s.key] || s.default])),
+    ...Object.fromEntries(TEXT_SETTINGS.map((t) => [t.key, settings[t.key] || t.default])),
   };
 }
 
 export const getSystemSettings = asyncHandler(async (req, res) => {
   const settings = await getSettings();
-  res.json({ success: true, data: flagsPayload(settings), flags: FEATURE_FLAGS, numericSettings: NUMERIC_SETTINGS });
+  res.json({
+    success: true,
+    data: flagsPayload(settings),
+    flags: FEATURE_FLAGS,
+    numericSettings: NUMERIC_SETTINGS,
+    stringSettings: STRING_SETTINGS,
+    textSettings: TEXT_SETTINGS,
+  });
 });
 
 export const updateSystemSettings = asyncHandler(async (req, res) => {
   const validFlagKeys = new Set(FEATURE_FLAGS.map((f) => f.key));
   const validNumericKeys = new Set(NUMERIC_SETTINGS.map((n) => n.key));
+  const stringSettingsByKey = new Map(STRING_SETTINGS.map((s) => [s.key, s]));
+  const textSettingsByKey = new Map(TEXT_SETTINGS.map((t) => [t.key, t]));
   const patch = {};
   for (const [key, value] of Object.entries(req.body || {})) {
     if (validFlagKeys.has(key)) {
@@ -45,6 +58,21 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
       const num = Number(value);
       if (!Number.isInteger(num) || num < 0) throw new ApiError(400, `${key} must be a non-negative integer`);
       patch[key] = num;
+    } else if (stringSettingsByKey.has(key)) {
+      const setting = stringSettingsByKey.get(key);
+      if (!setting.options.includes(value)) {
+        throw new ApiError(400, `${key} must be one of: ${setting.options.join(', ')}`);
+      }
+      patch[key] = value;
+    } else if (textSettingsByKey.has(key)) {
+      const setting = textSettingsByKey.get(key);
+      // Accepts "isu.ac.bd" or "@isu.ac.bd" (stripped) so pasting the
+      // display form doesn't produce a confusing validation error.
+      const cleaned = String(value || '').trim().toLowerCase().replace(/^@/, '');
+      if (!setting.pattern.test(cleaned)) {
+        throw new ApiError(400, `${key} must be a valid domain, e.g. "isu.ac.bd" (without the @)`);
+      }
+      patch[key] = cleaned;
     }
     // unknown keys are silently ignored rather than erroring — forward-compatible
   }
@@ -132,6 +160,7 @@ export const exportUsers = asyncHandler(async (req, res) => {
     'Email',
     'Role',
     'Roll No',
+    'Phone',
     'Department',
     'Batch',
     'Semester',
@@ -147,6 +176,7 @@ export const exportUsers = asyncHandler(async (req, res) => {
       u.email,
       u.role,
       u.rollNo || '',
+      u.phone || '',
       u.department?.code || u.department?.name || '',
       u.batch?.code || u.batch?.name || '',
       u.semester?.code || u.semester?.name || '',
@@ -223,11 +253,11 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Another Super Admin's profile cannot be edited here", null, 'FORBIDDEN');
   }
 
-  const allowed = ['name', 'rollNo', 'department', 'batch', 'semester'];
+  const allowed = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) target[key] = req.body[key] || null;
   }
-  // rollNo/name are plain strings, not refs — null would fail validation.
+  // rollNo/phone/name are plain strings, not refs — null would fail validation.
   if (req.body.name !== undefined) target.name = req.body.name;
   if (req.body.rollNo !== undefined) {
     const trimmedRollNo = String(req.body.rollNo || '').trim();
@@ -240,6 +270,20 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
       }
     }
     target.rollNo = trimmedRollNo;
+  }
+  if (req.body.phone !== undefined) {
+    const trimmedPhone = String(req.body.phone || '').trim();
+    // Phone doubles as a login identifier too (authController.js's login()).
+    if (trimmedPhone) {
+      if (!/^01\d{9}$/.test(trimmedPhone)) {
+        throw new ApiError(400, 'Phone number must be exactly 11 digits and start with 01');
+      }
+      const duplicatePhone = await User.findOne({ phone: trimmedPhone, _id: { $ne: target._id } });
+      if (duplicatePhone) {
+        throw new ApiError(409, 'This phone number is already registered to another account');
+      }
+    }
+    target.phone = trimmedPhone;
   }
 
   // assignedDepartments/assignedCourses scope Review/Approval access for any
@@ -273,6 +317,86 @@ export const updateUserStatus = asyncHandler(async (req, res) => {
   await target.save();
 
   res.json({ success: true, message: `User ${status === 'blocked' ? 'blocked' : 'unblocked'}`, data: target.toSafeObject() });
+});
+
+// ----- Manual Student ID approval override (Super Admin / Administrator only) -----
+//
+// Distinct from the normal queue-driven approveStudent/rejectStudent in
+// studentApprovalController.js, which only ever act on a 'pending' request
+// within the actor's own scope. This endpoint is the "just fix it" escape
+// hatch super_admin/administrator get on top of that — it can move a
+// student to ANY approvalStatus from ANY current one (e.g. un-reject
+// someone, force a mistakenly-approved account back to pending), gated
+// purely by role (this whole router is already requireSuperAdminTier —
+// super_admin/administrator — no further scope check applies, unlike CR/
+// Faculty). Every transition is recorded in approvalHistory with a distinct
+// MANUAL_OVERRIDE action so the audit trail can tell a manual override
+// apart from a normal reviewer decision.
+const MANUAL_APPROVAL_STATUSES = ['pending', 'approved', 'rejected'];
+
+export const updateUserApproval = asyncHandler(async (req, res) => {
+  const { approvalStatus, reason } = req.body;
+  if (!MANUAL_APPROVAL_STATUSES.includes(approvalStatus)) {
+    throw new ApiError(400, `approvalStatus must be one of: ${MANUAL_APPROVAL_STATUSES.join(', ')}`);
+  }
+
+  const target = await User.findById(req.params.id).select('+studentIdImageKey +studentIdImage.key');
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.role !== 'student') {
+    throw new ApiError(400, 'Approval status only applies to student accounts', null, 'BAD_REQUEST');
+  }
+  if (target.approvalStatus === approvalStatus) {
+    throw new ApiError(400, `This student is already ${approvalStatus}`, null, 'BAD_REQUEST');
+  }
+
+  const cleanReason = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
+  const previousStatus = target.approvalStatus;
+
+  // Setting to 'rejected' clears the stored ID photo the same safe way the
+  // normal reject flow does (snapshot the exact object before touching the
+  // DB, delete only after the save succeeds) — a manual override shouldn't
+  // leave an orphaned "rejected" photo sitting in storage any more than a
+  // queue-driven rejection would.
+  const imageToDelete = approvalStatus === 'rejected' && target.studentIdImage?.key ? { ...target.studentIdImage.toObject() } : null;
+  const legacyKeyToDelete = approvalStatus === 'rejected' && !imageToDelete ? target.studentIdImageKey : '';
+
+  target.approvalStatus = approvalStatus;
+  target.approvedBy = req.user._id;
+  target.approvedAt = new Date();
+  target.approvalRole = req.user.role;
+  target.rejectionReason = approvalStatus === 'rejected' ? cleanReason : '';
+  if (approvalStatus === 'rejected') {
+    target.studentIdImage = { provider: '', url: '', key: '', bucket: '', size: 0, mimeType: '', uploadedAt: null };
+    target.studentIdImageKey = '';
+  }
+  target.approvalHistory.push({
+    action: 'MANUAL_OVERRIDE',
+    performedBy: req.user._id,
+    reason: `${previousStatus} → ${approvalStatus}${cleanReason ? `: ${cleanReason}` : ''}`,
+    performedAt: new Date(),
+  });
+  target.tokenVersion += 1; // access (dashboard/restricted materials) depends on this, so any stale token must re-check
+
+  await target.save();
+
+  if (imageToDelete) {
+    deleteStudentIdImage(imageToDelete).catch((err) => logger.error(err, { req, source: 'studentId', meta: { action: 'FILE_CLEANUP_FAILED', targetId: target._id } }));
+  } else if (legacyKeyToDelete) {
+    deletePrivateImage(legacyKeyToDelete).catch((err) => logger.error(err, { req, source: 'studentId', meta: { action: 'FILE_CLEANUP_FAILED', targetId: target._id } }));
+  }
+
+  logger.info('Student approval status manually overridden', {
+    req,
+    source: 'studentId',
+    meta: { action: 'MANUAL_OVERRIDE', targetId: target._id, from: previousStatus, to: approvalStatus, reason: cleanReason },
+  });
+  if (approvalStatus === 'approved') {
+    emit({ type: 'STUDENT_ID_APPROVED', actorId: req.user._id, entityType: 'user', entityId: target._id, recipients: [target._id] }).catch((err) => logger.error(err, { source: 'studentId.notify' }));
+  } else if (approvalStatus === 'rejected') {
+    emit({ type: 'STUDENT_ID_REJECTED', actorId: req.user._id, entityType: 'user', entityId: target._id, vars: { reason: cleanReason }, recipients: [target._id] }).catch((err) => logger.error(err, { source: 'studentId.notify' }));
+  }
+
+  res.json({ success: true, message: `Approval status manually set to ${approvalStatus}`, data: target.toSafeObject() });
 });
 
 // ----- Faculty (Super Admin only — Faculty accounts are never provisioned

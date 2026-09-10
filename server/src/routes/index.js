@@ -29,6 +29,7 @@ import courseEnrollmentRoutes from './courseEnrollmentRoutes.js';
 import publicExamRoutes from './publicExamRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import adminNotificationRoutes from './adminNotificationRoutes.js';
+import studentIdRoutes from './studentIdRoutes.js';
 
 const router = Router();
 
@@ -64,5 +65,6 @@ router.use('/course-enrollments', courseEnrollmentRoutes);
 router.use('/public-exams', publicExamRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin/notifications', adminNotificationRoutes);
+router.use('/student-id', studentIdRoutes);
 
 export default router;

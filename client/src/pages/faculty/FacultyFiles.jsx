@@ -73,7 +73,9 @@ export default function FacultyFiles() {
                 <tr key={f._id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="p-3 max-w-[220px]">
                     <p className="font-medium text-slate-700 truncate">{f.title}</p>
-                    <p className="text-xs text-slate-400">{f.fileType.toUpperCase()} &middot; {formatBytes(f.fileSize)}</p>
+                    <p className="text-xs text-slate-400">
+                      {f.fileType.toUpperCase()} &middot; {formatBytes(f.fileSize)} &middot; v{f.currentVersion || 1}
+                    </p>
                   </td>
                   <td className="p-3">{f.departmentCode}</td>
                   <td className="p-3">{f.courseId}</td>

@@ -1,5 +1,6 @@
 import Course from '../models/Course.js';
 import CourseEnrollment, { ACCESS_GRANTING_STATUSES } from '../models/CourseEnrollment.js';
+import { getSettings } from '../models/Settings.js';
 
 /**
  * Single source of truth for "which courses can this student reach" —
@@ -37,4 +38,18 @@ export async function isStudentEnrolled(studentId, courseId) {
     course: courseId,
     status: { $in: ACCESS_GRANTING_STATUSES },
   }).then(Boolean);
+}
+
+/**
+ * True only for a 'student' whose Student ID hasn't been approved yet, and
+ * only while the global approval system is ON — the single gate everything
+ * that requires login (File content, Assignment submission, Quiz attempts,
+ * Messaging) checks before letting a student in. A pending/rejected student
+ * can still sign in and browse fully public (no-login-required) content;
+ * this is what blocks everything else until an Admin approves them.
+ */
+export async function isBlockedByApproval(user) {
+  if (!user || user.role !== 'student') return false;
+  const settings = await getSettings();
+  return !!settings.studentApprovalEnabled && user.approvalStatus !== 'approved';
 }

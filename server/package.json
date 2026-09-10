@@ -8,6 +8,7 @@
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
     "seed": "node src/utils/seed.js",
+    "generate:question-template": "node src/utils/generateQuestionImportTemplate.js",
     "test": "node --test src/**/*.test.js"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "express-validator": "^7.2.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.12.2",
     "mongoose": "^8.8.3",
     "morgan": "^1.10.0",
     "multer": "^2.3.0",
@@ -29,6 +31,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "docx": "^9.7.1",
     "nodemon": "^3.1.7"
   }
 }

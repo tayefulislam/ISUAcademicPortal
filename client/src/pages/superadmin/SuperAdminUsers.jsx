@@ -16,6 +16,12 @@ const ROLE_STYLE = {
   super_admin: 'bg-purple-50 text-purple-700',
 };
 
+const APPROVAL_STYLE = {
+  pending: 'bg-amber-50 text-amber-700',
+  approved: 'bg-emerald-50 text-emerald-700',
+  rejected: 'bg-red-50 text-red-600',
+};
+
 export default function SuperAdminUsers() {
   const { user: me, isSuperAdmin } = useAuth();
   const [q, setQ] = useState('');
@@ -50,6 +56,26 @@ export default function SuperAdminUsers() {
       qc.invalidateQueries({ queryKey: ['super-admin-users'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Failed to update role', 'error');
+    }
+  };
+
+  // Manual override — moves a student straight to any approvalStatus,
+  // regardless of their current one (unlike the pending-queue-only
+  // approve/reject on the Student Approvals page). Asks for a reason only
+  // when rejecting, matching that page's own rejection-reason prompt.
+  const changeApproval = async (u, next) => {
+    let reason;
+    if (next === 'rejected') {
+      reason = window.prompt(`Reason for rejecting ${u.name}'s Student ID (optional):`, '') || '';
+    } else if (!confirm(`Manually set ${u.name}'s approval status to "${next}"?`)) {
+      return;
+    }
+    try {
+      await superAdminApi.updateUserApproval(u._id, next, reason);
+      toast(`Approval status set to ${next}`, 'success');
+      qc.invalidateQueries({ queryKey: ['super-admin-users'] });
+    } catch (err) {
+      toast(err.response?.data?.message || 'Failed to update approval status', 'error');
     }
   };
 
@@ -125,10 +151,12 @@ export default function SuperAdminUsers() {
               <th className="p-3 text-left">Name</th>
               <th className="p-3 text-left">Email</th>
               <th className="p-3 text-left">Roll No</th>
+              <th className="p-3 text-left">Phone</th>
               <th className="p-3 text-left">Department</th>
               <th className="p-3 text-left">Batch</th>
               <th className="p-3 text-left">Role</th>
               <th className="p-3 text-left">Status</th>
+              <th className="p-3 text-left">Approval</th>
               <th className="p-3 text-left">Last Login</th>
               <th className="p-3 text-left">Last Login IP</th>
               <th className="p-3 text-left">Joined</th>
@@ -137,15 +165,16 @@ export default function SuperAdminUsers() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={11} className="p-6 text-center text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={13} className="p-6 text-center text-slate-400">Loading...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={11} className="p-6 text-center text-slate-400">No users found.</td></tr>
+              <tr><td colSpan={13} className="p-6 text-center text-slate-400">No users found.</td></tr>
             ) : (
               users.map((u) => (
                 <tr key={u._id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="p-3 font-medium text-slate-700">{u.name}</td>
                   <td className="p-3 text-slate-500">{u.email}</td>
                   <td className="p-3">{u.rollNo || '-'}</td>
+                  <td className="p-3">{u.phone || '-'}</td>
                   <td className="p-3">{u.department?.code || '-'}</td>
                   <td className="p-3">{u.batch?.name || '-'}</td>
                   <td className="p-3">
@@ -155,6 +184,15 @@ export default function SuperAdminUsers() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'blocked' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
                       {u.status}
                     </span>
+                  </td>
+                  <td className="p-3">
+                    {u.role === 'student' ? (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${APPROVAL_STYLE[u.approvalStatus] || 'bg-slate-100 text-slate-600'}`}>
+                        {u.approvalStatus}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
                   </td>
                   <td className="p-3 text-slate-400">{u.lastLogin ? formatDate(u.lastLogin) : 'Never'}</td>
                   <td className="p-3 text-slate-400 font-mono text-xs">{u.lastLoginIp || '-'}</td>
@@ -174,6 +212,19 @@ export default function SuperAdminUsers() {
                               <option key={r.key} value={r.key}>{r.name}</option>
                             ))}
                             {isSuperAdmin && <option value="administrator">Administrator</option>}
+                          </select>
+                        )}
+                        {u.role === 'student' && (
+                          <select
+                            value=""
+                            onChange={(e) => e.target.value && changeApproval(u, e.target.value)}
+                            title="Manually set approval status"
+                            className="h-8 rounded-md border border-slate-300 px-1.5 text-xs"
+                          >
+                            <option value="">Set approval...</option>
+                            {['pending', 'approved', 'rejected'].filter((s) => s !== u.approvalStatus).map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
                           </select>
                         )}
                         <button
@@ -222,9 +273,16 @@ export default function SuperAdminUsers() {
               </div>
 
               <div className="mt-3 flex items-center justify-between">
-                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'blocked' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {u.status === 'blocked' ? <ShieldOff size={12} /> : <ShieldCheck size={12} />} {u.status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'blocked' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {u.status === 'blocked' ? <ShieldOff size={12} /> : <ShieldCheck size={12} />} {u.status}
+                  </span>
+                  {u.role === 'student' && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${APPROVAL_STYLE[u.approvalStatus] || 'bg-slate-100 text-slate-600'}`}>
+                      {u.approvalStatus}
+                    </span>
+                  )}
+                </div>
                 {u.lastLogin && (
                   <span className="flex items-center gap-1 text-xs text-slate-400" title={u.lastLoginIp ? `IP: ${u.lastLoginIp}` : undefined}>
                     <Clock size={12} /> Last login {formatDate(u.lastLogin)}{u.lastLoginIp ? ` (${u.lastLoginIp})` : ''}
@@ -245,6 +303,18 @@ export default function SuperAdminUsers() {
                         <option key={r.key} value={r.key}>{r.name}</option>
                       ))}
                       {isSuperAdmin && <option value="administrator">Administrator</option>}
+                    </select>
+                  )}
+                  {u.role === 'student' && (
+                    <select
+                      value=""
+                      onChange={(e) => e.target.value && changeApproval(u, e.target.value)}
+                      className="flex-1 h-8 rounded-md border border-slate-300 px-1.5 text-xs"
+                    >
+                      <option value="">Set approval...</option>
+                      {['pending', 'approved', 'rejected'].filter((s) => s !== u.approvalStatus).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   )}
                   <button
@@ -294,6 +364,7 @@ function EditUserProfileModal({ user, departments, batches, semesters, allCourse
   const [form, setForm] = useState({
     name: user.name,
     rollNo: user.rollNo || '',
+    phone: user.phone || '',
     department: user.department?._id || '',
     batch: user.batch?._id || '',
     semester: user.semester?._id || '',
@@ -331,6 +402,14 @@ function EditUserProfileModal({ user, departments, batches, semesters, allCourse
         <form onSubmit={submit} className="space-y-3">
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name" className="input" required />
           <input value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} placeholder="Roll No" className="input" />
+          <input
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+            placeholder="Phone (e.g. 01712345678)"
+            inputMode="numeric"
+            maxLength={11}
+            className="input"
+          />
           <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="input">
             <option value="">No department</option>
             {(departments || []).map((d) => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}

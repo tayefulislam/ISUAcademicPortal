@@ -1,6 +1,15 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { createQuestion, updateQuestion, deleteQuestion, listQuestions, getQuestion, searchQuestions, suggestQuestions } from '../controllers/questionController.js';
+import {
+  createQuestion,
+  updateQuestion,
+  deleteQuestion,
+  listQuestions,
+  getQuestion,
+  searchQuestions,
+  suggestQuestions,
+  importQuestionsFromDocx,
+} from '../controllers/questionController.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload } from '../middleware/upload.js';
@@ -14,6 +23,7 @@ router.get('/', listQuestions);
 // Registered before /:id so these literal paths aren't swallowed as an id param.
 router.get('/search', searchQuestions);
 router.get('/suggestions', suggestQuestions);
+router.post('/import-docx', upload.single('file'), importQuestionsFromDocx);
 router.post(
   '/',
   upload.single('image'),

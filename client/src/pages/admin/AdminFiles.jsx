@@ -106,7 +106,9 @@ export default function AdminFiles() {
                     <p className="font-medium text-slate-700 truncate">
                       {f.title} {f.fileCount > 1 && <span className="text-brand-600 font-normal">({f.fileCount} files)</span>}
                     </p>
-                    <p className="text-xs text-slate-400">{f.fileType.toUpperCase()} &middot; {formatBytes(f.fileSize)}</p>
+                    <p className="text-xs text-slate-400">
+                      {f.fileType.toUpperCase()} &middot; {formatBytes(f.fileSize)} &middot; v{f.currentVersion || 1}
+                    </p>
                   </td>
                   <td className="p-3">{f.departmentCode}</td>
                   <td className="p-3">{f.courseId}</td>

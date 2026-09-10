@@ -104,7 +104,11 @@ export default function Messages() {
                   <span className="text-xs text-slate-400 ml-1.5 capitalize">{c.role}</span>
                 </button>
               ))}
-              {!contacts?.data?.length && <p className="text-xs text-slate-400 px-2.5 py-1">No matches</p>}
+              {!contacts?.data?.length && (
+                <p className="text-xs text-slate-400 px-2.5 py-1">
+                  {contacts?.blockedByApproval ? 'Messaging unlocks once an Admin approves your Student ID.' : 'No matches'}
+                </p>
+              )}
             </div>
           </div>
         )}

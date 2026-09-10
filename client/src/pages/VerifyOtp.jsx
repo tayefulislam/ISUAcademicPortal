@@ -20,8 +20,16 @@ export default function VerifyOtp() {
     try {
       const { data } = await authApi.verifyOtp({ email, code });
       applySession(data.token, data.user);
-      toast('Email verified — you are signed in', 'success');
-      navigate('/');
+      if (data.autoApproved) {
+        toast('Email verified successfully. Your student account has been automatically approved.', 'success');
+        navigate('/dashboard');
+      } else if (data.requiresStudentId) {
+        toast('Email verified. Please submit your Student ID to complete verification.', 'success');
+        navigate('/pending-approval');
+      } else {
+        toast('Email verified — you are signed in', 'success');
+        navigate('/dashboard');
+      }
     } catch (err) {
       toast(err.response?.data?.message || 'Verification failed', 'error');
     } finally {
