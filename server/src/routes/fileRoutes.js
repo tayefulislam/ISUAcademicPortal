@@ -13,29 +13,38 @@ import {
   getRecentFiles,
   getPopularFiles,
   getStats,
+  getDashboard,
+  submitStudentFile,
+  getMySubmittedFiles,
+  streamFilePreview,
 } from '../controllers/fileController.js';
 // NOTE: Admin/Super Admin file management also lives at /api/admin/files
 // (see adminRoutes.js) — these routes are kept for backward compatibility
 // with the existing admin panel and point at the same controllers, which
 // enforce upload ownership internally regardless of which path is used.
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, optionalAuth, requirePermission, requireStudentOrScopedAdminTier } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 
 const router = Router();
 
-router.get('/', listFiles);
+// optionalAuth (not just open) so req.user is populated when a token is
+// present — anonymous visitors still get public-only results.
+router.get('/', optionalAuth, listFiles);
 router.get('/stats', getStats);
-router.get('/recent', getRecentFiles);
-router.get('/popular', getPopularFiles);
-router.get('/:id', getFile);
-router.get('/:id/related', getRelatedFiles);
-router.post('/:id/download', recordDownload);
+router.get('/recent', optionalAuth, getRecentFiles);
+router.get('/popular', optionalAuth, getPopularFiles);
+router.get('/dashboard', authenticate, getDashboard);
+router.get('/mine', authenticate, getMySubmittedFiles);
+router.get('/:id', optionalAuth, getFile);
+router.get('/:id/preview', optionalAuth, streamFilePreview);
+router.get('/:id/related', optionalAuth, getRelatedFiles);
+router.post('/:id/download', optionalAuth, recordDownload);
 
 router.post(
   '/',
   authenticate,
-  requireRole('admin', 'super_admin'),
+  requirePermission('files'),
   upload.array('files', MAX_FILES_PER_UPLOAD),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
@@ -49,7 +58,7 @@ router.post(
 router.post(
   '/from-uploadcare',
   authenticate,
-  requireRole('admin', 'super_admin'),
+  requirePermission('files'),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
@@ -60,8 +69,22 @@ router.post(
   attachUploadcareFiles
 );
 
-router.put('/:id', authenticate, requireRole('admin', 'super_admin'), updateFile);
-router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), deleteFile);
-router.post('/bulk-delete', authenticate, requireRole('admin', 'super_admin'), bulkDeleteFiles);
+router.post(
+  '/submit',
+  authenticate,
+  requireStudentOrScopedAdminTier,
+  upload.array('files', MAX_FILES_PER_UPLOAD),
+  [
+    body('departmentId').notEmpty().withMessage('Department is required'),
+    body('courseIdRef').notEmpty().withMessage('Course is required'),
+    body('categoryId').notEmpty().withMessage('Category is required'),
+  ],
+  validate,
+  submitStudentFile
+);
+
+router.put('/:id', authenticate, requirePermission('files'), updateFile);
+router.delete('/:id', authenticate, requirePermission('files'), deleteFile);
+router.post('/bulk-delete', authenticate, requirePermission('files'), bulkDeleteFiles);
 
 export default router;

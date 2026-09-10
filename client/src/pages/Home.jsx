@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, BookOpen, Users2, Files, TrendingUp, Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import SearchBar from '../components/SearchBar.jsx';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 import StatCard from '../components/StatCard.jsx';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
@@ -39,6 +40,13 @@ export default function Home() {
 
   return (
     <div>
+      {/* No z-index/stacking context on this section itself — giving the whole
+          hero a higher stacking context than the stats section below made its
+          blue gradient background paint over the stats cards' overlap area.
+          Instead only the form (which holds the dropdowns) is raised above
+          the stats section's z-10, via z-30 below, since without a
+          stacking-context ancestor that z-index is compared directly against
+          the stats section's in the shared root stacking context. */}
       <section className="bg-gradient-to-b from-brand-600 to-brand-700 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight">Find every academic file, instantly.</h1>
@@ -50,26 +58,32 @@ export default function Home() {
             <SearchBar />
           </div>
 
-          <form onSubmit={goSearch} className="mt-6 bg-white/10 backdrop-blur rounded-xl p-3 flex flex-col sm:flex-row gap-2 max-w-3xl mx-auto">
-            <select value={dept} onChange={(e) => { setDept(e.target.value); setCourse(''); }} className="flex-1 h-11 rounded-lg px-3 text-sm text-slate-800">
-              <option value="">Select Department</option>
-              {(departments?.data || []).map((d) => (
-                <option key={d._id} value={d._id}>{d.name} ({d.code})</option>
-              ))}
-            </select>
-            <select value={course} onChange={(e) => setCourse(e.target.value)} className="flex-1 h-11 rounded-lg px-3 text-sm text-slate-800">
-              <option value="">Select Course</option>
-              {(courses?.data || []).map((c) => (
-                <option key={c._id} value={c._id}>{c.name} ({c.courseId})</option>
-              ))}
-            </select>
-            <select value={batch} onChange={(e) => setBatch(e.target.value)} className="flex-1 h-11 rounded-lg px-3 text-sm text-slate-800">
-              <option value="">Select Batch</option>
-              {(batches?.data || []).map((b) => (
-                <option key={b._id} value={b.code}>{b.name}</option>
-              ))}
-            </select>
-            <button type="submit" className="h-11 px-6 rounded-lg bg-white text-brand-700 font-semibold hover:bg-brand-50">
+          <form onSubmit={goSearch} className="relative z-30 mt-6 bg-white/10 backdrop-blur rounded-xl p-3 flex flex-col sm:flex-row gap-2 max-w-3xl mx-auto">
+            <SearchableSelect
+              className="flex-1"
+              value={dept}
+              onChange={(v) => { setDept(v); setCourse(''); }}
+              placeholder="Select Department"
+              searchPlaceholder="Search departments..."
+              options={(departments?.data || []).map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
+            />
+            <SearchableSelect
+              className="flex-1"
+              value={course}
+              onChange={setCourse}
+              placeholder="Select Course"
+              searchPlaceholder="Search courses..."
+              options={(courses?.data || []).map((c) => ({ value: c._id, label: `${c.name} (${c.courseId})` }))}
+            />
+            <SearchableSelect
+              className="flex-1"
+              value={batch}
+              onChange={setBatch}
+              placeholder="Select Batch"
+              searchPlaceholder="Search batches..."
+              options={(batches?.data || []).map((b) => ({ value: b.code, label: b.name }))}
+            />
+            <button type="submit" className="h-12 sm:h-11 px-6 rounded-lg bg-white text-brand-700 font-semibold hover:bg-brand-50">
               Browse Files
             </button>
           </form>

@@ -3,14 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const apiOrigin = (() => {
-    try {
-      return new URL(env.VITE_API_URL || 'http://localhost:7050/api').origin;
-    } catch {
-      return null;
-    }
-  })();
+  loadEnv(mode, process.cwd(), ''); // ensures VITE_* env vars are loaded for src/sw.js's own import.meta.env access
 
   return {
     plugins: [
@@ -18,6 +11,22 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: false, // registered manually in main.jsx for a custom update toast
+        // injectManifest (not generateSW) — the SW needs custom push /
+        // notificationclick handlers (src/sw.js), which generateSW's fully
+        // auto-generated service worker has no hook for.
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.js',
+        injectManifest: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // The app's own JS bundle has grown past Workbox's 2 MiB default
+          // precache limit (this is a single-page app with a large feature
+          // set, not a real per-file size problem) — raised so the main
+          // bundle still gets precached for offline use instead of failing
+          // the build. Revisit with route-based code-splitting if this
+          // keeps growing rather than raising the limit indefinitely.
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        },
         includeAssets: ['favicon.png', 'icons/*.png'],
         manifest: {
           name: 'ISU Academic Portal',
@@ -36,51 +45,8 @@ export default defineConfig(({ mode }) => {
             { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
-        workbox: {
-          navigateFallbackDenylist: [/^\/uploads\//],
-          runtimeCaching: [
-            // API GET requests (departments/courses/files/search/etc) — serve
-            // last-known-good instantly, refresh in the background. Never
-            // caches non-GET requests (Workbox only intercepts GET by default).
-            ...(apiOrigin
-              ? [
-                  {
-                    urlPattern: ({ url }) => url.origin === apiOrigin,
-                    handler: 'StaleWhileRevalidate',
-                    options: {
-                      cacheName: 'api-cache',
-                      cacheableResponse: { statuses: [0, 200] },
-                      expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 }, // 1 day
-                    },
-                  },
-                ]
-              : []),
-            // Uploaded documents served from the backend's /uploads static route.
-            ...(apiOrigin
-              ? [
-                  {
-                    urlPattern: ({ url }) => url.origin === apiOrigin && url.pathname.startsWith('/uploads/'),
-                    handler: 'CacheFirst',
-                    options: {
-                      cacheName: 'uploaded-files-cache',
-                      cacheableResponse: { statuses: [0, 200] },
-                      expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 }, // 7 days
-                    },
-                  },
-                ]
-              : []),
-            // ImgBB / Uploadcare CDN images.
-            {
-              urlPattern: ({ url }) => url.hostname.endsWith('ibb.co') || url.hostname.endsWith('ucarecdn.com'),
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'cdn-image-cache',
-                cacheableResponse: { statuses: [0, 200] },
-                expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 }, // 30 days
-              },
-            },
-          ],
-        },
+        // Runtime-caching rules now live in src/sw.js itself (injectManifest
+        // mode has no `workbox.runtimeCaching` option — that's generateSW-only).
       }),
     ],
     server: {

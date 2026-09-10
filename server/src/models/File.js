@@ -73,8 +73,15 @@ const fileSchema = new mongoose.Schema(
     semester: { type: String, default: '' },
     academicYear: { type: String, default: '' },
 
+    // "Material type" in the spec — reuses this existing flat, admin-managed
+    // taxonomy rather than introducing a duplicate concept.
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     categoryName: { type: String, required: true },
+
+    chapter: { type: mongoose.Schema.Types.ObjectId, ref: 'Chapter', default: null },
+    chapterName: { type: String, default: '' },
+    topic: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
+    topicName: { type: String, default: '' },
 
     description: { type: String, default: '' },
     keywords: [{ type: String, trim: true, lowercase: true }],
@@ -85,6 +92,46 @@ const fileSchema = new mongoose.Schema(
     downloads: { type: Number, default: 0 },
 
     status: { type: String, enum: ['active', 'archived'], default: 'active' },
+
+    // 'public' = anyone, no login. 'login_required' = must be signed in.
+    // Independent of `restrictions` below — a login_required file with no
+    // restrictions is open to any signed-in user.
+    visibility: { type: String, enum: ['public', 'login_required'], default: 'login_required' },
+
+    // Optional fine-grained access narrowing. Each non-empty axis is an OR
+    // (any listed department/batch/semester/course matches); axes present
+    // are ANDed together. All axes empty = no restriction beyond `visibility`.
+    restrictions: {
+      departments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
+      batches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Batch' }],
+      // ObjectId refs (not free-text) so they compare directly against the
+      // student's own `User.semester` ref when enforcing access.
+      semesters: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Semester' }],
+      courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
+    },
+
+    // Version history: each replace pushes the outgoing attachments/metadata
+    // here before swapping in the new ones, mirroring the attachments[]
+    // embedding pattern already used above.
+    versions: [
+      {
+        attachments: [attachmentSchema],
+        title: String,
+        description: String,
+        fileSize: Number,
+        versionNumber: Number,
+        replacedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        replacedAt: { type: Date, default: Date.now },
+      },
+    ],
+    currentVersion: { type: Number, default: 1 },
+
+    // Student submissions start 'pending' and are structurally excluded from
+    // every public/browsing query (see buildFileQuery) regardless of
+    // `visibility`/`restrictions` until a reviewer approves them. There is no
+    // persisted 'rejected' state — rejection means immediate deletion of both
+    // the document and its storage objects.
+    approvalStatus: { type: String, enum: ['approved', 'pending'], default: 'approved' },
   },
   { timestamps: true }
 );
@@ -122,5 +169,11 @@ fileSchema.index({ fileType: 1 });
 fileSchema.index({ createdAt: -1 });
 fileSchema.index({ views: -1 });
 fileSchema.index({ downloads: -1 });
+fileSchema.index({ chapter: 1 });
+fileSchema.index({ topic: 1 });
+fileSchema.index({ visibility: 1 });
+fileSchema.index({ 'restrictions.departments': 1 });
+fileSchema.index({ 'restrictions.batches': 1 });
+fileSchema.index({ approvalStatus: 1 });
 
 export default mongoose.model('File', fileSchema);

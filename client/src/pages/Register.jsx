@@ -4,9 +4,16 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { departmentApi, batchApi, semesterApi } from '../api/endpoints.js';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
-const initialForm = { name: '', email: '', password: '', rollNo: '', department: '', batch: '', semester: '' };
+const initialForm = { name: '', email: '', password: '', rollNo: '', phone: '', department: '', batch: '', semester: '' };
 
+// Student ID (the verification photo) is deliberately NOT collected here —
+// it's a post-registration workflow now (see PendingApproval.jsx / the
+// /student-id/submit endpoint). Whether a given student ends up needing one
+// at all is decided server-side, after their email is verified, based on
+// whether it's an official university email (see authController.js's
+// isOfficialUniversityEmail) — registration itself never has to know or ask.
 export default function Register() {
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
@@ -22,11 +29,28 @@ export default function Register() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!/^\d{16}$/.test(form.rollNo.trim())) {
+      return toast('Student ID must be exactly 16 digits', 'error');
+    }
+    if (!/^01\d{9}$/.test(form.phone.trim())) {
+      return toast('Phone number must be exactly 11 digits and start with 01', 'error');
+    }
     setSubmitting(true);
     try {
-      await register(form);
-      toast('Account created', 'success');
-      navigate('/');
+      const result = await register(form);
+      if (result.requiresOtp) {
+        navigate('/verify-otp', { state: { email: form.email } });
+        return;
+      }
+      // No OTP step — the decision (auto-approved vs. needs Student ID) is
+      // already final at this point (register() ran it synchronously).
+      if (result.user.approvalStatus === 'approved') {
+        toast('Account created — your student account has been automatically approved', 'success');
+        navigate('/dashboard');
+      } else {
+        toast('Account created — please submit your Student ID to complete verification', 'success');
+        navigate('/pending-approval');
+      }
     } catch (err) {
       toast(err.response?.data?.message || 'Registration failed', 'error');
     } finally {
@@ -56,24 +80,57 @@ export default function Register() {
             className="input"
           />
         </Field>
-        <Field label="Roll No">
-          <input required value={form.rollNo} onChange={(e) => set('rollNo')(e.target.value)} className="input" placeholder="e.g. 142030" />
+        <Field label="Roll / Student ID">
+          <input
+            required
+            inputMode="numeric"
+            pattern="\d{16}"
+            maxLength={16}
+            title="Student ID must be exactly 16 digits"
+            value={form.rollNo}
+            onChange={(e) => set('rollNo')(e.target.value.replace(/\D/g, '').slice(0, 16))}
+            className="input"
+            placeholder="e.g. 0962610005101052 ( Enter 16 digit ID Number )"
+          />
+          {form.rollNo.length > 0 && form.rollNo.length !== 16 && (
+            <p className="text-xs text-red-600 mt-1">Student ID must be exactly 16 digits ({form.rollNo.length}/16)</p>
+          )}
+        </Field>
+        <Field label="Phone Number">
+          <input
+            required
+            inputMode="numeric"
+            pattern="01\d{9}"
+            maxLength={11}
+            title="Phone number must be exactly 11 digits and start with 01"
+            value={form.phone}
+            onChange={(e) => set('phone')(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            className="input"
+            placeholder="e.g. 01712345678"
+          />
+          {form.phone.length > 0 && (form.phone.length !== 11 || !form.phone.startsWith('01')) && (
+            <p className="text-xs text-red-600 mt-1">Must be exactly 11 digits and start with 01 ({form.phone.length}/11)</p>
+          )}
         </Field>
         <Field label="Department">
-          <select required value={form.department} onChange={(e) => set('department')(e.target.value)} className="input">
-            <option value="">Select department</option>
-            {(departments?.data || []).map((d) => (
-              <option key={d._id} value={d._id}>{d.name} ({d.code})</option>
-            ))}
-          </select>
+          <SearchableSelect
+            required
+            value={form.department}
+            onChange={set('department')}
+            placeholder="Select department"
+            searchPlaceholder="Search departments..."
+            options={(departments?.data || []).map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
+          />
         </Field>
         <Field label="Batch">
-          <select required value={form.batch} onChange={(e) => set('batch')(e.target.value)} className="input">
-            <option value="">Select batch</option>
-            {(batches?.data || []).map((b) => (
-              <option key={b._id} value={b._id}>{b.name}</option>
-            ))}
-          </select>
+          <SearchableSelect
+            required
+            value={form.batch}
+            onChange={set('batch')}
+            placeholder="Select batch"
+            searchPlaceholder="Search batches..."
+            options={(batches?.data || []).map((b) => ({ value: b._id, label: b.name }))}
+          />
         </Field>
         <Field label="Semester">
           <select required value={form.semester} onChange={(e) => set('semester')(e.target.value)} className="input">

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+/docs
 
 # env
 .env
@@ -15,6 +16,9 @@ server/uploads/*
 !server/uploads/presentations/.gitkeep
 !server/uploads/spreadsheets/.gitkeep
 !server/uploads/other/.gitkeep
+
+# private uploads (student ID photos, etc.) — never served statically, never committed
+server/private-uploads/
 
 # logs
 *.log
@@ -31,3 +35,4 @@ Thumbs.db
 # misc
 coverage/
 .cache/
+.qa-scratch/

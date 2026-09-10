@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 import { env } from '../../config/env.js';
 import { getSafeExtension } from '../../utils/fileTypes.js';
@@ -60,6 +60,41 @@ export async function uploadDocumentS3(buffer, originalName, subDir, mimeType) {
   );
 
   return { fileUrl: publicUrlFor(key), fileName, storageRef: key };
+}
+
+/**
+ * Uploads a buffer under a non-public key (e.g. `private/student-ids/...`)
+ * and returns only the storage key — never a public URL. The object is
+ * readable only via getPrivateObject below, using the server's own S3
+ * credentials, so it works whether or not the bucket/CDN exposes public URLs.
+ * @returns {{storageRef:string}}
+ */
+export async function uploadPrivateS3(buffer, originalName, subDir, mimeType) {
+  const s3 = getClient();
+  const fileName = safeFileName(originalName);
+  const key = `${subDir}/${fileName}`;
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType || 'application/octet-stream',
+    })
+  );
+
+  return { storageRef: key };
+}
+
+/**
+ * Fetches a private object's body stream + content type using the server's
+ * own credentials. Used only by authenticated admin-only proxy endpoints —
+ * never exposed as a direct/public URL.
+ */
+export async function getPrivateObjectS3(storageRef) {
+  const s3 = getClient();
+  const result = await s3.send(new GetObjectCommand({ Bucket: env.s3.bucket, Key: storageRef }));
+  return { stream: result.Body, contentType: result.ContentType || 'application/octet-stream' };
 }
 
 export async function deleteDocumentS3(storageRef) {

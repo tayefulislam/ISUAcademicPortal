@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Eye, Download, Files, Heart } from 'lucide-react';
+import { Eye, Download, Files, Heart, Lock } from 'lucide-react';
 import FileIcon from './FileIcon.jsx';
 import { formatBytes, formatDate } from '../utils/format.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -39,11 +39,18 @@ export default function FileCard({ file, onDownload }) {
         )}
       </div>
 
-      {multi && (
-        <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 text-xs font-medium">
-          <Files size={12} /> {file.fileCount} files
-        </span>
-      )}
+      <div className="flex flex-wrap gap-1.5">
+        {multi && (
+          <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 text-xs font-medium">
+            <Files size={12} /> {file.fileCount} files
+          </span>
+        )}
+        {file.locked && (
+          <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+            <Lock size={12} /> Login Required
+          </span>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-1.5 text-xs">
         {file.batchCodes?.length ? (
@@ -78,26 +85,43 @@ export default function FileCard({ file, onDownload }) {
           </span>
         </div>
         <div className="flex gap-2">
-          <Link
-            to={`/files/${file._id}`}
-            className="px-3 py-1.5 text-xs font-semibold rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            View
-          </Link>
-          {multi ? (
+          {file.locked ? (
+            // Title/metadata are visible to everyone, but this file's content
+            // requires signing in — send the viewer to Login with `from` set
+            // to this file's own page, so a successful sign-in lands them
+            // right back here to actually view it, per ProtectedRoute's
+            // existing redirect-after-login convention.
             <Link
-              to={`/files/${file._id}`}
-              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+              to="/login"
+              state={{ from: { pathname: `/files/${file._id}` } }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-amber-500 text-white hover:bg-amber-600"
             >
-              View files
+              <Lock size={13} /> Login Required
             </Link>
           ) : (
-            <button
-              onClick={() => onDownload?.(file)}
-              className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
-            >
-              Download
-            </button>
+            <>
+              <Link
+                to={`/files/${file._id}`}
+                className="px-3 py-1.5 text-xs font-semibold rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                View
+              </Link>
+              {multi ? (
+                <Link
+                  to={`/files/${file._id}`}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+                >
+                  View files
+                </Link>
+              ) : (
+                <button
+                  onClick={() => onDownload?.(file)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+                >
+                  Download
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

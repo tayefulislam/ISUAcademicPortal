@@ -10,12 +10,17 @@ import { formatDate } from '../utils/format.js';
 const ROLE_LABEL = { student: 'Student', admin: 'Admin', super_admin: 'Super Admin' };
 
 export default function Profile() {
-  const { updateUser, applyToken } = useAuth();
+  const { updateUser, applyToken, isAdminTier } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({ queryKey: ['my-profile'], queryFn: profileApi.get });
   const profile = data?.data;
+  // Student, or a CR-like custom admin-tier role (still a student underneath)
+  // — Department/Batch are academic-record fields, not self-editable for
+  // these two roles. Mirrors profileController.js's resolveEditableFields;
+  // the backend is the actual enforcement, this only disables the inputs.
+  const deptBatchLocked = profile?.role === 'student' || (isAdminTier && profile?.role !== 'admin');
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -29,6 +34,7 @@ export default function Profile() {
       setForm({
         name: profile.name,
         rollNo: profile.rollNo || '',
+        phone: profile.phone || '',
         department: profile.department?._id || '',
         batch: profile.batch?._id || '',
         semester: profile.semester?._id || '',
@@ -93,6 +99,7 @@ export default function Profile() {
             <Detail label="Name" value={profile.name} />
             <Detail label="Email" value={profile.email} />
             <Detail label="Roll No" value={profile.rollNo || '-'} />
+            <Detail label="Phone" value={profile.phone || '-'} />
             <Detail label="Role" value={ROLE_LABEL[profile.role]} />
             <Detail label="Department" value={profile.department ? `${profile.department.name} (${profile.department.code})` : '-'} />
             <Detail label="Batch" value={profile.batch?.name || '-'} />
@@ -108,17 +115,35 @@ export default function Profile() {
               <Field label="Roll No">
                 <input value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} className="input" />
               </Field>
+              <Field label="Phone">
+                <input
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  inputMode="numeric"
+                  maxLength={11}
+                  placeholder="e.g. 01712345678"
+                  className="input"
+                />
+              </Field>
               <Field label="Department">
-                <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="input">
-                  <option value="">Select</option>
-                  {(departments?.data || []).map((d) => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
-                </select>
+                {deptBatchLocked ? (
+                  <input value={profile.department ? `${profile.department.name} (${profile.department.code})` : 'Not set'} disabled className="input bg-slate-100 text-slate-500" />
+                ) : (
+                  <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="input">
+                    <option value="">Select</option>
+                    {(departments?.data || []).map((d) => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
+                  </select>
+                )}
               </Field>
               <Field label="Batch">
-                <select value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} className="input">
-                  <option value="">Select</option>
-                  {(batches?.data || []).map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
-                </select>
+                {deptBatchLocked ? (
+                  <input value={profile.batch?.name || 'Not set'} disabled className="input bg-slate-100 text-slate-500" />
+                ) : (
+                  <select value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} className="input">
+                    <option value="">Select</option>
+                    {(batches?.data || []).map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+                  </select>
+                )}
               </Field>
               <Field label="Semester">
                 <select value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} className="input">
@@ -127,6 +152,11 @@ export default function Profile() {
                 </select>
               </Field>
             </div>
+            {deptBatchLocked && (
+              <p className="text-xs text-slate-400">
+                Department and Batch are set by the academic office and can't be changed here.
+              </p>
+            )}
             <div className="flex gap-2">
               <button className="px-4 h-10 rounded-lg bg-brand-600 text-white font-semibold text-sm">Save Changes</button>
               <button type="button" onClick={() => setEditing(false)} className="px-4 h-10 rounded-lg border border-slate-300 text-sm">Cancel</button>

@@ -2,19 +2,35 @@ import Course from '../models/Course.js';
 import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parsePagination } from '../utils/pagination.js';
+import { getEffectiveCourseIds } from '../services/courseAccessService.js';
+
+// GET /courses/mine — the courses a Student (or a "CR"-tier admin account,
+// which keeps its department/batch/semester from before promotion) can
+// actually submit material for: their own department's courses, plus any
+// course they hold an active/approved CourseEnrollment for (e.g. a retake
+// outside their own department). Same source of truth as File restrictions/
+// Assignment/Quiz/Notice targeting — see courseAccessService.js.
+export const getMyCourses = asyncHandler(async (req, res) => {
+  const courseIds = await getEffectiveCourseIds(req.user);
+  const courses = await Course.find({ _id: { $in: courseIds }, status: 'active' })
+    .populate('department', 'name code')
+    .sort({ name: 1 });
+  res.json({ success: true, data: courses });
+});
 
 export const listCourses = asyncHandler(async (req, res) => {
-  const { department, page = 1, limit = 50 } = req.query;
+  const { department } = req.query;
+  const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50 });
   const filter = { status: 'active' };
   if (department) filter.department = department;
 
-  const skip = (Number(page) - 1) * Number(limit);
   const [courses, total] = await Promise.all([
-    Course.find(filter).populate('department', 'name code').sort({ name: 1 }).skip(skip).limit(Number(limit)),
+    Course.find(filter).populate('department', 'name code').sort({ name: 1 }).skip(skip).limit(limit),
     Course.countDocuments(filter),
   ]);
 
-  res.json({ success: true, data: courses, pagination: { page: Number(page), limit: Number(limit), total } });
+  res.json({ success: true, data: courses, pagination: { page, limit, total } });
 });
 
 export const getCourse = asyncHandler(async (req, res) => {

@@ -10,6 +10,9 @@ import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import Course from './models/Course.js';
+import Question from './models/Question.js';
+import User from './models/User.js';
+import { logger } from './utils/logger.js';
 
 const app = express();
 
@@ -77,7 +80,36 @@ async function start() {
   try {
     await Course.syncIndexes();
   } catch (err) {
-    console.error('[db] Course.syncIndexes failed:', err.message);
+    logger.error(err, { source: 'app:Course.syncIndexes' });
+  }
+
+  // Self-heals a gap for the exam-builder's random question selection:
+  // `difficulty` only reads back as its schema default ('medium') for a
+  // document that never had the field written to Mongo — that default is
+  // applied by Mongoose on read, but a raw `find({ difficulty: 'medium' })`
+  // (which random-selection rules use) only matches documents where the
+  // field is actually *stored*. Backfilling it once here makes every
+  // pre-existing bank question properly filterable/selectable by
+  // difficulty without a manual migration step.
+  try {
+    await Question.updateMany({ difficulty: { $exists: false } }, { $set: { difficulty: 'medium' } });
+  } catch (err) {
+    logger.error(err, { source: 'app:Question.difficultyBackfill' });
+  }
+
+  // Self-heals a bug where the {department, batch, rollNo} unique index's
+  // partial-filter expression used `$ne` — an operator MongoDB's
+  // partialFilterExpression doesn't support — so the index silently failed
+  // to build on every deployment (mongoose only surfaces that failure via
+  // an 'index' event nobody was listening for). Now fixed to `$gt: ''`;
+  // syncIndexes builds it for the first time on any DB still missing it.
+  // Registration itself also does an explicit pre-check (authController.js)
+  // so a duplicate roll number is rejected with a clear message even before
+  // this index exists/rebuilds.
+  try {
+    await User.syncIndexes();
+  } catch (err) {
+    logger.error(err, { source: 'app:User.syncIndexes' });
   }
 
   app.listen(env.port, () => {

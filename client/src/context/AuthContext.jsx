@@ -44,10 +44,20 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async (payload) => {
     const { data } = await authApi.register(payload);
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    setUser(data.user);
-    return data.user;
+    // No token yet when email OTP verification is required — the caller
+    // must route to the OTP-verify step, which is what actually signs in.
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+    }
+    return data;
+  }, []);
+
+  const applySession = useCallback((token, sessionUser) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(sessionUser));
+    setUser(sessionUser);
   }, []);
 
   const logout = useCallback(() => {
@@ -70,11 +80,42 @@ export function AuthProvider({ children }) {
   }, []);
 
   const isSuperAdmin = user?.role === 'super_admin';
-  const isAdmin = user?.role === 'admin' || isSuperAdmin;
+  const isAdministrator = user?.role === 'administrator';
+  // Has every super_admin capability except visibility/control over
+  // super_admin accounts themselves (server-enforced) — use this instead of
+  // `isSuperAdmin` for any UI that should also be available to Administrator.
+  const isSuperAdminTier = isSuperAdmin || isAdministrator;
+  const isFaculty = user?.role === 'faculty';
+  const isStudent = user?.role === 'student';
+  // Any role that isn't Student/Faculty/Super Admin/Administrator sits at
+  // the "admin tier" — Admin, "CR", or any further role Super Admin creates
+  // via the Permissions page. `isAdmin` keeps its existing broad meaning
+  // (used throughout the app for admin-tier UI) so a new admin-tier role
+  // behaves like Admin everywhere without touching every call site.
+  const isAdminTier = !!user && !isSuperAdminTier && !isFaculty && !isStudent;
+  const isAdmin = isSuperAdminTier || isAdminTier;
+  const permissions = user?.permissions || [];
+  const hasPermission = useCallback((key) => isSuperAdminTier || permissions.includes(key), [isSuperAdminTier, permissions]);
 
   return (
     <AuthContext.Provider
-      value={{ user, updateUser, loading, login, register, logout, applyToken, isAdmin, isSuperAdmin }}
+      value={{
+        user,
+        updateUser,
+        loading,
+        login,
+        register,
+        logout,
+        applyToken,
+        applySession,
+        isAdmin,
+        isAdminTier,
+        isSuperAdmin,
+        isAdministrator,
+        isSuperAdminTier,
+        isFaculty,
+        hasPermission,
+      }}
     >
       {children}
     </AuthContext.Provider>

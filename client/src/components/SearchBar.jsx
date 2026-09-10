@@ -30,7 +30,7 @@ export default function SearchBar({ initialValue = '', size = 'lg', onSubmit }) 
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Search course, course ID, file name, batch..."
-        className={`w-full ${sizes[size]} pr-28 rounded-xl border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent`}
+        className={`w-full ${sizes[size]} pr-28 rounded-xl border border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent`}
       />
       <button
         type="submit"

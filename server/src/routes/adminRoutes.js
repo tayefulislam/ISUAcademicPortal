@@ -1,20 +1,38 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { uploadFiles, getMyFiles, updateFile, deleteFile } from '../controllers/fileController.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import {
+  uploadFiles,
+  getMyFiles,
+  updateFile,
+  deleteFile,
+  replaceFileVersion,
+  getFileVersions,
+} from '../controllers/fileController.js';
+import {
+  listPendingStudents,
+  getStudentIdPhoto,
+  approveStudent,
+  rejectStudent,
+} from '../controllers/studentApprovalController.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 
 const router = Router();
 
-// Every route here requires an authenticated Admin (or Super Admin, who has
-// every Admin capability plus more). Ownership of individual files is
-// still enforced per-request inside the controllers.
-router.use(authenticate, requireRole('admin', 'super_admin'));
+// Every route here requires an authenticated admin-tier user holding the
+// relevant module permission (super_admin always passes) — Super Admin
+// controls exactly who that is via the Permissions page. Ownership of
+// individual files is still enforced per-request inside the controllers.
+router.use(authenticate);
 
-router.get('/files', getMyFiles);
+const canFiles = requirePermission('files');
+const canApprovals = requirePermission('approvals');
+
+router.get('/files', canFiles, getMyFiles);
 router.post(
   '/files',
+  canFiles,
   upload.array('files', MAX_FILES_PER_UPLOAD),
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
@@ -24,7 +42,15 @@ router.post(
   validate,
   uploadFiles
 );
-router.patch('/files/:id', updateFile);
-router.delete('/files/:id', deleteFile);
+router.patch('/files/:id', canFiles, updateFile);
+router.delete('/files/:id', canFiles, deleteFile);
+
+router.get('/files/:id/versions', canFiles, getFileVersions);
+router.post('/files/:id/versions', canFiles, upload.array('files', MAX_FILES_PER_UPLOAD), replaceFileVersion);
+
+router.get('/students/pending', canApprovals, listPendingStudents);
+router.get('/students/:id/id-photo', canApprovals, getStudentIdPhoto);
+router.patch('/students/:id/approve', canApprovals, approveStudent);
+router.patch('/students/:id/reject', canApprovals, rejectStudent);
 
 export default router;
