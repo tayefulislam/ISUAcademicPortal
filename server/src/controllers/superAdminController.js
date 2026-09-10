@@ -3,7 +3,7 @@ import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { deleteStoredFile, deleteStudentIdImage, deletePrivateImage } from '../services/storage/storageService.js';
-import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS, STRING_SETTINGS, TEXT_SETTINGS } from '../models/Settings.js';
+import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS, STRING_SETTINGS, TEXT_SETTINGS, LIST_SETTINGS, normalizeDomain } from '../models/Settings.js';
 import { roleExists } from '../models/Role.js';
 import { rankFileCandidates } from '../services/fuzzyFileSearch.js';
 import { sanitizeQuery } from '../utils/textSearch.js';
@@ -29,6 +29,7 @@ function flagsPayload(settings) {
     ...Object.fromEntries(NUMERIC_SETTINGS.map((n) => [n.key, settings[n.key] || 0])),
     ...Object.fromEntries(STRING_SETTINGS.map((s) => [s.key, settings[s.key] || s.default])),
     ...Object.fromEntries(TEXT_SETTINGS.map((t) => [t.key, settings[t.key] || t.default])),
+    ...Object.fromEntries(LIST_SETTINGS.map((l) => [l.key, settings[l.key] || []])),
   };
 }
 
@@ -41,6 +42,7 @@ export const getSystemSettings = asyncHandler(async (req, res) => {
     numericSettings: NUMERIC_SETTINGS,
     stringSettings: STRING_SETTINGS,
     textSettings: TEXT_SETTINGS,
+    listSettings: LIST_SETTINGS,
   });
 });
 
@@ -49,6 +51,7 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
   const validNumericKeys = new Set(NUMERIC_SETTINGS.map((n) => n.key));
   const stringSettingsByKey = new Map(STRING_SETTINGS.map((s) => [s.key, s]));
   const textSettingsByKey = new Map(TEXT_SETTINGS.map((t) => [t.key, t]));
+  const listSettingsByKey = new Map(LIST_SETTINGS.map((l) => [l.key, l]));
   const patch = {};
   for (const [key, value] of Object.entries(req.body || {})) {
     if (validFlagKeys.has(key)) {
@@ -73,6 +76,21 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
         throw new ApiError(400, `${key} must be a valid domain, e.g. "isu.ac.bd" (without the @)`);
       }
       patch[key] = cleaned;
+    } else if (listSettingsByKey.has(key)) {
+      const setting = listSettingsByKey.get(key);
+      if (!Array.isArray(value)) throw new ApiError(400, `${key} must be an array`);
+      // Whole-array replace (matches how every other setting type here works
+      // — send the new value, it replaces the old one) — normalized
+      // (lowercased/trimmed, leading "@" stripped so pasting the display
+      // form works) and deduplicated so the admin UI's chip list can't end
+      // up with silent near-duplicates like "isu.ac.bd" and "ISU.AC.BD ".
+      const cleanedItems = value.map((v) => normalizeDomain(v));
+      for (const item of cleanedItems) {
+        if (!setting.itemPattern.test(item)) {
+          throw new ApiError(400, `${key}: "${item}" is not a valid domain, e.g. "isu.ac.bd" (without the @)`);
+        }
+      }
+      patch[key] = [...new Set(cleanedItems)];
     }
     // unknown keys are silently ignored rather than erroring — forward-compatible
   }
@@ -266,7 +284,7 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     if (trimmedRollNo) {
       const duplicate = await User.findOne({ rollNo: trimmedRollNo, _id: { $ne: target._id } });
       if (duplicate) {
-        throw new ApiError(409, 'This Roll No / Student ID is already registered to another account');
+        throw new ApiError(409, 'This Student ID is already registered with another account. Please check your Student ID or contact the administrator.');
       }
     }
     target.rollNo = trimmedRollNo;
@@ -280,7 +298,7 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
       }
       const duplicatePhone = await User.findOne({ phone: trimmedPhone, _id: { $ne: target._id } });
       if (duplicatePhone) {
-        throw new ApiError(409, 'This phone number is already registered to another account');
+        throw new ApiError(409, 'This phone number is already registered. Please use another phone number or log in to your existing account.');
       }
     }
     target.phone = trimmedPhone;
@@ -416,7 +434,7 @@ export const createFaculty = asyncHandler(async (req, res) => {
   const { name, email, password, assignedDepartments, assignedCourses } = req.body;
 
   const existing = await User.findOne({ email: String(email).toLowerCase() });
-  if (existing) throw new ApiError(409, 'An account with this email already exists');
+  if (existing) throw new ApiError(409, 'This email address is already registered. Please use another email or log in to your existing account.');
 
   const faculty = await User.create({
     name,

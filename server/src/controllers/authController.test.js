@@ -182,10 +182,23 @@ describe('emailDomainMatches — exact-domain matching (Automatic Student Approv
 
 describe('isOfficialUniversityEmail — spec-named wrapper', () => {
   test('official domain -> true, gmail/yahoo -> false', () => {
-    const settings = { studentAutoApprovalDomain: 'isu.ac.bd' };
+    const settings = { officialEmailDomains: ['isu.ac.bd'] };
     assert.equal(isOfficialUniversityEmail('student@isu.ac.bd', settings), true);
     assert.equal(isOfficialUniversityEmail('student@gmail.com', settings), false);
     assert.equal(isOfficialUniversityEmail('student@yahoo.com', settings), false);
+  });
+
+  test('matches ANY domain in a multi-domain list, not just the first', () => {
+    const settings = { officialEmailDomains: ['isu.ac.bd', 'isu-grad.ac.bd', 'alumni.isu.ac.bd'] };
+    assert.equal(isOfficialUniversityEmail('a@isu.ac.bd', settings), true);
+    assert.equal(isOfficialUniversityEmail('b@isu-grad.ac.bd', settings), true);
+    assert.equal(isOfficialUniversityEmail('c@alumni.isu.ac.bd', settings), true);
+    assert.equal(isOfficialUniversityEmail('d@gmail.com', settings), false);
+  });
+
+  test('an empty domain list matches nothing', () => {
+    assert.equal(isOfficialUniversityEmail('a@isu.ac.bd', { officialEmailDomains: [] }), false);
+    assert.equal(isOfficialUniversityEmail('a@isu.ac.bd', {}), false);
   });
 });
 
@@ -204,7 +217,7 @@ describe('maybeAutoApproveStudent — Automatic Student Approval (spec Part 1 / 
 
   test('Case 1 — matching domain + OTP verified + feature ON -> APPROVED', async () => {
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'approved');
     assert.equal(s.approvalRole, 'system');
     assert.equal(s.approvedBy, null);
@@ -213,31 +226,31 @@ describe('maybeAutoApproveStudent — Automatic Student Approval (spec Part 1 / 
 
   test('Case 2 — non-university domain -> stays pending (normal manual workflow)', async () => {
     const s = await mkPendingStudent({ email: 'student@gmail.com', emailVerified: true });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'pending');
   });
 
   test('Case 3 — deceptive domain (fakeisu.ac.bd) -> NOT auto-approved', async () => {
     const s = await mkPendingStudent({ email: 'student@fakeisu.ac.bd', emailVerified: true });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'pending');
   });
 
   test('Case 4 — matching domain but OTP/email NOT verified -> NOT auto-approved', async () => {
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: false });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'pending');
   });
 
   test('Case 5 — mixed-case email + domain, OTP verified -> APPROVED', async () => {
     const s = await mkPendingStudent({ email: 'Student@ISU.AC.BD'.toLowerCase(), emailVerified: true });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'approved');
   });
 
-  test('Case 6 — no configured domain at all -> NOT auto-approved (never a wildcard match)', async () => {
+  test('Case 6 — no configured domains at all -> NOT auto-approved (never a wildcard match)', async () => {
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: '' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: [] }, {});
     assert.equal(s.approvalStatus, 'pending');
   });
 
@@ -245,7 +258,7 @@ describe('maybeAutoApproveStudent — Automatic Student Approval (spec Part 1 / 
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true });
     // Passing an object with no auto-approval-specific toggle at all (just
     // the domain) still approves — nothing else needs to be turned on.
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.approvalStatus, 'approved');
   });
 
@@ -253,23 +266,23 @@ describe('maybeAutoApproveStudent — Automatic Student Approval (spec Part 1 / 
     const faculty = await User.create({
       name: 'F', email: 'faculty@isu.ac.bd', password: 'password123', role: 'faculty', approvalStatus: 'pending', emailVerified: true,
     });
-    await maybeAutoApproveStudent(faculty, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(faculty, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(faculty.approvalStatus, 'pending');
   });
 
   test('never re-processes an already-approved or already-rejected student (idempotent no-op)', async () => {
     const approved = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true, approvalStatus: 'approved' });
-    await maybeAutoApproveStudent(approved, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(approved, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(approved.approvalHistory.length, 1); // unchanged — the SUBMITTED entry from mkPendingStudent, no AUTO_APPROVED appended
 
     const rejected = await mkPendingStudent({ email: 'student2@isu.ac.bd', emailVerified: true, approvalStatus: 'rejected' });
-    await maybeAutoApproveStudent(rejected, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(rejected, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(rejected.approvalStatus, 'rejected');
   });
 
   test('clears any stale rejectionReason on auto-approval (e.g. after a resubmission)', async () => {
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true, rejectionReason: 'old reason' });
-    await maybeAutoApproveStudent(s, { studentAutoApprovalDomain: 'isu.ac.bd' }, {});
+    await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.rejectionReason, '');
   });
 });

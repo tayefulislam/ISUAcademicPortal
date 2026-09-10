@@ -9,6 +9,16 @@ function getTransporter() {
       port: env.email.smtp.port,
       secure: env.email.smtp.secure,
       auth: { user: env.email.smtp.user, pass: env.email.smtp.pass },
+      // nodemailer's defaults (2 minutes for connection/greeting, indefinite
+      // for the socket) mean a misconfigured host or a hosting provider that
+      // blocks the SMTP port silently hangs for a very long time. Every
+      // caller of sendEmail() now treats delivery as fire-and-forget, but
+      // this still matters: it's what makes an actual mail outage fail fast
+      // and get logged promptly instead of leaving a connection open for
+      // minutes per attempt.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
   }
   return transporter;

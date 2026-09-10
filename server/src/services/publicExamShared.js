@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import Quiz from '../models/Quiz.js';
 import { getSettings } from '../models/Settings.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parseAsDhakaTime } from '../utils/timezone.js';
 
 const PARTICIPANT_FIELD_MODES = ['required', 'optional', 'disabled'];
 const LOGIN_REQUIREMENTS = ['guest', 'optional', 'required'];
@@ -113,7 +114,13 @@ export async function buildPublicAccessUpdate(body, existingQuiz) {
       },
       resultSettings: {
         visibility: input.resultSettings?.visibility || existingQuiz?.publicAccess?.resultSettings?.visibility || 'immediate',
-        scheduledAt: input.resultSettings?.scheduledAt ?? existingQuiz?.publicAccess?.resultSettings?.scheduledAt ?? null,
+        // Same Dhaka-local interpretation as the quiz's own startAt/endAt
+        // (server/src/utils/timezone.js) — this is a `datetime-local` value
+        // from the same form, subject to the same naive-string bug.
+        scheduledAt:
+          input.resultSettings?.scheduledAt !== undefined
+            ? parseAsDhakaTime(input.resultSettings.scheduledAt)
+            : existingQuiz?.publicAccess?.resultSettings?.scheduledAt ?? null,
         showScore: input.resultSettings?.showScore !== undefined ? !!input.resultSettings.showScore : existingQuiz?.publicAccess?.resultSettings?.showScore !== false,
         showPercentage: input.resultSettings?.showPercentage !== undefined ? !!input.resultSettings.showPercentage : existingQuiz?.publicAccess?.resultSettings?.showPercentage !== false,
         showPassFail: input.resultSettings?.showPassFail !== undefined ? !!input.resultSettings.showPassFail : existingQuiz?.publicAccess?.resultSettings?.showPassFail !== false,

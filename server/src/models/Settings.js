@@ -154,38 +154,65 @@ export const STRING_SETTINGS = [
 
 // Free-text admin-editable settings validated by a regex rather than a
 // fixed option list — same generic-list contract as FEATURE_FLAGS/
-// NUMERIC_SETTINGS/STRING_SETTINGS above. Currently just the official
-// university email domain: whenever studentApprovalEnabled (above) is ON, a
-// student whose verified email matches this domain is APPROVED automatically
-// the moment their email is verified — unconditionally, no separate enable
-// toggle (see authController.js's maybeAutoApproveStudent/
-// isOfficialUniversityEmail; a prior separate "studentAutoApprovalEnabled"
-// toggle was removed because it was the actual cause of official-domain
-// students getting stuck pending Student ID review — nobody had turned the
-// second toggle on). Everyone else falls through to the normal Student ID
-// submission/approval workflow. Stored WITHOUT the leading '@' (e.g.
-// "isu.ac.bd"), matched by exact host-string equality so a subdomain or a
-// deceptive longer domain never matches unless explicitly configured to.
-export const TEXT_SETTINGS = [
+// NUMERIC_SETTINGS/STRING_SETTINGS above.
+//
+// Kept only for backward compatibility with documents written before
+// officialEmailDomains (below) existed — see that field's `default`
+// function, which migrates this single value into the new array the first
+// time an existing Settings document is read. Nothing in the application
+// reads this field directly anymore; it's dead weight kept solely so no
+// admin's prior domain configuration is silently lost.
+export const TEXT_SETTINGS = [];
+
+// A domain "shape" check: labels of letters/digits/hyphens separated by
+// dots, at least one dot — rejects a bare word ("localhost") and guards
+// against someone pasting a stray "@" or a full email address into this
+// field by mistake.
+const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+// Admin-editable LIST settings — same generic contract as FEATURE_FLAGS/
+// NUMERIC_SETTINGS/STRING_SETTINGS/TEXT_SETTINGS above, but the value is an
+// array of normalized strings rather than one value. Currently just the set
+// of official university email domains: whenever studentApprovalEnabled is
+// ON, a student whose verified email ends in ANY of these domains is
+// APPROVED automatically the moment their email is verified —
+// unconditionally, no separate enable toggle (see authController.js's
+// maybeAutoApproveStudent/isOfficialUniversityEmail; a prior separate
+// "studentAutoApprovalEnabled" toggle was removed because it was the actual
+// cause of official-domain students getting stuck pending Student ID review
+// — nobody had turned the second toggle on). Everyone else falls through to
+// the normal Student ID submission/approval workflow. Each entry is stored
+// WITHOUT the leading '@' (e.g. "isu.ac.bd"), matched by exact host-string
+// equality so a subdomain or a deceptive longer domain never matches unless
+// explicitly configured to.
+export const LIST_SETTINGS = [
   {
-    key: 'studentAutoApprovalDomain',
-    label: 'Official University Email Domain',
-    description: 'A student whose verified email ends in @<this domain> is approved automatically — no Student ID submission needed. Stored without the "@". Matched exactly (no automatic subdomain matching) and case-insensitively.',
-    default: 'isu.ac.bd',
-    // Loose hostname shape: labels of letters/digits/hyphens separated by
-    // dots, at least one dot (a bare word is rejected — "localhost" isn't a
-    // real email domain here, and it also guards against someone pasting a
-    // stray "@" or an email address into this field by mistake).
-    pattern: /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i,
+    key: 'officialEmailDomains',
+    label: 'Official University Email Domains',
+    description: 'A student whose verified email ends in any of these domains is approved automatically — no Student ID submission needed. Each stored without the leading "@". Matched exactly (no automatic subdomain matching) and case-insensitively.',
+    itemPattern: DOMAIN_PATTERN,
   },
 ];
+
+export function normalizeDomain(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/^@/, '');
+}
 
 const schemaFields = { key: { type: String, required: true, unique: true, default: 'global' } };
 for (const setting of STRING_SETTINGS) {
   schemaFields[setting.key] = { type: String, enum: setting.options, default: setting.default };
 }
-for (const setting of TEXT_SETTINGS) {
-  schemaFields[setting.key] = { type: String, default: setting.default, trim: true, lowercase: true };
+// Legacy single-domain field — no longer read by application logic, kept
+// only as the migration source for officialEmailDomains below.
+schemaFields.studentAutoApprovalDomain = { type: String, default: '', trim: true, lowercase: true };
+for (const setting of LIST_SETTINGS) {
+  // A plain empty-array default (not a `this`-dependent function — Mongoose
+  // computes upsert/insert defaults before any document context exists, so
+  // `this` isn't reliably the document being created). The actual migration
+  // of a pre-existing single-domain value into this array happens
+  // explicitly in getSettings() below instead, where a real document is
+  // available to read and write.
+  schemaFields[setting.key] = { type: [String], default: [] };
 }
 for (const flag of FEATURE_FLAGS) {
   // Every flag defaults OFF unless it opts into `default: true` — used for
@@ -202,7 +229,26 @@ const settingsSchema = new mongoose.Schema(schemaFields, { timestamps: true });
 const Settings = mongoose.model('Settings', settingsSchema);
 
 export async function getSettings() {
-  return Settings.findOneAndUpdate({ key: 'global' }, { $setOnInsert: { key: 'global' } }, { upsert: true, new: true });
+  const settings = await Settings.findOneAndUpdate(
+    { key: 'global' },
+    { $setOnInsert: { key: 'global' } },
+    { upsert: true, new: true }
+  );
+
+  // One-time migration: a document written before officialEmailDomains
+  // existed still has its old single-domain value on
+  // studentAutoApprovalDomain — carry it forward into the new array rather
+  // than silently losing an admin's prior configuration. Brand-new
+  // deployments (neither field ever set) fall back to the same 'isu.ac.bd'
+  // default this app always had. Runs at most once per deployment: after
+  // the first save, officialEmailDomains is non-empty and this is skipped.
+  if (!settings.officialEmailDomains?.length) {
+    const legacy = normalizeDomain(settings.studentAutoApprovalDomain);
+    settings.officialEmailDomains = [legacy || 'isu.ac.bd'];
+    await settings.save();
+  }
+
+  return settings;
 }
 
 export async function updateSettings(patch) {

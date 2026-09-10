@@ -2,7 +2,8 @@ import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { connectTestDb, dropAndDisconnect, clearCollections } from '../test/dbTestUtils.js';
 import User from '../models/User.js';
-import { updateUserApproval } from './superAdminController.js';
+import Settings from '../models/Settings.js';
+import { updateUserApproval, getSystemSettings, updateSystemSettings } from './superAdminController.js';
 
 // Manual Student ID approval override — the "just fix it" escape hatch for
 // Super Admin/Administrator, distinct from the pending-queue-only
@@ -161,5 +162,50 @@ describe('updateUserApproval — manual override', () => {
     });
     const fresh = await User.findById(pendingStudent._id);
     assert.equal(fresh.tokenVersion, before + 1);
+  });
+});
+
+describe('updateSystemSettings — officialEmailDomains (list setting)', () => {
+  beforeEach(async () => {
+    await clearCollections(Settings);
+  });
+
+  test('a fresh deployment defaults to ["isu.ac.bd"]', async () => {
+    const { res, error } = await call(getSystemSettings, { user: superAdminUser });
+    assert.equal(error, undefined);
+    assert.deepEqual(res.body.data.officialEmailDomains, ['isu.ac.bd']);
+  });
+
+  test('replaces the whole list, normalizing each entry (lowercase, trim, strip leading @, dedupe)', async () => {
+    const { res, error } = await call(updateSystemSettings, {
+      user: superAdminUser,
+      body: { officialEmailDomains: ['  ISU.AC.BD ', '@grad.isu.ac.bd', 'grad.isu.ac.bd'] },
+    });
+    assert.equal(error, undefined);
+    assert.deepEqual(res.body.data.officialEmailDomains.sort(), ['grad.isu.ac.bd', 'isu.ac.bd'].sort());
+  });
+
+  test('rejects an entry that is not a valid domain shape', async () => {
+    const { error } = await call(updateSystemSettings, {
+      user: superAdminUser,
+      body: { officialEmailDomains: ['not a domain'] },
+    });
+    assert.equal(error?.statusCode, 400);
+  });
+
+  test('an empty array is a valid replacement (turns off official-domain auto-approval entirely)', async () => {
+    const { res, error } = await call(updateSystemSettings, {
+      user: superAdminUser,
+      body: { officialEmailDomains: [] },
+    });
+    assert.equal(error, undefined);
+    assert.deepEqual(res.body.data.officialEmailDomains, []);
+  });
+
+  test('migrates a pre-existing legacy studentAutoApprovalDomain value on first read', async () => {
+    await Settings.create({ key: 'global', studentAutoApprovalDomain: 'legacy-domain.edu' });
+    const { res, error } = await call(getSystemSettings, { user: superAdminUser });
+    assert.equal(error, undefined);
+    assert.deepEqual(res.body.data.officialEmailDomains, ['legacy-domain.edu']);
   });
 });

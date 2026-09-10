@@ -5,7 +5,7 @@ import { quizApi, questionApi, departmentApi, courseApi, batchApi, semesterApi, 
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
-import { formatDate } from '../../utils/format.js';
+import { formatBST, toDhakaInputValue, dhakaInputToIso } from '../../utils/format.js';
 import MathText from '../../components/MathText.jsx';
 import QuizAttemptsPanel from './QuizAttemptsPanel.jsx';
 
@@ -129,8 +129,13 @@ export default function QuizManager() {
       courses: form.courses,
       batches: form.batches,
       semesters: form.semesters,
-      startAt: form.startAt,
-      endAt: form.endAt,
+      // form.startAt/endAt are bare "YYYY-MM-DDTHH:mm" values from the
+      // datetime-local inputs below, always meant as Bangladesh time —
+      // converted to an explicit UTC ISO string here so the request is
+      // unambiguous regardless of what timezone the API server happens to
+      // run in (see client/src/utils/format.js's dhakaInputToIso).
+      startAt: dhakaInputToIso(form.startAt),
+      endAt: dhakaInputToIso(form.endAt),
       duration: form.duration,
       passingMarks: form.passingMarks,
       attemptsAllowed: form.attemptsAllowed,
@@ -154,7 +159,20 @@ export default function QuizManager() {
           }
         : { mode: 'fixed', rules: [] },
       examType: form.examType,
-      publicAccess: isPublic ? { ...form.publicAccess, enabled: true } : undefined,
+      publicAccess: isPublic
+        ? {
+            ...form.publicAccess,
+            enabled: true,
+            resultSettings: {
+              ...form.publicAccess.resultSettings,
+              // Same Dhaka-local datetime-local input as startAt/endAt above.
+              scheduledAt:
+                form.publicAccess.resultSettings.visibility === 'scheduled' && form.publicAccess.resultSettings.scheduledAt
+                  ? dhakaInputToIso(form.publicAccess.resultSettings.scheduledAt)
+                  : form.publicAccess.resultSettings.scheduledAt,
+            },
+          }
+        : undefined,
     };
 
     try {
@@ -180,8 +198,12 @@ export default function QuizManager() {
       setForm({
         title: q.title,
         description: q.description || '',
-        startAt: q.startAt?.slice(0, 16) || '',
-        endAt: q.endAt?.slice(0, 16) || '',
+        // q.startAt/endAt from the API are UTC ISO strings — converted to
+        // Dhaka wall-clock ("YYYY-MM-DDTHH:mm") before going into the
+        // datetime-local inputs below, otherwise a re-opened quiz would show
+        // the wrong clock time (off by the UTC/Dhaka offset).
+        startAt: toDhakaInputValue(q.startAt),
+        endAt: toDhakaInputValue(q.endAt),
         duration: q.duration,
         passingMarks: q.passingMarks,
         attemptsAllowed: q.attemptsAllowed,
@@ -204,7 +226,11 @@ export default function QuizManager() {
               password: '', // never pre-filled — a blank field means "keep the existing password"
               participantFields: { ...emptyPublicAccess.participantFields, ...q.publicAccess.participantFields },
               attemptLimit: { ...emptyPublicAccess.attemptLimit, ...q.publicAccess.attemptLimit },
-              resultSettings: { ...emptyPublicAccess.resultSettings, ...q.publicAccess.resultSettings },
+              resultSettings: {
+                ...emptyPublicAccess.resultSettings,
+                ...q.publicAccess.resultSettings,
+                scheduledAt: toDhakaInputValue(q.publicAccess.resultSettings?.scheduledAt),
+              },
             }
           : emptyPublicAccess,
         questionSelection:
@@ -275,6 +301,10 @@ export default function QuizManager() {
               <input required type="datetime-local" value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} className="input" />
             </div>
           </div>
+          {/* Every quiz schedule is Bangladesh time regardless of the browser's
+              own timezone — a faculty member abroad still schedules against
+              Dhaka, not their local clock (server/src/utils/timezone.js). */}
+          <p className="text-xs text-slate-400 -mt-1.5">Times above are in Bangladesh Standard Time (UTC+06:00)</p>
 
           <div className="grid grid-cols-3 gap-2">
             <input required type="number" min={1} value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="Duration (min)" className="input" />
@@ -434,7 +464,7 @@ export default function QuizManager() {
                         q.batches?.map((b) => b.name).join(', '),
                         q.semesters?.map((s) => s.name).join(', '),
                       ].filter(Boolean).join(' + ') || 'No target'}
-                  {' · '}Total {q.totalMarks} marks &middot; {formatDate(q.startAt)} – {formatDate(q.endAt)}
+                  {' · '}Total {q.totalMarks} marks &middot; {formatBST(q.startAt)} – {formatBST(q.endAt)}
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   <button onClick={() => edit(q)} className="p-1.5 rounded hover:bg-slate-100"><Pencil size={16} /></button>
@@ -641,7 +671,7 @@ function PublicAccessSection({ value: pa, onChange, editingId, slug }) {
       {pa.resultSettings.visibility === 'scheduled' && (
         <input
           type="datetime-local"
-          value={pa.resultSettings.scheduledAt ? String(pa.resultSettings.scheduledAt).slice(0, 16) : ''}
+          value={pa.resultSettings.scheduledAt || ''}
           onChange={(e) => setField('resultSettings', { scheduledAt: e.target.value })}
           className="input"
         />
