@@ -1,0 +1,12 @@
+ [
+      {
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+          "namespace": "android_app",
+          "package_name": "com.bluespacetech.isuacademicportal",
+          "sha256_cert_fingerprints": [
+            "A7:65:79:06:F7:4F:4E:26:15:49:75:09:EF:60:25:9B:07:9C:D1:3B:FB:26:2D:CD:14:61:2C:50:85:78:C4:CB"
+          ]
+        }
+      }
+    ]
