@@ -74,6 +74,13 @@ export const courseApi = {
   // plus any they hold an active/approved CourseEnrollment for) — used by
   // Submit Material to scope a Student/"CR" to their own department/batch.
   mine: () => api.get('/courses/mine').then((r) => r.data),
+  // The same set, split for the My Courses screen: `running` is the student's
+  // own department's courses for the semester they are in, `other` is their
+  // active retake/improvement/… enrolments (empty when there are none).
+  mineGrouped: () => api.get('/courses/mine', { params: { grouped: true } }).then((r) => r.data),
+  // The course page's batch selector: the most recent batches, each with its
+  // content counts for this course. Derived server-side, never hardcoded.
+  batches: (courseId) => api.get(`/courses/${courseId}/batches`).then((r) => r.data),
   get: (id) => api.get(`/courses/${id}`).then((r) => r.data),
   create: (data) => api.post('/courses', data).then((r) => r.data),
   update: (id, data) => api.put(`/courses/${id}`, data).then((r) => r.data),
@@ -192,6 +199,15 @@ export const reviewApi = {
 // ----- Faculty's own scoped file management -----
 export const facultyApi = {
   courses: () => api.get('/faculty/courses').then((r) => r.data),
+  // My Courses: the same list, plus each course's per-faculty teachingStatus and
+  // (with counts) its content totals. A separate method because `courses` above
+  // is used directly as a React Query `queryFn` in several places, and React
+  // Query passes its own context object as the first argument — giving that
+  // method a `params` parameter would have sent queryKey/signal as query params.
+  courseList: (params) => api.get('/faculty/courses', { params }).then((r) => r.data),
+  // Activate/deactivate this course for the signed-in faculty member only.
+  setCourseStatus: (courseId, status) =>
+    api.patch(`/faculty/courses/${courseId}/status`, { status }).then((r) => r.data),
   files: (params) => api.get('/faculty/files', { params }).then((r) => r.data),
   upload: (formData, onProgress) =>
     api.post('/faculty/files', formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: onProgress }).then((r) => r.data),
@@ -224,6 +240,10 @@ export const assignmentApi = {
   // Audience view (any authenticated role) + creator/management view (staff).
   list: () => api.get('/assignments').then((r) => r.data),
   mine: () => api.get('/assignments/mine').then((r) => r.data),
+  // The course page's Assignments tab. These carry `{course, batch}`; the server
+  // still applies the viewer's own audience filter, so they can only narrow.
+  listInCourse: (params) => api.get('/assignments', { params }).then((r) => r.data),
+  mineInCourse: (params) => api.get('/assignments/mine', { params }).then((r) => r.data),
   get: (id) => api.get(`/assignments/${id}`).then((r) => r.data),
   create: (formData) => api.post('/assignments', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   update: (id, formData) => api.patch(`/assignments/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
@@ -293,6 +313,10 @@ export const questionApi = {
 export const quizApi = {
   list: () => api.get('/quizzes').then((r) => r.data),
   mine: () => api.get('/quizzes/mine').then((r) => r.data),
+  // The course page's Quizzes tab. Carry `{course, batch}`; the server still
+  // applies the viewer's own audience filter, so they can only narrow.
+  listInCourse: (params) => api.get('/quizzes', { params }).then((r) => r.data),
+  mineInCourse: (params) => api.get('/quizzes/mine', { params }).then((r) => r.data),
   getForManage: (id) => api.get(`/quizzes/${id}/manage`).then((r) => r.data),
   create: (data) => api.post('/quizzes', data).then((r) => r.data),
   update: (id, data) => api.patch(`/quizzes/${id}`, data).then((r) => r.data),

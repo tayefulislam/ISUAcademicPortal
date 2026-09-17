@@ -1,8 +1,10 @@
 import Assignment from '../models/Assignment.js';
 import Submission from '../models/Submission.js';
+import Course from '../models/Course.js';
 import { getSettings } from '../models/Settings.js';
 import { isAdminTierRole, isSuperAdminTier } from '../models/Role.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
+import { assertBatchesMatchCourses } from '../services/teachingService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
@@ -68,14 +70,42 @@ function assertHasTarget(targeting) {
   }
 }
 
+/**
+ * Course page → the Assignments tab: narrow a listing to one course and/or one
+ * batch. Purely additive to whatever filter the caller already had, so it can
+ * only *reduce* what they see — a student passing someone else's course id gets
+ * nothing, never more.
+ */
+function applyCourseScope(query, filter) {
+  if (query.course) filter.courses = query.course;
+  if (query.batch) filter.batches = query.batch;
+}
+
 // Faculty may only target their own assigned Department(s)/Course(s) —
 // identical rule to notices (see noticeController.js).
-function assertFacultyTargetingScope(targeting, user) {
+//
+// A course also counts as theirs when its department is assigned to them
+// wholesale. That is the rule GET /faculty/courses already uses to build the
+// course list, so without it the UI would offer courses in a department-assigned
+// faculty member's own My Courses that this check then refused.
+async function assertFacultyTargetingScope(targeting, user) {
   const deptIds = new Set((user.assignedDepartments || []).map(String));
   const courseIds = new Set((user.assignedCourses || []).map(String));
-  const badDept = targeting.departments.find((d) => !deptIds.has(String(d)));
-  const badCourse = targeting.courses.find((c) => !courseIds.has(String(c)));
-  if (badDept || badCourse) {
+
+  if (targeting.departments.some((d) => !deptIds.has(String(d)))) {
+    throw new ApiError(403, 'You can only target your own assigned Department(s)/Course(s)', null, 'FORBIDDEN');
+  }
+
+  const notDirectlyAssigned = targeting.courses.filter((c) => !courseIds.has(String(c)));
+  if (!notDirectlyAssigned.length) return;
+
+  const viaDepartment = await Course.find({
+    _id: { $in: notDirectlyAssigned },
+    department: { $in: [...deptIds] },
+  }).distinct('_id');
+  const allowed = new Set(viaDepartment.map(String));
+
+  if (notDirectlyAssigned.some((c) => !allowed.has(String(c)))) {
     throw new ApiError(403, 'You can only target your own assigned Department(s)/Course(s)', null, 'FORBIDDEN');
   }
 }
@@ -155,7 +185,10 @@ export const createAssignment = asyncHandler(async (req, res) => {
 
   const targeting = parseTargeting(req.body);
   assertHasTarget(targeting);
-  if (req.user.role === 'faculty') assertFacultyTargetingScope(targeting, req.user);
+  if (req.user.role === 'faculty') await assertFacultyTargetingScope(targeting, req.user);
+  // A batch from another department would aim the assignment at a group that
+  // can never be enrolled in the targeted course.
+  await assertBatchesMatchCourses(targeting);
 
   const attachments = await storeAttachments(req.files);
 
@@ -195,7 +228,8 @@ export const updateAssignment = asyncHandler(async (req, res) => {
   if (req.body.departments || req.body.courses || req.body.batches || req.body.semesters) {
     const targeting = parseTargeting(req.body);
     assertHasTarget(targeting);
-    if (req.user.role === 'faculty') assertFacultyTargetingScope(targeting, req.user);
+    if (req.user.role === 'faculty') await assertFacultyTargetingScope(targeting, req.user);
+    await assertBatchesMatchCourses(targeting);
     Object.assign(assignment, targeting);
   }
 
@@ -234,6 +268,7 @@ export const deleteAssignment = asyncHandler(async (req, res) => {
 // super_admin), for management — any status, not just published.
 export const listMyAssignments = asyncHandler(async (req, res) => {
   const filter = isSuperAdminTier(req.user.role) ? {} : { createdBy: req.user._id };
+  applyCourseScope(req.query, filter);
   const assignments = await Assignment.find(filter).populate(POPULATE).sort({ createdAt: -1 });
   res.json({ success: true, data: assignments });
 });
@@ -253,6 +288,7 @@ export const listRelevantAssignments = asyncHandler(async (req, res) => {
   }
 
   let filter = { status: { $in: ['published', 'closed'] } };
+  applyCourseScope(req.query, filter);
   if (!isSuperAdminTier(req.user.role) && !(await isAdminTierRole(req.user.role))) {
     filter = { ...filter, ...(await audienceMongoFilter(req.user)) };
   }

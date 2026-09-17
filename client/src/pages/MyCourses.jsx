@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, BookOpen, Clock, CheckCircle2 } from 'lucide-react';
-import { courseEnrollmentApi, courseApi, departmentApi, semesterApi, authApi } from '../api/endpoints.js';
+import { Link } from 'react-router-dom';
+import { Plus, X, BookOpen, RefreshCw, Users } from 'lucide-react';
+import {
+  authApi, courseApi, courseEnrollmentApi, departmentApi, profileApi, semesterApi,
+} from '../api/endpoints.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import SearchableSelect from '../components/SearchableSelect.jsx';
-import { formatDate } from '../utils/format.js';
 
 const TYPE_LABELS = { regular: 'Regular', retake: 'Retake', extra: 'Extra', backlog: 'Backlog', improvement: 'Improvement', advance: 'Advance' };
 const TYPE_STYLE = {
@@ -35,109 +38,145 @@ const TYPE_FLAG = {
   advance: 'allowAdvanceEnrollment',
 };
 
+// The order the "other" enrolments are grouped in, so the page does not reshuffle
+// itself between loads.
+const OTHER_ORDER = ['retake', 'improvement', 'extra', 'backlog', 'advance'];
+
+/**
+ * A student's (or CR's) courses.
+ *
+ * Two sections, both from one API call: Running Courses are the student's own
+ * department's courses for the semester they are currently in, and Other
+ * Enrolled Courses are their active retake/improvement/… enrolments — rendered
+ * only when they actually have one, never as an empty heading.
+ *
+ * Every course opens the same course page the faculty side uses; what that page
+ * shows is decided by the server, not by this screen.
+ */
 export default function MyCourses() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showRequest, setShowRequest] = useState(false);
-  const [additionalTab, setAdditionalTab] = useState('active');
 
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings });
-  const { data, isLoading } = useQuery({ queryKey: ['my-course-enrollments'], queryFn: courseEnrollmentApi.my });
+  // Reads the profile rather than the cached session user: department/batch/
+  // semester come back populated there, and bare ObjectIds in the session copy.
+  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: profileApi.get });
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['my-courses-grouped'],
+    queryFn: courseApi.mineGrouped,
+  });
 
   const enrollmentSystemEnabled = !!settings?.data?.courseEnrollmentSystemEnabled;
   const allowedTypes = REQUESTABLE_TYPES.filter((t) => settings?.data?.[TYPE_FLAG[t]]);
 
-  const enrollments = data?.data || [];
-  const regular = enrollments.filter((e) => e.enrollmentType === 'regular' && ['active', 'approved'].includes(e.status));
-  const additional = enrollments.filter((e) => e.enrollmentType !== 'regular');
-  const additionalByTab = {
-    active: additional.filter((e) => ['active', 'approved'].includes(e.status)),
-    pending: additional.filter((e) => e.status === 'pending'),
-    completed: additional.filter((e) => ['completed', 'dropped', 'rejected'].includes(e.status)),
+  const me = profile?.data || user || {};
+  const running = data?.data?.running || [];
+  const other = data?.data?.other || [];
+
+  const grouped = OTHER_ORDER.map((type) => ({
+    type,
+    rows: other.filter((row) => row.enrollmentType === type),
+  })).filter((group) => group.rows.length);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['my-courses-grouped'] });
+    qc.invalidateQueries({ queryKey: ['my-course-enrollments'] });
   };
-  const stats = [
-    { label: 'Regular Courses', value: regular.length },
-    { label: 'Additional Courses', value: additionalByTab.active.length },
-    { label: 'Pending Requests', value: additionalByTab.pending.length },
-    { label: 'Completed Additional', value: additional.filter((e) => e.status === 'completed').length },
-  ];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold text-slate-800">My Courses</h1>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-800">
+            {me.name ? `Hello, ${me.name.split(' ')[0]}` : 'My Courses'}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {[
+              me.department?.name,
+              me.batch?.name ? `Batch ${me.batch.name}` : null,
+              me.semester?.name,
+            ].filter(Boolean).join(' · ') || 'Your courses for this semester.'}
+          </p>
+        </div>
         {enrollmentSystemEnabled && (
           <button
             onClick={() => setShowRequest(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
           >
             <Plus size={16} /> Request Additional Course
           </button>
         )}
       </div>
-      <p className="text-sm text-slate-500 mb-8">Your regular semester courses, plus any retake, extra, backlog, improvement, or advance enrollments.</p>
 
       {isLoading ? (
-        <p className="text-slate-400">Loading...</p>
+        <CoursesSkeleton />
+      ) : isError ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+          <p className="text-sm text-slate-600 mb-3">Unable to load courses.</p>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw size={14} /> Try Again
+          </button>
+        </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-            {stats.map((s) => (
-              <div key={s.label} className="bg-white border border-slate-200 rounded-xl p-4">
-                <p className="text-2xl font-bold text-slate-800">{s.value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
-              </div>
-            ))}
-          </div>
-
           <section className="mb-10">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-1">
               <BookOpen size={18} className="text-brand-600" />
-              <h2 className="text-lg font-semibold text-slate-800">Regular Courses</h2>
+              <h2 className="text-lg font-semibold text-slate-800">Running Courses</h2>
             </div>
-            <p className="text-xs text-slate-400 -mt-1 mb-3">
-              The courses your department teaches, plus any regular enrollment recorded for you.
+            <p className="text-xs text-slate-400 mb-4">
+              The courses your department is running this semester.
             </p>
-            {regular.length === 0 ? (
-              <p className="text-slate-400 text-sm">No regular courses on record yet.</p>
+
+            {running.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                <p className="text-sm text-slate-500">No Running Courses</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  You don&apos;t have any active courses for this semester yet.
+                </p>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {regular.map((e) => (
-                  <EnrollmentCard key={e._id} enrollment={e} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {running.map((course) => (
+                  <CourseCard key={course._id} course={course} />
                 ))}
               </div>
             )}
           </section>
 
-          <section>
-            <h2 className="text-lg font-semibold text-slate-800 mb-3">Additional Courses</h2>
-            <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit mb-4">
-              {[
-                { key: 'active', label: 'Active', icon: CheckCircle2 },
-                { key: 'pending', label: 'Pending', icon: Clock },
-                { key: 'completed', label: 'Completed', icon: BookOpen },
-              ].map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setAdditionalTab(t.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${
-                    additionalTab === t.key ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'
-                  }`}
-                >
-                  <t.icon size={14} /> {t.label} ({additionalByTab[t.key].length})
-                </button>
-              ))}
-            </div>
-            {additionalByTab[additionalTab].length === 0 ? (
-              <p className="text-slate-400 text-sm">Nothing here yet.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {additionalByTab[additionalTab].map((e) => (
-                  <EnrollmentCard key={e._id} enrollment={e} />
+          {/* Only when the student actually has one — an empty "Retake" heading
+              is noise, and the spec is explicit about hiding it. */}
+          {grouped.map((group) => (
+            <section key={group.type} className="mb-10">
+              <div className="flex items-center gap-2 mb-1">
+                <Users size={18} className="text-brand-600" />
+                <h2 className="text-lg font-semibold text-slate-800">
+                  {TYPE_LABELS[group.type]} Courses
+                </h2>
+              </div>
+              <p className="text-xs text-slate-400 mb-4">
+                Additional courses you are enrolled in for this type.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {group.rows.map((row) => (
+                  <CourseCard
+                    key={`${group.type}-${row.course._id}`}
+                    course={row.course}
+                    typeLabel={TYPE_LABELS[group.type]}
+                    typeStyle={TYPE_STYLE[group.type]}
+                    status={row.status}
+                    academicYear={row.academicYear}
+                  />
                 ))}
               </div>
-            )}
-          </section>
+            </section>
+          ))}
         </>
       )}
 
@@ -147,7 +186,7 @@ export default function MyCourses() {
           onClose={() => setShowRequest(false)}
           onSubmitted={() => {
             setShowRequest(false);
-            qc.invalidateQueries({ queryKey: ['my-course-enrollments'] });
+            invalidate();
             toast('Request submitted — pending review', 'success');
           }}
         />
@@ -156,32 +195,62 @@ export default function MyCourses() {
   );
 }
 
-function EnrollmentCard({ enrollment: e }) {
+/** One course, as it appears on either list. */
+function CourseCard({ course, typeLabel, typeStyle, status, academicYear }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover:border-brand-300 hover:shadow-sm transition-all">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-semibold text-slate-700 truncate">{e.course?.name}</p>
-          <p className="text-xs text-slate-400">{e.course?.courseId} {e.course?.department?.code && `· ${e.course.department.code}`}</p>
+          <p className="font-semibold text-slate-800 truncate" title={course.name}>{course.name}</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {course.courseId}
+            {course.department?.code ? ` · ${course.department.code}` : ''}
+          </p>
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_STYLE[e.enrollmentType]}`}>{TYPE_LABELS[e.enrollmentType]}</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[e.status]}`}>{e.status}</span>
-        </div>
+        {typeLabel && (
+          <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${typeStyle}`}>
+            {typeLabel}
+          </span>
+        )}
       </div>
-      <p className="text-xs text-slate-400 mt-2">
-        AY {e.academicYear} · {e.semester?.name}
-        {e.batch?.name && ` · ${e.batch.name}`}
-      </p>
-      {e.reason && <p className="text-xs text-slate-500 mt-1 italic">"{e.reason}"</p>}
-      {e.status === 'rejected' && e.history?.length > 0 && (
-        <p className="text-xs text-red-500 mt-1">
-          Rejected{e.history[e.history.length - 1]?.reason ? `: ${e.history[e.history.length - 1].reason}` : ''}
-        </p>
-      )}
-      {/* A derived department course has no request behind it, so it has no
-          request date to show. */}
-      {!e.derived && <p className="text-[11px] text-slate-300 mt-2">Requested {formatDate(e.registeredAt)}</p>}
+
+      <div className="flex flex-wrap gap-1.5 text-xs">
+        {course.semester && (
+          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{course.semester}</span>
+        )}
+        {academicYear && (
+          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">AY {academicYear}</span>
+        )}
+        {status && (
+          <span className={`px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[status] || 'bg-slate-100 text-slate-600'}`}>
+            {status}
+          </span>
+        )}
+      </div>
+
+      <Link
+        to={`/courses/${course._id}`}
+        className="mt-auto inline-flex items-center justify-center px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Open Course
+      </Link>
+    </div>
+  );
+}
+
+function CoursesSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="h-5 w-44 bg-slate-100 rounded mb-4" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="h-4 w-3/5 bg-slate-100 rounded mb-2.5" />
+            <div className="h-3 w-2/5 bg-slate-100 rounded mb-4" />
+            <div className="h-9 w-full bg-slate-100 rounded-lg" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import Quiz from '../models/Quiz.js';
 import QuizAttempt from '../models/QuizAttempt.js';
 import Question from '../models/Question.js';
+import Course from '../models/Course.js';
 import { getSettings } from '../models/Settings.js';
 import { isAdminTierRole, isSuperAdminTier } from '../models/Role.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
+import { assertBatchesMatchCourses } from '../services/teachingService.js';
 import {
   generateAttemptSnapshot,
   hydrateAttemptForStudent,
@@ -72,14 +74,42 @@ function assertHasTarget(targeting) {
   }
 }
 
-function assertFacultyTargetingScope(targeting, user) {
+// Faculty may only target their own assigned Department(s)/Course(s) — same
+// rule as assignments and notices.
+//
+// A course also counts as theirs when its department is assigned to them
+// wholesale, which is the rule GET /faculty/courses uses to build the course
+// list — otherwise a department-assigned faculty member would be offered a
+// course in My Courses that this check then refused.
+async function assertFacultyTargetingScope(targeting, user) {
   const deptIds = new Set((user.assignedDepartments || []).map(String));
   const courseIds = new Set((user.assignedCourses || []).map(String));
-  const badDept = targeting.departments.find((d) => !deptIds.has(String(d)));
-  const badCourse = targeting.courses.find((c) => !courseIds.has(String(c)));
-  if (badDept || badCourse) {
+
+  if (targeting.departments.some((d) => !deptIds.has(String(d)))) {
     throw new ApiError(403, 'You can only target your own assigned Department(s)/Course(s)', null, 'FORBIDDEN');
   }
+
+  const notDirectlyAssigned = targeting.courses.filter((c) => !courseIds.has(String(c)));
+  if (!notDirectlyAssigned.length) return;
+
+  const viaDepartment = await Course.find({
+    _id: { $in: notDirectlyAssigned },
+    department: { $in: [...deptIds] },
+  }).distinct('_id');
+  const allowed = new Set(viaDepartment.map(String));
+
+  if (notDirectlyAssigned.some((c) => !allowed.has(String(c)))) {
+    throw new ApiError(403, 'You can only target your own assigned Department(s)/Course(s)', null, 'FORBIDDEN');
+  }
+}
+
+/**
+ * Course page → the Quizzes tab: narrow a listing to one course and/or batch.
+ * Additive to the caller's existing filter, so it can only reduce what they see.
+ */
+function applyCourseScope(query, filter) {
+  if (query.course) filter.courses = query.course;
+  if (query.batch) filter.batches = query.batch;
 }
 
 function assertManageAccess(quiz, user) {
@@ -226,7 +256,10 @@ export const createQuiz = asyncHandler(async (req, res) => {
   if (!isPublic) {
     targeting = parseTargeting(req.body);
     assertHasTarget(targeting);
-    if (req.user.role === 'faculty') assertFacultyTargetingScope(targeting, req.user);
+    if (req.user.role === 'faculty') await assertFacultyTargetingScope(targeting, req.user);
+    // A batch from another department would aim the quiz at a group that can
+    // never be enrolled in the targeted course.
+    await assertBatchesMatchCourses(targeting);
   }
 
   const { questions, questionSelection } = await resolveQuestionsAndSelection(req);
@@ -325,7 +358,8 @@ export const updateQuiz = asyncHandler(async (req, res) => {
   if (nextExamType !== 'public' && (req.body.departments || req.body.courses || req.body.batches || req.body.semesters)) {
     const targeting = parseTargeting(req.body);
     assertHasTarget(targeting);
-    if (req.user.role === 'faculty') assertFacultyTargetingScope(targeting, req.user);
+    if (req.user.role === 'faculty') await assertFacultyTargetingScope(targeting, req.user);
+    await assertBatchesMatchCourses(targeting);
     Object.assign(quiz, targeting);
   }
 
@@ -388,6 +422,7 @@ export const deleteQuiz = asyncHandler(async (req, res) => {
 
 export const listMyQuizzes = asyncHandler(async (req, res) => {
   const filter = isSuperAdminTier(req.user.role) ? {} : { createdBy: req.user._id };
+  applyCourseScope(req.query, filter);
   const quizzes = await Quiz.find(filter)
     .populate(POPULATE)
     .populate({ path: 'questions.question', select: 'type text' })
@@ -417,6 +452,7 @@ export const listRelevantQuizzes = asyncHandler(async (req, res) => {
   }
 
   let filter = { status: { $in: ['published', 'closed'] } };
+  applyCourseScope(req.query, filter);
   if (!isSuperAdminTier(req.user.role) && !(await isAdminTierRole(req.user.role))) {
     filter = { ...filter, ...(await audienceMongoFilter(req.user)) };
   }

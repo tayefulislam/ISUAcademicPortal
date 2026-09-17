@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import {
   listCourses,
   getCourse,
+  getCourseBatches,
   createCourse,
   updateCourse,
   deleteCourse,
@@ -16,6 +17,8 @@ const router = Router();
 router.get('/', listCourses);
 // Registered before /:id so this literal path isn't swallowed as an id param.
 router.get('/mine', authenticate, getMyCourses);
+// My Courses → course → batch selector (last 8 batches + per-batch counts).
+router.get('/:courseId/batches', authenticate, getCourseBatches);
 router.get('/:id', getCourse);
 
 router.post(

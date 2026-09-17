@@ -1,6 +1,7 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { connectTestDb, dropAndDisconnect, clearCollections } from '../../test/dbTestUtils.js';
+import { env } from '../../config/env.js';
 import User from '../../models/User.js';
 import UserDevice from '../../models/UserDevice.js';
 import { buildPushData, sendToUserDevices, ANDROID_CHANNEL_ID } from './fcmService.js';
@@ -83,8 +84,18 @@ describe('buildPushData', () => {
   });
 });
 
-describe('sendToUserDevices without Firebase credentials', () => {
-  test('no-ops instead of throwing when Firebase is not configured', async () => {
+// These assertions are deliberately configuration-independent. A developer's
+// .env may or may not carry a Firebase service account, and the guarantee that
+// actually matters — a push failure never reaches the caller — holds either way.
+// (The earlier version of this suite asserted the *unconfigured* branch
+// unconditionally, so it passed on a bare checkout and failed the moment real
+// credentials were added.)
+describe('sendToUserDevices', () => {
+  const configured = Boolean(
+    env.firebase.serviceAccountJson || env.firebase.serviceAccountPath
+  );
+
+  test('never throws, and accounts for every device, whether or not Firebase is configured', async () => {
     await UserDevice.create({ user: owner._id, fcmToken: 'fcm-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
 
     const result = await sendToUserDevices(owner._id, {
@@ -93,8 +104,15 @@ describe('sendToUserDevices without Firebase credentials', () => {
       data: { type: 'ASSIGNMENT_CREATED' },
     });
 
-    assert.equal(result.sent, 0);
-    assert.equal(result.skipped, 'not-configured');
+    if (configured) {
+      // Really attempted: the fake token cannot deliver, so it must be counted as
+      // a failure (and retired) rather than silently ignored.
+      assert.equal(result.sent, 0);
+      assert.equal(result.failed, 1);
+    } else {
+      assert.equal(result.sent, 0);
+      assert.equal(result.skipped, 'not-configured');
+    }
   });
 
   test('no-ops for a user with no registered devices', async () => {

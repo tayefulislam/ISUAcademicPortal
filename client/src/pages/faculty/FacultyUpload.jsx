@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { UploadCloud, X, FileIcon as FileIconLucide, ArrowLeft } from 'lucide-react';
 import { facultyApi, batchApi, categoryApi, chapterApi, topicApi, semesterApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
@@ -27,12 +28,37 @@ const initialState = {
 
 const MAX_FILES = 10;
 
+/**
+ * The form's starting state. When the page is opened from a course page the
+ * course (and usually a batch) are already known, so they are pre-filled and the
+ * faculty member is only asked for what the system cannot know.
+ */
+function buildInitialForm(presetCourse, presetBatch) {
+  return {
+    ...initialState,
+    courseIdRef: presetCourse,
+    batches: presetBatch ? [presetBatch] : [],
+    // Material uploaded for one batch must actually be limited to it. `batches`
+    // alone is a grouping/filter field; it is `restrictions.batches` that the
+    // server checks when deciding who may open the file, so a batch-scoped
+    // upload sets both.
+    ...(presetBatch ? { restrictEnabled: true, restrictBatches: [presetBatch] } : {}),
+  };
+}
+
 // Faculty upload — same shape as AdminUpload, but the Course picker is
 // limited to this Faculty member's own assigned courses (department is
 // derived from the chosen course, not picked separately), and it posts to
 // /faculty/files, which the server re-validates against their assignment.
 export default function FacultyUpload() {
-  const [form, setForm] = useState(initialState);
+  // Arriving from a course page carries ?course=&batch= — everything the system
+  // already knows, so the faculty member is not asked for the department or the
+  // course again (the department is derived from the course below).
+  const [searchParams] = useSearchParams();
+  const presetCourse = searchParams.get('course') || '';
+  const presetBatch = searchParams.get('batch') || '';
+
+  const [form, setForm] = useState(() => buildInitialForm(presetCourse, presetBatch));
   const [files, setFiles] = useState([]);
   const [progress, setProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -96,7 +122,7 @@ export default function FacultyUpload() {
       });
       const res = await facultyApi.upload(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
       toast(res.data?.fileCount > 1 ? `Uploaded — ${res.data.fileCount} files grouped under "${res.data.title}"` : 'File uploaded successfully', 'success');
-      setForm(initialState);
+      setForm(buildInitialForm(presetCourse, presetBatch));
       setFiles([]);
     } catch (err) {
       toast(err.response?.data?.message || 'Upload failed', 'error');
@@ -107,6 +133,14 @@ export default function FacultyUpload() {
 
   return (
     <div className="max-w-3xl">
+      {presetCourse && (
+        <Link
+          to={`/courses/${presetCourse}${presetBatch ? `?batch=${presetBatch}` : ''}`}
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3"
+        >
+          <ArrowLeft size={15} /> Back to {selectedCourse ? selectedCourse.name : 'course'}
+        </Link>
+      )}
       <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload Material</h1>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
@@ -149,18 +183,28 @@ export default function FacultyUpload() {
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Course" required>
-            <select
-              value={form.courseIdRef}
-              onChange={(e) => setForm((f) => ({ ...f, courseIdRef: e.target.value, chapterId: '', topicId: '' }))}
-              className="input"
-              required
-            >
-              <option value="">Select</option>
-              {(myCourses?.data || []).map((c) => (
-                <option key={c._id} value={c._id}>{c.name} ({c.courseId}) — {c.department.code}</option>
-              ))}
-            </select>
+          <Field label="Course" required hint={presetCourse ? 'Chosen on the course page — the department comes with it.' : undefined}>
+            {presetCourse ? (
+              // Already known, so never asked for again — and the department is
+              // derived from it server-side too.
+              <div className="input flex items-center bg-slate-50 text-slate-600">
+                {selectedCourse
+                  ? `${selectedCourse.name} (${selectedCourse.courseId}) — ${selectedCourse.department?.code}`
+                  : 'Loading course…'}
+              </div>
+            ) : (
+              <select
+                value={form.courseIdRef}
+                onChange={(e) => setForm((f) => ({ ...f, courseIdRef: e.target.value, chapterId: '', topicId: '' }))}
+                className="input"
+                required
+              >
+                <option value="">Select</option>
+                {(myCourses?.data || []).map((c) => (
+                  <option key={c._id} value={c._id}>{c.name} ({c.courseId}) — {c.department.code}</option>
+                ))}
+              </select>
+            )}
           </Field>
           <Field label="Material Type" required>
             <select value={form.categoryId} onChange={(e) => set('categoryId')(e.target.value)} className="input" required>

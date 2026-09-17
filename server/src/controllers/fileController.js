@@ -28,6 +28,7 @@ import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
 import { logger } from '../utils/logger.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
+import { assertBatchesForCourse } from '../services/teachingService.js';
 import { isSuperAdminTier } from '../models/Role.js';
 
 // Fire-and-forget: never blocks the response, never throws into the
@@ -143,7 +144,11 @@ async function resolveUploadMetadata(body) {
   let batches = [];
   let batchCodes = [];
   if (!allBatches && batchIds.length) {
-    const found = await Batch.find({ _id: { $in: batchIds } });
+    // Goes through the same check the assignment/quiz create paths use: every
+    // batch must belong to this course's department, so material can never be
+    // filed against a group that could not be enrolled in the course. Also
+    // rejects unknown batch ids rather than silently ignoring them.
+    const found = await assertBatchesForCourse(course, batchIds);
     batchCodes = found.map((b) => b.code);
     batches = found.map((b) => b._id);
   }
@@ -776,7 +781,7 @@ export const getMyFiles = asyncHandler(async (req, res) => {
 // Department(s)/Course(s), for their "manage materials" view. Pending items
 // live in the separate /reviews queue, not here.
 export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
-  const { q } = req.query;
+  const { q, course, batch } = req.query;
   const { page, limit, skip } = parsePagination(req.query);
   const filter = {
     approvalStatus: 'approved',
@@ -785,6 +790,11 @@ export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
       { course: { $in: req.user.assignedCourses || [] } },
     ],
   };
+  // Course page → the Files tab, scoped to one course and optionally one batch.
+  // The batch clause also accepts "applies to all batches", which is what a
+  // student viewing that batch would see (same rule as fileQueryBuilder).
+  if (course) filter.course = course;
+  if (batch) filter.$and = [{ $or: [{ batches: batch }, { allBatches: true }] }];
   const cleanQuery = sanitizeQuery(q);
 
   if (q && cleanQuery.length >= 2) {
