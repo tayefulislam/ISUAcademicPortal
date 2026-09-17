@@ -29,7 +29,7 @@ import { resolveCourseScopedRecipients } from '../services/notifications/recipie
 import { logger } from '../utils/logger.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
 import { assertBatchesForCourse } from '../services/teachingService.js';
-import { isSuperAdminTier } from '../models/Role.js';
+import { isSuperAdminTier, getRole } from '../models/Role.js';
 
 // Fire-and-forget: never blocks the response, never throws into the
 // controller — a notification failure must not fail a file upload.
@@ -581,12 +581,31 @@ export function assertOwnership(file, user) {
   }
 }
 
+// Whether the caller may use the full file editor. Everyone else who can reach
+// updateFile is the uploader acting as a student, and is limited to describing
+// their own upload — see updateFile.
+export async function hasFullFileEdit(user) {
+  if (isSuperAdminTier(user)) return true;
+  if (user.role === 'faculty') return true;
+  const role = await getRole(user.role);
+  return Boolean(role && role.permissions.includes('files'));
+}
+
 export const updateFile = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'File not found');
   assertOwnership(file, req.user); // own-files-only unless super_admin — same gate covers visibility/restrictions
 
-  const allowed = ['title', 'description', 'semester', 'academicYear', 'status'];
+  // The uploader acting as a student may edit what describes their upload and
+  // nothing else. Visibility, restrictions, status and the chapter/topic
+  // placement are the reviewer's decision at approval time (submitStudentFile
+  // deliberately does not accept them either) — allowing them here would let a
+  // submitter publish their own material without review.
+  const fullEdit = await hasFullFileEdit(req.user);
+
+  const allowed = fullEdit
+    ? ['title', 'description', 'semester', 'academicYear', 'status']
+    : ['title', 'description'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) file[key] = req.body[key];
   }
@@ -594,14 +613,14 @@ export const updateFile = asyncHandler(async (req, res) => {
     file.keywords = String(req.body.keywords).split(',').map((k) => k.trim()).filter(Boolean);
   }
 
-  if (req.body.visibility) {
+  if (fullEdit && req.body.visibility) {
     if (!['public', 'login_required'].includes(req.body.visibility)) {
       throw new ApiError(400, 'visibility must be "public" or "login_required"');
     }
     file.visibility = req.body.visibility;
   }
 
-  if (req.body.restrictions && typeof req.body.restrictions === 'object') {
+  if (fullEdit && req.body.restrictions && typeof req.body.restrictions === 'object') {
     const r = req.body.restrictions;
     file.restrictions = {
       departments: Array.isArray(r.departments) ? r.departments : file.restrictions?.departments || [],
@@ -611,13 +630,13 @@ export const updateFile = asyncHandler(async (req, res) => {
     };
   }
 
-  if (req.body.chapterId !== undefined) {
+  if (fullEdit && req.body.chapterId !== undefined) {
     const chapter = req.body.chapterId ? await Chapter.findById(req.body.chapterId) : null;
     if (req.body.chapterId && !chapter) throw new ApiError(400, 'Invalid chapter');
     file.chapter = chapter?._id || null;
     file.chapterName = chapter?.name || '';
   }
-  if (req.body.topicId !== undefined) {
+  if (fullEdit && req.body.topicId !== undefined) {
     const topic = req.body.topicId ? await Topic.findById(req.body.topicId) : null;
     if (req.body.topicId && !topic) throw new ApiError(400, 'Invalid topic');
     file.topic = topic?._id || null;
@@ -780,8 +799,14 @@ export const getMyFiles = asyncHandler(async (req, res) => {
 // GET /faculty/files — approved materials within a Faculty member's assigned
 // Department(s)/Course(s), for their "manage materials" view. Pending items
 // live in the separate /reviews queue, not here.
+//
+// `?mine=true` narrows that to the caller's own uploads. The course page uses
+// it: a course page is the faculty member's own working view of the course, and
+// it must agree with the Assignments and Quizzes tabs beside it, which are
+// creator-scoped already. The Assigned Materials screen leaves it off, which is
+// what makes that screen the whole-department view.
 export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
-  const { q, course, batch } = req.query;
+  const { q, course, batch, mine } = req.query;
   const { page, limit, skip } = parsePagination(req.query);
   const filter = {
     approvalStatus: 'approved',
@@ -790,6 +815,7 @@ export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
       { course: { $in: req.user.assignedCourses || [] } },
     ],
   };
+  if (mine === 'true' || mine === '1') filter.uploadedBy = req.user._id;
   // Course page → the Files tab, scoped to one course and optionally one batch.
   // The batch clause also accepts "applies to all batches", which is what a
   // student viewing that batch would see (same rule as fileQueryBuilder).

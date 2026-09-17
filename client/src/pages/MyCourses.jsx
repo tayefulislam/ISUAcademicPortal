@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, X, BookOpen, RefreshCw, Users } from 'lucide-react';
+import { Plus, X, BookOpen, RefreshCw, Users, Search } from 'lucide-react';
 import {
   authApi, courseApi, courseEnrollmentApi, departmentApi, profileApi, semesterApi,
 } from '../api/endpoints.js';
@@ -42,6 +42,28 @@ const TYPE_FLAG = {
 // itself between loads.
 const OTHER_ORDER = ['retake', 'improvement', 'extra', 'backlog', 'advance'];
 
+// Local filtering: the whole course list is already in memory, so there is no
+// request per keystroke. Every whitespace-separated word has to match somewhere,
+// so "cse 101" narrows the list instead of widening it.
+function matchesCourse(course, term) {
+  if (!term) return true;
+  const haystack = [
+    course?.name,
+    course?.courseId,
+    course?.department?.name,
+    course?.department?.code,
+    course?.semester,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return term
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word));
+}
+
 /**
  * A student's (or CR's) courses.
  *
@@ -58,6 +80,7 @@ export default function MyCourses() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showRequest, setShowRequest] = useState(false);
+  const [q, setQ] = useState('');
 
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings });
   // Reads the profile rather than the cached session user: department/batch/
@@ -76,10 +99,24 @@ export default function MyCourses() {
   const running = data?.data?.running || [];
   const other = data?.data?.other || [];
 
-  const grouped = OTHER_ORDER.map((type) => ({
-    type,
-    rows: other.filter((row) => row.enrollmentType === type),
-  })).filter((group) => group.rows.length);
+  const term = q.trim();
+  const shownRunning = useMemo(
+    () => running.filter((course) => matchesCourse(course, term)),
+    [running, term]
+  );
+  const shownGroups = useMemo(
+    () =>
+      OTHER_ORDER.map((type) => ({
+        type,
+        rows: other.filter(
+          (row) => row.enrollmentType === type && matchesCourse(row.course, term)
+        ),
+      })).filter((group) => group.rows.length),
+    [other, term]
+  );
+  // A search never hides the search box — an empty result is reported inside the
+  // results area, the same as an empty list would be.
+  const noMatches = Boolean(term) && shownRunning.length === 0 && shownGroups.length === 0;
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['my-courses-grouped'] });
@@ -111,6 +148,31 @@ export default function MyCourses() {
         )}
       </div>
 
+      <div className="relative mb-6">
+        <Search
+          size={18}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+        />
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search your courses by name, code or department..."
+          aria-label="Search my courses"
+          className="w-full h-11 pl-11 pr-10 rounded-lg border border-slate-300 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => setQ('')}
+            aria-label="Clear search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:bg-slate-100"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       {isLoading ? (
         <CoursesSkeleton />
       ) : isError ? (
@@ -125,34 +187,47 @@ export default function MyCourses() {
         </div>
       ) : (
         <>
-          <section className="mb-10">
-            <div className="flex items-center gap-2 mb-1">
-              <BookOpen size={18} className="text-brand-600" />
-              <h2 className="text-lg font-semibold text-slate-800">Running Courses</h2>
+          {noMatches ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+              <p className="text-sm text-slate-500">No courses matched “{term}”</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Try a different course name, code or department.
+              </p>
             </div>
-            <p className="text-xs text-slate-400 mb-4">
-              The courses your department is running this semester.
-            </p>
+          ) : (
+            <>
+              {/* While a search is active, a section with no matches drops out
+                  rather than showing an empty heading. */}
+              {(!term || shownRunning.length > 0) && (
+                <section className="mb-10">
+                  <div className="flex items-center gap-2 mb-1">
+                    <BookOpen size={18} className="text-brand-600" />
+                    <h2 className="text-lg font-semibold text-slate-800">Running Courses</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-4">
+                    The courses your department is running this semester.
+                  </p>
 
-            {running.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-                <p className="text-sm text-slate-500">No Running Courses</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  You don&apos;t have any active courses for this semester yet.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {running.map((course) => (
-                  <CourseCard key={course._id} course={course} />
-                ))}
-              </div>
-            )}
-          </section>
+                  {shownRunning.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                      <p className="text-sm text-slate-500">No Running Courses</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        You don&apos;t have any active courses for this semester yet.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {shownRunning.map((course) => (
+                        <CourseCard key={course._id} course={course} />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
 
-          {/* Only when the student actually has one — an empty "Retake" heading
-              is noise, and the spec is explicit about hiding it. */}
-          {grouped.map((group) => (
+              {/* Only when the student actually has one — an empty "Retake" heading
+                  is noise, and the spec is explicit about hiding it. */}
+              {shownGroups.map((group) => (
             <section key={group.type} className="mb-10">
               <div className="flex items-center gap-2 mb-1">
                 <Users size={18} className="text-brand-600" />
@@ -176,7 +251,9 @@ export default function MyCourses() {
                 ))}
               </div>
             </section>
-          ))}
+              ))}
+            </>
+          )}
         </>
       )}
 
