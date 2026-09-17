@@ -1,9 +1,30 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Power, RefreshCw, Upload } from 'lucide-react';
+import { BookOpen, Power, RefreshCw, Upload, Search, X } from 'lucide-react';
 import { facultyApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
+
+// Local filtering over the already-loaded list — no request per keystroke. Every
+// whitespace-separated word must match somewhere, so "cse 101" narrows the list.
+function matchesCourse(course, term) {
+  if (!term) return true;
+  const haystack = [
+    course?.name,
+    course?.courseId,
+    course?.department?.name,
+    course?.department?.code,
+    course?.semester,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return term
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word));
+}
 
 /**
  * A faculty member's courses, split by whether they are currently teaching them.
@@ -17,6 +38,7 @@ export default function FacultyCourses() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState(null);
+  const [q, setQ] = useState('');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['faculty-courses', 'with-status'],
@@ -24,8 +46,18 @@ export default function FacultyCourses() {
   });
 
   const courses = data?.data || [];
-  const active = courses.filter((c) => c.teachingStatus === 'active');
-  const deactivated = courses.filter((c) => c.teachingStatus !== 'active');
+  const term = q.trim();
+  const active = useMemo(
+    () => courses.filter((c) => c.teachingStatus === 'active' && matchesCourse(c, term)),
+    [courses, term]
+  );
+  const deactivated = useMemo(
+    () => courses.filter((c) => c.teachingStatus !== 'active' && matchesCourse(c, term)),
+    [courses, term]
+  );
+  // A search never hides the search box — an empty result is reported inside the
+  // results area, the same as an empty list would be.
+  const noMatches = Boolean(term) && active.length === 0 && deactivated.length === 0;
 
   const setStatus = async (course, status) => {
     setBusyId(course._id);
@@ -57,6 +89,31 @@ export default function FacultyCourses() {
         </Link>
       </div>
 
+      <div className="relative mb-6">
+        <Search
+          size={18}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+        />
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search your courses by name, code or department..."
+          aria-label="Search my courses"
+          className="w-full h-11 pl-11 pr-10 rounded-lg border border-slate-300 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => setQ('')}
+            aria-label="Clear search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:bg-slate-100"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       {isLoading ? (
         <CoursesSkeleton />
       ) : isError ? (
@@ -76,24 +133,37 @@ export default function FacultyCourses() {
             Ask a Super Admin to assign you a Department or Course.
           </p>
         </div>
+      ) : noMatches ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+          <p className="text-sm text-slate-500">No courses matched “{term}”</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Try a different course name, code or department.
+          </p>
+        </div>
       ) : (
         <>
-          <Section
-            title="Active Classes"
-            emptyTitle="No Active Classes"
-            emptyText="Activate a course to make it appear here."
-            courses={active}
-            busyId={busyId}
-            onSetStatus={setStatus}
-          />
-          <Section
-            title="Deactivated Classes"
-            emptyTitle="Nothing deactivated"
-            emptyText="Courses you are not currently teaching appear here."
-            courses={deactivated}
-            busyId={busyId}
-            onSetStatus={setStatus}
-          />
+          {/* While a search is active, a section with no matches drops out
+              rather than showing an empty heading. */}
+          {(!term || active.length > 0) && (
+            <Section
+              title="Active Classes"
+              emptyTitle="No Active Classes"
+              emptyText="Activate a course to make it appear here."
+              courses={active}
+              busyId={busyId}
+              onSetStatus={setStatus}
+            />
+          )}
+          {(!term || deactivated.length > 0) && (
+            <Section
+              title="Deactivated Classes"
+              emptyTitle="Nothing deactivated"
+              emptyText="Courses you are not currently teaching appear here."
+              courses={deactivated}
+              busyId={busyId}
+              onSetStatus={setStatus}
+            />
+          )}
         </>
       )}
     </div>

@@ -25,10 +25,13 @@ const PAGE_LIMIT = 50;
  * One course, opened from My Courses.
  *
  * Faculty get a batch selector (the most recent batches, with their content
- * counts) and can add material to the selected batch. Students see their own
- * batch's content only — and that scoping is the server's, not this screen's:
- * every list below is fetched through the audience endpoints, so passing a
- * different course or batch can only ever return less.
+ * counts) and can add material to the selected batch. Their three tabs are
+ * creator-scoped — a course page is their own working view of the course, so it
+ * shows what they added, not a colleague's uploads. Students see their own
+ * batch's content only. Either way that scoping is the server's, not this
+ * screen's: every list below is fetched through the audience endpoints, so
+ * passing a different course or batch can only ever return less.
+ * The whole-scope view of a department's material is the Assigned Materials page.
  */
 export default function CoursePage() {
   const { courseId } = useParams();
@@ -88,8 +91,16 @@ export default function CoursePage() {
   );
 
   const { data: filesData, isFetching: filesLoading } = useQuery({
-    queryKey: ['course-files', courseId, batch, isStaff],
-    queryFn: () => (isStaff ? facultyApi.files(scope) : fileApi.list(scope)),
+    queryKey: ['course-files', courseId, batch, isStaff, isFaculty],
+    // Faculty see their own material here, matching the creator-scoped
+    // Assignments and Quizzes queries below. `mine` is what narrows
+    // /faculty/files; the Assigned Materials page leaves it off.
+    queryFn: () =>
+      isFaculty
+        ? facultyApi.files({ ...scope, mine: true })
+        : isStaff
+          ? facultyApi.files(scope)
+          : fileApi.list(scope),
     enabled: !!courseId && tab === 'files',
   });
 
@@ -264,6 +275,11 @@ export default function CoursePage() {
               files={filesData?.data || []}
               loading={filesLoading}
               download={download}
+              emptyDescription={
+                isFaculty
+                  ? 'You have not added any material to this course yet.'
+                  : 'No files have been added to this course yet.'
+              }
             />
           )}
 
@@ -314,13 +330,13 @@ function StatusPill({ active }) {
   );
 }
 
-function FilesTab({ files, loading, download }) {
+function FilesTab({ files, loading, download, emptyDescription }) {
   if (loading) return <FileGridSkeleton />;
   if (!files.length) {
     return (
       <EmptyState
         title="No files yet"
-        description="No files have been added to this course yet."
+        description={emptyDescription || 'No files have been added to this course yet.'}
       />
     );
   }

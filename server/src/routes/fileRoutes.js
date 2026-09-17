@@ -83,6 +83,15 @@ router.post(
   submitStudentFile
 );
 
+// Editing the uploader's own material. There is deliberately no
+// requirePermission('files') here: a Student (or a scoped admin-tier role
+// without the files module) owns the uploads they submitted and may correct
+// their details. assertOwnership inside updateFile is what scopes this to the
+// caller's own uploads, and callers without staff-level file rights are held
+// to descriptive fields only — they cannot set visibility, restrictions or
+// status, which is the reviewer's call.
+router.patch('/:id', authenticate, updateFile);
+
 router.put('/:id', authenticate, requirePermission('files'), updateFile);
 router.delete('/:id', authenticate, requirePermission('files'), deleteFile);
 router.post('/bulk-delete', authenticate, requirePermission('files'), bulkDeleteFiles);
