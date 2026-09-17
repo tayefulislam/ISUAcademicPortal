@@ -30,7 +30,9 @@ export const getFacultyCourses = asyncHandler(async (req, res) => {
   const courseIds = courses.map((course) => course._id);
   const [teaching, countsByCourse] = await Promise.all([
     teachingStatusMap(req.user._id, courseIds),
-    withCounts ? contentCountsByCourse(courseIds) : Promise.resolve(new Map()),
+    // Own content only: a course being in My Courses is not the same as owning
+    // everything in it, and the card must not count a colleague's material.
+    withCounts ? contentCountsByCourse(courseIds, req.user._id) : Promise.resolve(new Map()),
   ]);
 
   let data = courses.map((course) => {

@@ -15,6 +15,7 @@ import FacultyCourse from '../models/FacultyCourse.js';
 import { getSettings } from '../models/Settings.js';
 import { getFacultyCourses, setCourseTeachingStatus } from './facultyController.js';
 import { getMyCourses, getCourseBatches } from './courseController.js';
+import { getFacultyScopedFiles } from './fileController.js';
 import { createAssignment, listRelevantAssignments } from './assignmentController.js';
 import { listRelevantQuizzes } from './quizController.js';
 
@@ -353,6 +354,90 @@ describe('student My Courses — running and other', () => {
     const body = await invoke(getMyCourses, { user: student14, query: {} });
     assert.ok(Array.isArray(body.data));
     assert.equal(body.data.length, 3, 'department courses only, as before');
+  });
+});
+
+describe('faculty content isolation — access is not ownership', () => {
+  // Two faculty members both teach CSE-101. Activating it, or being assigned
+  // the course, must never expose one's material to the other: the filter is
+  // pinned to the authenticated user, not to the course.
+  async function uploadAs(uploader, title) {
+    const category = await Category.findOne({ slug: 'notes' })
+      || await Category.create({ name: 'Notes', slug: 'notes' });
+
+    return File.create({
+      title,
+      originalName: 'notes.pdf',
+      fileName: `${title}.pdf`,
+      fileType: 'pdf',
+      mimeType: 'application/pdf',
+      fileSize: 1024,
+      fileUrl: 'https://example.test/notes.pdf',
+      storageProvider: 'local',
+      department: cse._id,
+      departmentCode: 'CSE',
+      course: cse101._id,
+      courseName: cse101.name,
+      courseId: cse101.courseId,
+      category: category._id,
+      categoryName: category.name,
+      uploadedBy: uploader._id,
+      approvalStatus: 'approved',
+      attachments: [
+        {
+          originalName: 'notes.pdf',
+          fileName: 'notes.pdf',
+          fileType: 'pdf',
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          fileUrl: 'https://example.test/notes.pdf',
+          storageProvider: 'local',
+        },
+      ],
+    });
+  }
+
+  test("a faculty file list holds only the caller's own uploads", async () => {
+    await uploadAs(facultyDept, 'Own material');
+    await uploadAs(facultyDirect, 'Colleague material');
+
+    const body = await invoke(getFacultyScopedFiles, { user: facultyDept, query: {} });
+
+    assert.equal(body.data.length, 1, "a colleague's upload must not be listed");
+    assert.equal(String(body.data[0].uploadedBy), String(facultyDept._id));
+    assert.equal(body.data[0].title, 'Own material');
+  });
+
+  test('a colleague uploading cannot widen the scope, and the owner still sees theirs', async () => {
+    await uploadAs(facultyDept, 'Own material');
+    await uploadAs(facultyDirect, 'Colleague material');
+
+    const theirs = await invoke(getFacultyScopedFiles, { user: facultyDirect, query: {} });
+    assert.equal(theirs.data.length, 1);
+    assert.equal(theirs.data[0].title, 'Colleague material');
+  });
+
+  test("the counts on a My Courses card are the caller's own", async () => {
+    await uploadAs(facultyDept, 'Own material');
+    await uploadAs(facultyDirect, 'Colleague material');
+    await uploadAs(facultyDirect, 'Colleague material two');
+
+    const body = await invoke(getFacultyCourses, { user: facultyDept, query: { counts: 'true' } });
+    const course = body.data.find((c) => String(c._id) === String(cse101._id));
+
+    assert.equal(course.counts.files, 1, "the card must not count a colleague's material");
+  });
+
+  test('activating a course for one faculty does not change what the other sees', async () => {
+    await uploadAs(facultyDirect, 'Colleague material');
+    await invoke(setCourseTeachingStatus, {
+      user: facultyDept,
+      params: { courseId: String(cse101._id) },
+      body: { status: 'active' },
+    });
+
+    const body = await invoke(getFacultyScopedFiles, { user: facultyDept, query: {} });
+    assert.equal(body.data.length, 0, 'activation grants no access to anyone else\'s content');
   });
 });
 
