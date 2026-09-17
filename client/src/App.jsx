@@ -19,6 +19,7 @@ import Home from './pages/Home.jsx';
 import SearchResults from './pages/SearchResults.jsx';
 import FileDetails from './pages/FileDetails.jsx';
 import Courses from './pages/Courses.jsx';
+import CoursePage from './pages/CoursePage.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import VerifyOtp from './pages/VerifyOtp.jsx';
@@ -116,6 +117,17 @@ export default function App() {
           <Route path="/search" element={<SearchResults />} />
           <Route path="/files/:id" element={<FileDetails />} />
           <Route path="/courses" element={<Courses />} />
+          {/* My Courses → course → batch → content. Auth-only: every list behind
+              it is fetched through the audience endpoints, so the server decides
+              what this viewer may see. */}
+          <Route
+            path="/courses/:courseId"
+            element={
+              <ProtectedRoute>
+                <CoursePage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />

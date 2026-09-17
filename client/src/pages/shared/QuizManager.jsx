@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, Users, X, Globe, Link2, Ban } from 'lucide-react';
 import { quizApi, questionApi, departmentApi, courseApi, batchApi, semesterApi, facultyApi } from '../../api/endpoints.js';
@@ -59,7 +60,19 @@ const emptyRule = { course: '', difficulty: 'any', tags: '', count: 5, marksEach
 
 export default function QuizManager() {
   const { isFaculty } = useAuth();
-  const [form, setForm] = useState(emptyForm);
+  // Opened from a course page (?course=&batch=): the quiz inherits the course and
+  // the batch, so only the quiz's own details are asked for.
+  const [searchParams] = useSearchParams();
+  const presetCourse = searchParams.get('course') || '';
+  const presetBatch = searchParams.get('batch') || '';
+
+  const buildForm = () => ({
+    ...emptyForm,
+    ...(presetCourse ? { courses: [presetCourse] } : {}),
+    ...(presetBatch ? { batches: [presetBatch] } : {}),
+  });
+
+  const [form, setForm] = useState(buildForm);
   const [selectedQuestions, setSelectedQuestions] = useState([]); // [{question, marks}]
   const [bankDept, setBankDept] = useState('');
   const [bankCourse, setBankCourse] = useState('');
@@ -104,7 +117,7 @@ export default function QuizManager() {
   const totalMarks = selectedQuestions.reduce((sum, s) => sum + (s.marks || 0), 0);
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm(buildForm());
     setSelectedQuestions([]);
     setEditingId(null);
   };
@@ -185,6 +198,8 @@ export default function QuizManager() {
       }
       resetForm();
       qc.invalidateQueries({ queryKey: ['my-quizzes'] });
+      // The course page's Quizzes tab is a different query — refresh it too.
+      qc.invalidateQueries({ queryKey: ['course-quizzes'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Save failed', 'error');
     }

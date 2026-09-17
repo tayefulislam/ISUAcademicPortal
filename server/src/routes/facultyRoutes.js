@@ -8,7 +8,7 @@ import {
   replaceFileVersion,
   getFileVersions,
 } from '../controllers/fileController.js';
-import { getFacultyCourses } from '../controllers/facultyController.js';
+import { getFacultyCourses, setCourseTeachingStatus } from '../controllers/facultyController.js';
 import { listPendingStudents, getStudentIdPhoto, approveStudent, rejectStudent } from '../controllers/studentApprovalController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -36,6 +36,8 @@ function assertUploadScope(req, res, next) {
 }
 
 router.get('/courses', getFacultyCourses);
+// My Courses → Activate/Deactivate. Per-faculty only (see facultyController).
+router.patch('/courses/:courseId/status', [body('status').notEmpty().withMessage('status is required')], validate, setCourseTeachingStatus);
 
 router.get('/files', getFacultyScopedFiles);
 router.post(

@@ -8,6 +8,17 @@
 //   node scripts/sendTestPush.js --email you@example.com --type ASSIGNMENT_CREATED \
 //        --title "New Assignment" --body "CSE 214 assignment has been posted."
 //
+// IMPORTANT — which database?
+//   This reads MONGODB_URI (server/.env), i.e. your LOCAL database by default.
+//   The RELEASE app talks to the deployed API, so its device registration lands
+//   in the PRODUCTION database. Point this script at that one to see it:
+//
+//   node scripts/sendTestPush.js --uri "mongodb+srv://..." --list
+//
+//   (copy the URI from the backend host's MONGODB_URI setting, e.g. Railway ->
+//   Variables). Without --uri you will see zero devices and think push is broken
+//   when it is not.
+//
 // It calls the SAME sendToUserDevices() the notification system uses, so a
 // successful run here means the production fan-out works — it is not a separate
 // code path.
@@ -24,7 +35,12 @@ function arg(name) {
 }
 const has = (name) => process.argv.includes(`--${name}`);
 
-await mongoose.connect(env.mongodbUri);
+const uri = arg('uri') || env.mongodbUri;
+// Never print credentials embedded in a URI.
+const safeUri = uri.replace(/\/\/[^@]*@/, '//***:***@');
+await mongoose.connect(uri);
+console.log(`database: ${safeUri}`);
+console.log('');
 
 if (has('list')) {
   const filter = {};

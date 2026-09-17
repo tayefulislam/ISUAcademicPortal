@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, Paperclip, Users } from 'lucide-react';
 import { assignmentApi, departmentApi, courseApi, batchApi, semesterApi, facultyApi } from '../../api/endpoints.js';
@@ -29,7 +30,20 @@ const empty = {
 // target their own assigned Department/Course — enforced again server-side).
 export default function AssignmentManager() {
   const { isFaculty } = useAuth();
-  const [form, setForm] = useState(empty);
+  // Opened from a course page (?course=&batch=), the targeting is already known:
+  // the assignment inherits the course and the batch, so the author is only
+  // asked for the assignment's own details.
+  const [searchParams] = useSearchParams();
+  const presetCourse = searchParams.get('course') || '';
+  const presetBatch = searchParams.get('batch') || '';
+
+  const buildForm = () => ({
+    ...empty,
+    ...(presetCourse ? { courses: [presetCourse] } : {}),
+    ...(presetBatch ? { batches: [presetBatch] } : {}),
+  });
+
+  const [form, setForm] = useState(buildForm);
   const [attachments, setAttachments] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [grading, setGrading] = useState(null);
@@ -70,10 +84,12 @@ export default function AssignmentManager() {
         await assignmentApi.create(fd);
         toast(form.status === 'published' ? 'Assignment published' : 'Assignment saved as draft', 'success');
       }
-      setForm(empty);
+      setForm(buildForm());
       setAttachments([]);
       setEditingId(null);
       qc.invalidateQueries({ queryKey: ['my-assignments'] });
+      // The course page's Assignments tab is a different query — refresh it too.
+      qc.invalidateQueries({ queryKey: ['course-assignments'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Save failed', 'error');
     }
