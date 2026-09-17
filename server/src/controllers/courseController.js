@@ -87,7 +87,14 @@ export const getCourseBatches = asyncHandler(async (req, res) => {
   if (!course) throw new ApiError(404, 'Course not found');
 
   const batches = await recentBatches(RECENT_BATCH_LIMIT);
-  const counts = await contentCountsByBatch(course._id, batches.map((batch) => batch._id));
+  // The batch chips sit above tabs that show a Faculty member only their own
+  // material, so the counts must be theirs too — a chip reading "4 files" over a
+  // list of one is the same leak in a different shape.
+  const counts = await contentCountsByBatch(
+    course._id,
+    batches.map((batch) => batch._id),
+    req.user?.role === 'faculty' ? req.user._id : null
+  );
 
   res.json({
     success: true,

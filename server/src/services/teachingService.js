@@ -163,26 +163,37 @@ export async function assertBatchesMatchCourses({ courses = [], batches = [] } =
 
 const toObjectIds = (ids) => ids.map((id) => new mongoose.Types.ObjectId(String(id)));
 
+// Ownership fields differ per collection: a file records `uploadedBy`, while an
+// assignment and a quiz record `createdBy`. Both count helpers take an optional
+// owner so the numbers on a faculty member's My Courses screen describe THEIR
+// content: having access to a course is not the same as owning everything in it.
+const fileOwnerClause = (ownerId) => (ownerId ? { uploadedBy: new mongoose.Types.ObjectId(String(ownerId)) } : {});
+const authoredOwnerClause = (ownerId) => (ownerId ? { createdBy: new mongoose.Types.ObjectId(String(ownerId)) } : {});
+
 /**
  * How much content each course holds — the counts on a My Courses card.
  * Files count only approved material, matching what a student can actually open.
+ *
+ * <p>Pass an {@code ownerId} for a faculty member's own view: the card must not
+ * advertise material they cannot open, or the count and the list behind it
+ * disagree.
  */
-export async function contentCountsByCourse(courseIds) {
+export async function contentCountsByCourse(courseIds, ownerId = null) {
   if (!courseIds.length) return new Map();
   const ids = toObjectIds(courseIds);
 
   const [files, assignments, quizzes] = await Promise.all([
     File.aggregate([
-      { $match: { course: { $in: ids }, approvalStatus: 'approved' } },
+      { $match: { course: { $in: ids }, approvalStatus: 'approved', ...fileOwnerClause(ownerId) } },
       { $group: { _id: '$course', n: { $sum: 1 } } },
     ]),
     Assignment.aggregate([
-      { $match: { courses: { $in: ids } } },
+      { $match: { courses: { $in: ids }, ...authoredOwnerClause(ownerId) } },
       { $unwind: '$courses' },
       { $group: { _id: '$courses', n: { $sum: 1 } } },
     ]),
     Quiz.aggregate([
-      { $match: { courses: { $in: ids } } },
+      { $match: { courses: { $in: ids }, ...authoredOwnerClause(ownerId) } },
       { $unwind: '$courses' },
       { $group: { _id: '$courses', n: { $sum: 1 } } },
     ]),
@@ -208,8 +219,12 @@ export async function contentCountsByCourse(courseIds) {
  * faculty member can see which batch already has material before opening it.
  * Counts explicit batch membership only; a file marked "applies to all batches"
  * belongs to the course rather than to any one batch.
+ *
+ * <p>Pass an {@code ownerId} when the viewer is a Faculty member, so the chips
+ * count the material they will actually be shown rather than the whole
+ * department's.
  */
-export async function contentCountsByBatch(courseId, batchIds) {
+export async function contentCountsByBatch(courseId, batchIds, ownerId = null) {
   const counts = new Map(batchIds.map((id) => [String(id), { files: 0, assignments: 0, quizzes: 0 }]));
   if (!batchIds.length) return counts;
 
@@ -218,19 +233,19 @@ export async function contentCountsByBatch(courseId, batchIds) {
 
   const [files, assignments, quizzes] = await Promise.all([
     File.aggregate([
-      { $match: { course, batches: { $in: ids } } },
+      { $match: { course, batches: { $in: ids }, ...fileOwnerClause(ownerId) } },
       { $unwind: '$batches' },
       { $match: { batches: { $in: ids } } },
       { $group: { _id: '$batches', n: { $sum: 1 } } },
     ]),
     Assignment.aggregate([
-      { $match: { courses: course, batches: { $in: ids } } },
+      { $match: { courses: course, batches: { $in: ids }, ...authoredOwnerClause(ownerId) } },
       { $unwind: '$batches' },
       { $match: { batches: { $in: ids } } },
       { $group: { _id: '$batches', n: { $sum: 1 } } },
     ]),
     Quiz.aggregate([
-      { $match: { courses: course, batches: { $in: ids } } },
+      { $match: { courses: course, batches: { $in: ids }, ...authoredOwnerClause(ownerId) } },
       { $unwind: '$batches' },
       { $match: { batches: { $in: ids } } },
       { $group: { _id: '$batches', n: { $sum: 1 } } },

@@ -38,12 +38,33 @@ async function resolvePermissions(user) {
   return role ? role.permissions : [];
 }
 
+// A person's placement, populated for the RESPONSE only — same convention as
+// profileController and studentApprovalController. Unpopulated these are bare
+// ObjectIds, and a client then has nothing human to show: the web's
+// `user.batch?.name` is undefined (so the line silently disappears) and the
+// Android app falls back to the raw id, which is the ObjectId a student saw on
+// a course page and on their own profile.
+//
+// req.user deliberately keeps its raw refs: the rest of the server compares
+// them as ids (audience targeting in the assignment/quiz/notice queries,
+// approval scoping), where an object would silently match nothing.
+const PLACEMENT_POPULATE = [
+  { path: 'department', select: 'name code' },
+  { path: 'batch', select: 'name code' },
+  { path: 'semester', select: 'name code' },
+];
+
+async function responseUser(user) {
+  const populated = await User.findById(user._id).populate(PLACEMENT_POPULATE);
+  return (populated || user).toSafeObject();
+}
+
 // `settings` is optional — omit it only where the caller has no reasonable
 // use for `nextStep` (there is no such call site left below, but keeping it
 // optional avoids a hard crash if one is ever added without remembering).
 async function withPermissions(user, settings) {
   return {
-    ...user.toSafeObject(),
+    ...(await responseUser(user)),
     permissions: await resolvePermissions(user),
     nextStep: settings ? getNextRequiredStep(user, settings) : undefined,
   };
@@ -223,7 +244,7 @@ export const register = asyncHandler(async (req, res) => {
     // registrationFlowService.js's getNextRequiredStep for the full decision
     // tree. `requiresOtp` is kept alongside it for any existing call site
     // that only checks that boolean.
-    data: { user: user.toSafeObject(), token, requiresOtp: settings.otpVerificationEnabled, nextStep },
+    data: { user: await responseUser(user), token, requiresOtp: settings.otpVerificationEnabled, nextStep },
   });
 });
 

@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import { connectTestDb, dropAndDisconnect, clearCollections } from '../test/dbTestUtils.js';
 import User from '../models/User.js';
 import Settings, { updateSettings } from '../models/Settings.js';
+// Registered for their side effect: login()/me() return the user's placement
+// refs populated, and populate() throws MissingSchemaError unless the target
+// models have been loaded. The app loads every model through routes/index.js;
+// a test process has to say so explicitly.
+import '../models/Department.js';
+import '../models/Batch.js';
+import '../models/Semester.js';
 import { login, emailDomainMatches, isOfficialUniversityEmail, maybeAutoApproveStudent } from './authController.js';
 
 // Exercises login() directly (not through Express/supertest) against a real,

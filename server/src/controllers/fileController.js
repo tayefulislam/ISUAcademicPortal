@@ -796,26 +796,32 @@ export const getMyFiles = asyncHandler(async (req, res) => {
   });
 });
 
-// GET /faculty/files — approved materials within a Faculty member's assigned
-// Department(s)/Course(s), for their "manage materials" view. Pending items
-// live in the separate /reviews queue, not here.
+// GET /faculty/files — the material a Faculty member themselves uploaded within
+// their assigned Department(s)/Course(s). Pending items live in the separate
+// /reviews queue, not here.
 //
-// `?mine=true` narrows that to the caller's own uploads. The course page uses
-// it: a course page is the faculty member's own working view of the course, and
-// it must agree with the Assignments and Quizzes tabs beside it, which are
-// creator-scoped already. The Assigned Materials screen leaves it off, which is
-// what makes that screen the whole-department view.
+// OWNERSHIP is enforced here, not by the caller: access to a course is not
+// ownership of its content, so a faculty member must never be handed a
+// colleague's material just because they both teach the same course. This
+// deliberately does not depend on a client-supplied flag — the clients used to
+// send `?mine=true`, and anything that forgot to could read every colleague's
+// uploads. `mine` is still accepted and ignored, so an older client keeps
+// working against this build.
+//
+// There is no sharing model for files (no per-record allow-list), so nothing is
+// merged back in. If explicit cross-faculty sharing is ever added, it belongs
+// here as an OR alongside the ownership clause.
 export const getFacultyScopedFiles = asyncHandler(async (req, res) => {
-  const { q, course, batch, mine } = req.query;
+  const { q, course, batch } = req.query;
   const { page, limit, skip } = parsePagination(req.query);
   const filter = {
     approvalStatus: 'approved',
+    uploadedBy: req.user._id,
     $or: [
       { department: { $in: req.user.assignedDepartments || [] } },
       { course: { $in: req.user.assignedCourses || [] } },
     ],
   };
-  if (mine === 'true' || mine === '1') filter.uploadedBy = req.user._id;
   // Course page → the Files tab, scoped to one course and optionally one batch.
   // The batch clause also accepts "applies to all batches", which is what a
   // student viewing that batch would see (same rule as fileQueryBuilder).
