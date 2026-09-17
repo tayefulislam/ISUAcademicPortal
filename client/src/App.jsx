@@ -40,6 +40,10 @@ import PublicExamLanding from './pages/public/PublicExamLanding.jsx';
 import PublicExamAttempt from './pages/public/PublicExamAttempt.jsx';
 import PublicExamResult from './pages/public/PublicExamResult.jsx';
 import FeedbackForm from './pages/FeedbackForm.jsx';
+import PrivacyPolicy from './pages/legal/PrivacyPolicy.jsx';
+import Terms from './pages/legal/Terms.jsx';
+import Help from './pages/legal/Help.jsx';
+import Contact from './pages/legal/Contact.jsx';
 import Forbidden403 from './pages/Forbidden403.jsx';
 import NotFound from './pages/NotFound.jsx';
 
@@ -227,6 +231,12 @@ export default function App() {
           <Route path="/exam/:slug/attempt/:attemptId" element={<PublicExamAttempt />} />
           <Route path="/exam/:slug/result/:attemptId" element={<PublicExamResult />} />
           <Route path="/feedback" element={<FeedbackForm />} />
+          {/* Public Legal & Support pages — deliberately unauthenticated so they
+              open directly by URL in a browser and in the Android WebView. */}
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/contact" element={<Contact />} />
           <Route
             path="/messages"
             element={

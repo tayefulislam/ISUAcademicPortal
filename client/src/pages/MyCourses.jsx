@@ -95,6 +95,9 @@ export default function MyCourses() {
               <BookOpen size={18} className="text-brand-600" />
               <h2 className="text-lg font-semibold text-slate-800">Regular Courses</h2>
             </div>
+            <p className="text-xs text-slate-400 -mt-1 mb-3">
+              The courses your department teaches, plus any regular enrollment recorded for you.
+            </p>
             {regular.length === 0 ? (
               <p className="text-slate-400 text-sm">No regular courses on record yet.</p>
             ) : (
@@ -176,7 +179,9 @@ function EnrollmentCard({ enrollment: e }) {
           Rejected{e.history[e.history.length - 1]?.reason ? `: ${e.history[e.history.length - 1].reason}` : ''}
         </p>
       )}
-      <p className="text-[11px] text-slate-300 mt-2">Requested {formatDate(e.registeredAt)}</p>
+      {/* A derived department course has no request behind it, so it has no
+          request date to show. */}
+      {!e.derived && <p className="text-[11px] text-slate-300 mt-2">Requested {formatDate(e.registeredAt)}</p>}
     </div>
   );
 }

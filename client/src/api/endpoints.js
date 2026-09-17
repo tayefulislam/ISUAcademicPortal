@@ -41,10 +41,20 @@ export const profileApi = {
 };
 
 // ----- Bookmarks -----
+// Folders and search live in this same API (see the server's
+// bookmarkController) so the web client and the Android app cannot drift apart
+// on how a bookmark is filed. `folderId` of 'default' means the built-in
+// bucket every bookmark lands in until it is filed.
 export const bookmarkApi = {
-  list: () => api.get('/bookmarks').then((r) => r.data),
-  add: (fileId) => api.post(`/bookmarks/${fileId}`).then((r) => r.data),
+  list: (params) => api.get('/bookmarks', { params }).then((r) => r.data),
+  add: (fileId, folderId) =>
+    api.post(`/bookmarks/${fileId}`, folderId ? { folderId } : {}).then((r) => r.data),
   remove: (fileId) => api.delete(`/bookmarks/${fileId}`).then((r) => r.data),
+  move: (fileId, folderId) => api.patch(`/bookmarks/${fileId}`, { folderId }).then((r) => r.data),
+  folders: () => api.get('/bookmarks/folders').then((r) => r.data),
+  createFolder: (name) => api.post('/bookmarks/folders', { name }).then((r) => r.data),
+  renameFolder: (id, name) => api.patch(`/bookmarks/folders/${id}`, { name }).then((r) => r.data),
+  removeFolder: (id) => api.delete(`/bookmarks/folders/${id}`).then((r) => r.data),
 };
 
 // ----- Departments -----

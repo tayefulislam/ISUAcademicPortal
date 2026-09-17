@@ -30,6 +30,7 @@ import publicExamRoutes from './publicExamRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import adminNotificationRoutes from './adminNotificationRoutes.js';
 import studentIdRoutes from './studentIdRoutes.js';
+import deviceRoutes from './deviceRoutes.js';
 
 const router = Router();
 
@@ -66,5 +67,6 @@ router.use('/public-exams', publicExamRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin/notifications', adminNotificationRoutes);
 router.use('/student-id', studentIdRoutes);
+router.use('/devices', deviceRoutes);
 
 export default router;

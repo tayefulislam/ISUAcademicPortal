@@ -14,7 +14,8 @@ export const MANUALS = {
           'Use "Browse & Search" in the top menu, or the search box on the Home page, to find files by course, department, batch, or keyword.',
           'The search is typo-tolerant — a misspelled or partial word (e.g. "qution" or "photo") still finds the right result.',
           'Click any file to view details, then "View" or "Download". Files marked "login required" only show up once you\'re signed in.',
-          'Use the star/bookmark icon on a file to save it — find all your saved files under Profile → Bookmarks.',
+          'Use the star/bookmark icon on a file to save it — it lands in the default folder, and you can find all your saved files under Profile → Bookmarks.',
+          'In Bookmarks you can create folders, move a saved file from the default folder into any of them, and search across your saved files (typo-tolerant, same as the main search).',
         ],
       },
       {
