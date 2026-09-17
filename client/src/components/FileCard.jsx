@@ -5,7 +5,7 @@ import { formatBytes, formatDate } from '../utils/format.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
 
-export default function FileCard({ file, onDownload }) {
+export default function FileCard({ file, onDownload, folderControl }) {
   const multi = (file.fileCount ?? 1) > 1;
   const { user } = useAuth();
   const bookmarkedIds = useBookmarkedIds();
@@ -66,6 +66,10 @@ export default function FileCard({ file, onDownload }) {
           <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{file.categoryName}</span>
         )}
       </div>
+
+      {/* Optional slot: the Bookmarks page puts a folder picker here. Only that
+          page passes it, so every other listing is unchanged. */}
+      {folderControl}
 
       <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
         <span className="uppercase font-medium text-slate-500">{file.fileType}</span>

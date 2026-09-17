@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(npm:*)",
+      "powershell",
+      "Shell(agent-browser:*)",
+      "Shell(kill:*)",
+      "Shell(del /q privacy-desktop.png help-mobile.png contact-mobile.png login-mobile.png 2>nul & dir /b *.png 2>nul & echo done)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

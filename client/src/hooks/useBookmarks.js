@@ -34,10 +34,13 @@ export function useToggleBookmark() {
         toast('Removed from bookmarks', 'success');
       } else {
         await bookmarkApi.add(file._id);
-        toast('Bookmarked', 'success');
+        // Name the destination: the bookmark lands in the default folder of the
+        // Bookmarks page, where it can then be filed into a folder.
+        toast('Saved to your bookmarks', 'success');
       }
       qc.invalidateQueries({ queryKey: ['my-bookmark-ids'] });
       qc.invalidateQueries({ queryKey: ['my-bookmarks'] });
+      qc.invalidateQueries({ queryKey: ['bookmark-folders'] });
     } catch (err) {
       toast(err.response?.data?.message || 'Failed to update bookmark', 'error');
     }

@@ -78,4 +78,17 @@ export const env = {
     privateKey: process.env.VAPID_PRIVATE_KEY || '',
     subject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
   },
+
+  // Firebase Cloud Messaging — the Android push channel. Optional in exactly the
+  // same way as `email` and `vapid`: with no credentials, fcmService silently
+  // skips push and every in-app notification still works.
+  //
+  // The service account is supplied either inline (FIREBASE_SERVICE_ACCOUNT, for
+  // hosts whose filesystem is ephemeral) or as a path
+  // (FIREBASE_SERVICE_ACCOUNT_PATH). It is a SERVER-ONLY secret and must never
+  // be placed in the Android app.
+  firebase: {
+    serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT || '',
+    serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
+  },
 };

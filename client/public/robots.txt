@@ -1,0 +1,41 @@
+# Public crawling policy for the ISU Academic Portal.
+#
+# The public pages (home, browse/search, courses, notices, and the Legal &
+# Support pages: /privacy-policy, /terms, /help, /contact) are intentionally
+# indexable — the Privacy Policy and Terms in particular must be publicly
+# readable for Google Play distribution.
+#
+# Everything behind authentication is excluded: those pages render an empty
+# shell to a crawler and contain no content worth indexing.
+
+User-agent: *
+Allow: /
+
+# Authenticated application areas
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /faculty
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /notifications
+Disallow: /my-courses
+Disallow: /my-bookmarks
+Disallow: /assignments
+Disallow: /quizzes
+Disallow: /messages
+Disallow: /submit-material
+Disallow: /pending-approval
+
+# Account-flow pages (transactional, no indexable content)
+Disallow: /login
+Disallow: /register
+Disallow: /verify-otp
+Disallow: /forgot-password
+Disallow: /reset-password
+
+# Error pages
+Disallow: /403
+
+# Once the production domain is fixed, uncomment and set this so crawlers can
+# discover the public pages directly:
+# Sitemap: https://your-portal-domain.edu/sitemap.xml

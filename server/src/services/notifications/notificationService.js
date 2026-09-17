@@ -3,6 +3,7 @@ import Notification from '../../models/Notification.js';
 import User from '../../models/User.js';
 import { renderTemplate } from './notificationTemplates.js';
 import { sendToUser } from './pushService.js';
+import { sendToUserDevices, buildPushData } from './fcmService.js';
 
 // A user's `notificationPreferences.types` Map only exists on documents
 // created after that field was added — missing means "never explicitly
@@ -93,6 +94,32 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
   // with the push channel itself enabled. Never blocks/throws past this point.
   const toPush = uniqueRecipients.map((id) => byId.get(id)).filter((u) => u && pushEnabledFor(u));
   await Promise.allSettled(toPush.map((u) => sendToUser(u._id, { title, body: message, url, type })));
+
+  // FCM is a second *transport* for the same event, not a second notification
+  // system: it carries the id of the row just created (plus the ids the Android
+  // client needs to open the right screen), so tapping a push opens/marks the
+  // real Notification record. Same recipients and same pushEnabledFor() policy as
+  // Web Push, so the two channels can never disagree about who is notified.
+  // Silently no-ops when no Firebase service account is configured.
+  const notificationIdByRecipient = new Map(
+    inserted.map((doc) => [String(doc.recipient), String(doc._id)])
+  );
+  await Promise.allSettled(
+    toPush.map((u) =>
+      sendToUserDevices(u._id, {
+        title,
+        body: message,
+        data: buildPushData({
+          notificationId: notificationIdByRecipient.get(String(u._id)),
+          type,
+          entityType,
+          entityId: String(effectiveEntityId),
+          url,
+          vars,
+        }),
+      })
+    )
+  );
 
   return { created: inserted.length };
 }

@@ -589,5 +589,16 @@ S3-compatible/Uploadcare storage instead.
 - [ ] Seed script run once against production; both seeded passwords changed after first login.
 - [ ] Document storage is durable (persistent disk, or S3-compatible/Uploadcare).
 - [ ] Email provider configured (`EMAIL_PROVIDER=smtp` or `resend`) — otherwise OTP/reset/broadcast emails just log to console.
+- [ ] `FIREBASE_SERVICE_ACCOUNT` set — otherwise Android push notifications are silently skipped (in-app notifications are unaffected). See [`docs/FCM_PUSH_SETUP.md`](docs/FCM_PUSH_SETUP.md).
 - [ ] `.env` files are not committed (already covered by `.gitignore`).
 - [ ] HTTPS is active on both frontend and backend.
+
+### 16.6 Android push notifications (FCM)
+
+Optional, and independent of the rest of the deployment. The backend skips FCM
+entirely until it is configured, and the Android app works without it. Full
+setup and test procedure: [`docs/FCM_PUSH_SETUP.md`](docs/FCM_PUSH_SETUP.md).
+
+- [ ] `ISUAcademicPortal/app/google-services.json` added (Firebase Console → Add app → Android, package `com.bluespacetech.isuacademicportal`).
+- [ ] `FIREBASE_SERVICE_ACCOUNT` (or `FIREBASE_SERVICE_ACCOUNT_PATH`) set on the backend.
+- [ ] App rebuilt and installed after adding `google-services.json`.

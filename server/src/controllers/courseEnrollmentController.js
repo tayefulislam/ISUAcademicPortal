@@ -2,6 +2,7 @@ import CourseEnrollment, { STUDENT_REQUESTABLE_TYPES, ACCESS_GRANTING_STATUSES }
 import Course from '../models/Course.js';
 import User from '../models/User.js';
 import Semester from '../models/Semester.js';
+import Batch from '../models/Batch.js';
 import { getSettings } from '../models/Settings.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -204,11 +205,78 @@ export const requestEnrollment = asyncHandler(async (req, res) => {
   }
 });
 
+// A student's 'regular' courses are the ones their own department teaches —
+// courseAccessService.getEffectiveCourseIds already treats every department
+// course as reachable. No CourseEnrollment row is written for them (that
+// collection is for the explicit retake/extra/backlog/... grants plus the
+// administrative bulk-regular seeding tool), so without this the "My Courses"
+// screen reports an empty list to a student who can actually open all 50 of
+// their department's courses. These rows are synthesized, never persisted.
+function currentAcademicYear() {
+  const year = new Date().getFullYear();
+  return `${year}-${year + 1}`;
+}
+
+// Exported for the enrollment test suite (same convention as fileController's
+// assertUploadScope).
+export async function derivedRegularEnrollments(user) {
+  if (!user.department) return [];
+
+  const [courses, allStoredCourseIds, semester, batch] = await Promise.all([
+    Course.find({ department: user.department, status: 'active' })
+      .populate({ path: 'department', select: 'name code' }),
+    CourseEnrollment.find({ student: user._id }).distinct('course'),
+    user.semester ? Semester.findById(user.semester).select('name code') : null,
+    user.batch ? Batch.findById(user.batch).select('name code') : null,
+  ]);
+
+  // Any stored row for a course wins, whatever its status — a dropped or
+  // completed enrollment is exactly the case where the derived "you are
+  // enrolled" reading would be wrong.
+  const claimed = new Set(allStoredCourseIds.map(String));
+
+  return courses
+    .filter((course) => !claimed.has(String(course._id)))
+    .map((course) => ({
+      _id: `regular-${course._id}`,
+      student: user._id,
+      course,
+      enrollmentType: 'regular',
+      status: 'active',
+      academicYear: currentAcademicYear(),
+      semester: semester || null,
+      batch: batch || null,
+      reason: '',
+      // Deliberately no registeredAt: nobody requested this, and a client that
+      // prints "Requested <date>" from it would be stating something untrue.
+      // `derived` is what tells a client this row is read-only — it has no
+      // history and cannot be approved/dropped/deleted, because no record
+      // stands behind it.
+      derived: true,
+      history: [],
+    }));
+}
+
+// Mirrors the Mongo status clause the stored query ran with, so '/my',
+// '/my/active' and '/my/pending' each get the derived rows that belong to them
+// (an active derived course is not a pending request).
+function matchesStatusFilter(status, filter) {
+  const clause = filter.status;
+  if (!clause) return true;
+  if (typeof clause === 'string') return clause === status;
+  return Array.isArray(clause.$in) ? clause.$in.includes(status) : true;
+}
+
 async function listMine(req, res, extraFilter) {
   const enrollments = await CourseEnrollment.find({ student: req.user._id, ...extraFilter })
     .populate(POPULATE)
     .sort({ createdAt: -1 });
-  res.json({ success: true, data: enrollments });
+
+  // Real records lead; the derived department courses follow them.
+  const derived = (await derivedRegularEnrollments(req.user))
+    .filter((row) => matchesStatusFilter(row.status, extraFilter));
+
+  res.json({ success: true, data: [...enrollments, ...derived] });
 }
 
 export const listMyEnrollments = asyncHandler((req, res) => listMine(req, res, {}));
