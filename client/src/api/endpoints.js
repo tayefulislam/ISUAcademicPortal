@@ -470,3 +470,57 @@ export const adminNotificationApi = {
   logs: (params) => api.get('/admin/notifications/logs', { params }).then((r) => r.data),
   send: (data) => api.post('/admin/notifications/send', data).then((r) => r.data),
 };
+
+// ----- Class routine & academic calendar -----
+//
+// Note what is NOT here: no caller-supplied department/batch/semester on any
+// "my" call. The server derives the audience from the signed-in user's own
+// record (academicEventService.audienceFilterFor), so a client cannot widen its
+// own view by changing a query string — and the management listings are gated
+// separately by the routine_*/exam_* permissions.
+export const routineApi = {
+  /** The caller's own schedule. `params`: { view: 'today'|'week'|'month', month, from, to } */
+  mine: (params) => api.get('/routine/my', { params }).then((r) => r.data),
+  today: () => api.get('/routine/today').then((r) => r.data),
+  week: () => api.get('/routine/week').then((r) => r.data),
+  month: (params) => api.get('/routine/month', { params }).then((r) => r.data),
+
+  /** The SmartEventWidget's single call: current + next + whether anything is published. */
+  currentNext: () => api.get('/events/my/current-next').then((r) => r.data),
+
+  /** Lookups the routine form needs. */
+  groups: () => api.get('/routine/groups').then((r) => r.data),
+  facultyForCourse: (course) => api.get('/routine/faculty', { params: { course } }).then((r) => r.data),
+
+  // Recurring rules (management).
+  templates: (params) => api.get('/routine/templates', { params }).then((r) => r.data),
+  create: (data) => api.post('/routine', data).then((r) => r.data),
+  updateTemplate: (id, data) => api.patch(`/routine/templates/${id}`, data).then((r) => r.data),
+  removeTemplate: (id) => api.delete(`/routine/templates/${id}`).then((r) => r.data),
+
+  // Single occurrences (exceptions to a rule). `instances` is the management
+  // listing — a dated timetable for a chosen scope, not an audience view.
+  instances: (params) => api.get('/routine/instances', { params }).then((r) => r.data),
+  updateInstance: (id, data) => api.patch(`/routine/instances/${id}`, data).then((r) => r.data),
+  cancelInstance: (id, data) => api.post(`/routine/instances/${id}/cancel`, data || {}).then((r) => r.data),
+  rescheduleInstance: (id, data) => api.post(`/routine/instances/${id}/reschedule`, data).then((r) => r.data),
+  removeInstance: (id) => api.delete(`/routine/instances/${id}`).then((r) => r.data),
+};
+
+// ----- Academic events: exams, CTs, deadlines, general events -----
+//
+// /exams/* and /calendar/events are the same handlers on the server — an exam
+// IS an AcademicEvent — so both are exposed here for readability rather than
+// kept as two divergent paths.
+export const calendarApi = {
+  /** The caller's own calendar (classes + events), optional { type, from, to }. */
+  mine: (params) => api.get('/calendar/my', { params }).then((r) => r.data),
+  /** Assessments only (exams + deadlines). */
+  myExams: () => api.get('/exams/my').then((r) => r.data),
+
+  // Management.
+  events: (params) => api.get('/calendar/events', { params }).then((r) => r.data),
+  createEvent: (data) => api.post('/calendar/events', data).then((r) => r.data),
+  updateEvent: (id, data) => api.patch(`/calendar/events/${id}`, data).then((r) => r.data),
+  removeEvent: (id) => api.delete(`/calendar/events/${id}`).then((r) => r.data),
+};

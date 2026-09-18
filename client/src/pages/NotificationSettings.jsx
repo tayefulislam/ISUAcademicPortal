@@ -26,6 +26,14 @@ const TYPE_LABELS = {
   JOIN_REQUEST: 'Join Requests',
   JOIN_REQUEST_APPROVED: 'Join Request Approvals',
   ASSIGNMENT_SUBMITTED: 'New Submissions',
+  // Class routine reminders. 30- and 10-minute reminders share one label
+  // because they are the same thing to a reader; the cancellation, move and
+  // room-change notices are each their own switch (spec §25).
+  CLASS_REMINDER: 'Class Reminders',
+  CLASS_STARTING: 'Class Starting',
+  CLASS_CANCELLED: 'Class Cancellations',
+  CLASS_RESCHEDULED: 'Rescheduled Classes',
+  CLASS_ROOM_CHANGED: 'Room Changes',
 };
 
 function Toggle({ checked, onChange, disabled }) {

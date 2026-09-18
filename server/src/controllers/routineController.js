@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import RoutineTemplate from '../models/RoutineTemplate.js';
 import ScheduleInstance from '../models/ScheduleInstance.js';
 import Course from '../models/Course.js';
+import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getSettings } from '../models/Settings.js';
@@ -9,6 +10,7 @@ import { isSuperAdminTier } from '../models/Role.js';
 import { assertFacultyCourseAccess, facultyCourseClause } from '../services/teachingService.js';
 import { generateInstancesForTemplate, findConflicts } from '../services/routineService.js';
 import { notifyOccurrence } from '../services/routineNotifications.js';
+import { resolveFacultyForCourse } from '../services/notifications/recipientResolver.js';
 import {
   audienceFilterFor,
   resolveVisibleEvents,
@@ -17,9 +19,9 @@ import {
   getMonthEvents,
   getCurrentAndNext,
 } from '../services/academicEventService.js';
-import { resolveGroup } from '../utils/groups.js';
+import { resolveGroup, getAcademicGroups } from '../utils/groups.js';
 import { CLASS_TYPES, DELIVERY_MODES } from '../utils/academicEventTypes.js';
-import { parseAsDhakaTime, isDateOnly, isTimeOnly, combineDhakaDateTime, formatInAppTimezone } from '../utils/academicSchedule.js';
+import { parseAsDhakaTime, isDateOnly, isTimeOnly, combineDhakaDateTime, endOfDhakaDay, formatInAppTimezone } from '../utils/academicSchedule.js';
 
 // Class routine: the recurring rules an administrator/CR/faculty member sets up,
 // and the dated occurrences everyone else reads.
@@ -204,7 +206,51 @@ function matchesAudience(doc, filter) {
 }
 
 /**
- * GET /routine/templates — the recurring rules this caller may manage.
+ * GET /routine/instances — the dated occurrences for a scope, for the Routine
+ * Manager's timetable.
+ *
+ * The audience endpoints answer "what may this person see"; this one answers
+ * "what is on for CSE / Batch 14 / Semester 1 on this date", which is a
+ * management question and therefore gated by routine_view and, for anyone with
+ * an assigned scope, held to their own courses.
+ */
+export const listInstances = asyncHandler(async (req, res) => {
+  await assertRoutineEnabled();
+  const filter = {};
+
+  const broad = isSuperAdminTier(req.user.role) || req.user.role === 'admin';
+  if (!broad) {
+    const scoped = await Course.find(facultyCourseClause(req.user)).distinct('_id');
+    filter.$or = [
+      { course: { $in: scoped } },
+      { department: { $in: req.user.assignedDepartments || [] } },
+    ];
+  }
+
+  for (const axis of ['department', 'batch', 'semester', 'course', 'faculty', 'group']) {
+    if (req.query[axis] && mongoose.isValidObjectId(req.query[axis])) filter[axis] = req.query[axis];
+  }
+
+  // A single Dhaka day is the common case (the manager shows one date at a
+  // time); from/to is there for range views.
+  if (req.query.date && isDateOnly(req.query.date)) {
+    const dayStart = combineDhakaDateTime(req.query.date, '00:00');
+    filter.startAt = { $gte: dayStart, $lt: endOfDhakaDay(dayStart) };
+  } else if (req.query.from || req.query.to) {
+    filter.startAt = {};
+    if (req.query.from) filter.startAt.$gte = parseAsDhakaTime(req.query.from);
+    if (req.query.to) filter.startAt.$lt = parseAsDhakaTime(req.query.to);
+  }
+
+  const instances = await ScheduleInstance.find(filter)
+    .populate(TEMPLATE_POPULATE)
+    .sort({ startAt: 1 })
+    .limit(300);
+
+  res.json({ success: true, data: instances });
+});
+
+/** GET /routine/templates — the recurring rules this caller may manage.
  * `?course=` / `?batch=` narrow it further; the scope clause is what keeps a
  * faculty member to their own courses.
  */
@@ -462,3 +508,36 @@ export const deleteInstance = asyncHandler(async (req, res) => {
 function respondWith(res, events) {
   res.json({ success: true, data: events });
 }
+
+/**
+ * GET /routine/groups — the configured academic groups (BOTH, A1, A2, ...).
+ *
+ * Its own endpoint rather than a field on GET /auth/settings: that response is
+ * a flat map of booleans, and the Android client deserialises it as exactly
+ * that — adding an array there would fail the whole settings parse and take
+ * every feature flag down with it.
+ */
+export const getGroups = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: { groups: await getAcademicGroups() } });
+});
+
+/**
+ * GET /routine/faculty?course=<id> — who teaches this course, so the routine
+ * form can preselect them instead of asking again (spec §3, §42: a faculty
+ * member is inferred from the course, and only changed deliberately).
+ */
+export const getFacultyForCourse = asyncHandler(async (req, res) => {
+  await assertRoutineEnabled();
+  const { course } = req.query;
+  if (!course || !mongoose.isValidObjectId(course)) {
+    throw new ApiError(400, 'A valid course is required');
+  }
+  await assertScheduleScope(req.user, course);
+
+  const ids = await resolveFacultyForCourse(course);
+  const faculty = await User.find({ _id: { $in: ids } })
+    .select('name email')
+    .sort({ name: 1 });
+
+  res.json({ success: true, data: faculty });
+});

@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark } from 'lucide-react';
+import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark, CalendarDays, CalendarClock } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -15,6 +15,11 @@ const links = [
   { to: '/admin/messages', label: 'Messages', icon: MessageCircle, flag: 'messagingSystemEnabled', permission: 'messages' },
   { to: '/admin/emails', label: 'Email Center', icon: Mail, flag: 'emailSystemEnabled', permission: 'emails' },
   { to: '/admin/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled', permission: 'enrollments' },
+  // Gated by the routine_create permission rather than the usual per-module
+  // permission, so a CR can be given "build the timetable" without also being
+  // handed the rest of the file/admin modules.
+  { to: '/admin/routine', label: 'Routine Manager', icon: CalendarDays, flag: 'routineSystemEnabled', permission: 'routine_create' },
+  { to: '/routine', label: 'My Calendar', icon: CalendarClock, flag: 'routineSystemEnabled' },
   // "Act as a student" links — every admin-tier role (e.g. "CR") gets these
   // unconditionally, the same way a Student account would, since none of
   // them are gated by a togglable admin-tier permission. Ownership/ID-based

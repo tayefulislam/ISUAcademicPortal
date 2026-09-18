@@ -9,11 +9,13 @@ import FacultyLayout from './layouts/FacultyLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import PwaUpdatePrompt from './components/PwaUpdatePrompt.jsx';
 import EnableNotificationPrompt from './components/notifications/EnableNotificationPrompt.jsx';
+import RoutineFloatingWidget from './components/routine/RoutineFloatingWidget.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
 import SuperAdminNotifications from './pages/superadmin/SuperAdminNotifications.jsx';
 import Manual from './pages/Manual.jsx';
+import Routine from './pages/Routine.jsx';
 
 import Home from './pages/Home.jsx';
 import SearchResults from './pages/SearchResults.jsx';
@@ -76,6 +78,7 @@ import QuizManager from './pages/shared/QuizManager.jsx';
 import Messages from './pages/shared/Messages.jsx';
 import EmailComposer from './pages/shared/EmailComposer.jsx';
 import EnrollmentManager from './pages/shared/EnrollmentManager.jsx';
+import RoutineManager from './pages/shared/RoutineManager.jsx';
 import FacultyEnrollmentDashboard from './pages/faculty/FacultyEnrollmentDashboard.jsx';
 
 function AnalyticsTracker() {
@@ -111,12 +114,23 @@ export default function App() {
       <AnalyticsTracker />
       <PwaUpdatePrompt />
       {user && <EnableNotificationPrompt />}
+      {user && <RoutineFloatingWidget />}
       <Routes>
         <Route element={<MainLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchResults />} />
           <Route path="/files/:id" element={<FileDetails />} />
           <Route path="/courses" element={<Courses />} />
+          {/* The signed-in academic calendar. Every view behind it is scoped
+              server-side from the user's own record. */}
+          <Route
+            path="/routine"
+            element={
+              <ProtectedRoute>
+                <Routine />
+              </ProtectedRoute>
+            }
+          />
           {/* My Courses → course → batch → content. Auth-only: every list behind
               it is fetched through the audience endpoints, so the server decides
               what this viewer may see. */}
@@ -281,6 +295,7 @@ export default function App() {
           <Route path="messages" element={<Messages />} />
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
+          <Route path="routine" element={<RoutineManager />} />
           <Route path="manual" element={<Manual role="admin" />} />
         </Route>
 
@@ -303,6 +318,7 @@ export default function App() {
           <Route path="messages" element={<Messages />} />
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
+          <Route path="routine" element={<RoutineManager />} />
           <Route path="notifications" element={<SuperAdminNotifications />} />
           <Route path="manual" element={<Manual role="super_admin" />} />
         </Route>
@@ -330,6 +346,7 @@ export default function App() {
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
           <Route path="enrollments/roster" element={<FacultyEnrollmentDashboard />} />
+          <Route path="routine" element={<RoutineManager />} />
           <Route path="manual" element={<Manual role="faculty" />} />
         </Route>
       </Routes>

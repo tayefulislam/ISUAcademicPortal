@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3 } from 'lucide-react';
+import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3, CalendarClock, CalendarDays } from 'lucide-react';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
-import { fileApi, noticeApi, assignmentApi, authApi } from '../api/endpoints.js';
+import SmartEventWidget from '../components/routine/SmartEventWidget.jsx';
+import { eventIcon, eventTitle, typeLabel, timeRange, locationLine } from '../components/routine/eventMeta.js';
+import { fileApi, noticeApi, assignmentApi, authApi, routineApi, calendarApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useDownloadFile } from '../hooks/useDownloadFile.js';
 import { formatDate } from '../utils/format.js';
@@ -26,6 +28,21 @@ export default function Dashboard() {
   });
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
   const messagingEnabled = settings?.data?.messagingSystemEnabled !== false;
+  // The routine system is opt-in, so this must be an explicit `=== true` rather
+  // than the "absent means on" rule the other flags use.
+  const routineEnabled = settings?.data?.routineSystemEnabled === true;
+  const { data: todayData, isLoading: loadingToday } = useQuery({
+    queryKey: ['routine', 'today'],
+    queryFn: routineApi.today,
+    enabled: routineEnabled,
+  });
+  const { data: examsData } = useQuery({
+    queryKey: ['routine', 'my-exams'],
+    queryFn: calendarApi.myExams,
+    enabled: routineEnabled,
+  });
+  const todayEvents = todayData?.data || [];
+  const upcomingExams = (examsData?.data || []).slice(0, 3);
   // `nextStep` is computed server-side (registrationFlowService.js's
   // getNextRequiredStep — the single source of truth for this decision) and
   // attached to the cached user object by every auth response (login,
@@ -60,6 +77,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap gap-2 mb-8">
         <QuickLink to="/profile" icon={User} label="Profile" />
         <QuickLink to="/my-bookmarks" icon={Bookmark} label="Bookmarks" />
+        {routineEnabled && <QuickLink to="/routine" icon={CalendarClock} label="Calendar" />}
         {user?.role === 'student' && <QuickLink to="/my-courses" icon={Layers3} label="My Courses" />}
         <QuickLink to="/assignments" icon={ClipboardList} label="Assignments" />
         <QuickLink to="/quizzes" icon={FileQuestion} label="Quizzes" />
@@ -75,6 +93,76 @@ export default function Dashboard() {
           <LogOut size={15} /> Logout
         </button>
       </div>
+
+      {/* Today first: what is on now, what is next, then the rest of the day
+          and the next exams (spec §35). Opt-in behind routineSystemEnabled. */}
+      {routineEnabled && (
+        <section className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="text-brand-600" size={20} />
+              <h2 className="text-xl font-bold text-slate-800">Today</h2>
+            </div>
+            <Link to="/routine" className="text-sm text-brand-600 hover:underline">Open calendar</Link>
+          </div>
+
+          <SmartEventWidget mode="dashboard" className="mb-4" />
+
+          {loadingToday ? (
+            <div className="h-16 rounded-xl bg-slate-100 animate-pulse" />
+          ) : todayEvents.length > 0 && (
+            <div className="space-y-2">
+              {todayEvents.map((e) => {
+                const Icon = eventIcon(e);
+                const cancelled = e.status === 'CANCELLED';
+                return (
+                  <div
+                    key={e.id}
+                    className={`bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 ${cancelled ? 'opacity-60' : ''}`}
+                  >
+                    <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-50 grid place-items-center">
+                      <Icon size={16} className="text-slate-400" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-700 truncate">{eventTitle(e)}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {timeRange(e)} &middot; {locationLine(e)} &middot; {typeLabel(e)}
+                      </p>
+                    </div>
+                    {cancelled && (
+                      <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-600">Cancelled</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {routineEnabled && upcomingExams.length > 0 && (
+        <section className="mb-10">
+          <div className="flex items-center gap-2 mb-4">
+            <CalendarDays className="text-brand-600" size={20} />
+            <h2 className="text-xl font-bold text-slate-800">Upcoming exams</h2>
+          </div>
+          <div className="space-y-2">
+            {upcomingExams.map((e) => (
+              <div key={e.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-700 truncate">{e.title || eventTitle(e)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {typeLabel(e)} &middot; {timeRange(e)} &middot; {locationLine(e)}
+                  </p>
+                </div>
+                <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700">
+                  {formatDate(`${e.date}T00:00:00+06:00`)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-10">
         <div className="flex items-center justify-between mb-4">
