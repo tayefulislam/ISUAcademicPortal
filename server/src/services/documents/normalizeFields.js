@@ -1,5 +1,6 @@
 import { ApiError } from '../../utils/ApiError.js';
 import { FIELD_TYPES, FIELD_SOURCES, EDITABLE_TYPES } from './fieldSources.js';
+import { isAssetFileName } from './assets.js';
 
 // Bounds so a template cannot define an unbounded page of fields.
 const MAX_FIELDS = 200;
@@ -105,13 +106,22 @@ export function normalizeFields(raw) {
       x: clamp(numOr(field.x, 20), 0, 400),
       y: clamp(numOr(field.y, 20), 0, 600),
       width: clamp(numOr(field.width, 100), 5, 400),
-      height: clamp(numOr(field.height, 8), 2, 600),
+      // A rule reads `height` as its thickness, so it needs a sub-millimetre
+      // range — the 2 mm floor that suits a text box would turn a hairline into
+      // a bar. Everything else keeps the box floor.
+      height: type === 'LINE'
+        ? clamp(numOr(field.height, 0.4), 0.1, 5)
+        : clamp(numOr(field.height, 8), 2, 600),
       fontSize: clamp(numOr(field.fontSize, 12), 4, 96),
       fontFamily: String(field.fontFamily || '').slice(0, 120),
       bold: Boolean(field.bold),
       italic: Boolean(field.italic),
       align: ALIGNMENTS.includes(field.align) ? field.align : 'left',
       color: COLOR.test(String(field.color || '')) ? field.color : '#111111',
+      // An IMAGE element's file name in the server's img/ folder. Validated here
+      // so a design can never reference a path or a non-image file.
+      asset: isAssetFileName(field.asset) ? String(field.asset).trim() : '',
+      zIndex: clamp(numOr(field.zIndex, index), -999, 999),
     };
   });
 }

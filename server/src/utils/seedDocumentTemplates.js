@@ -29,10 +29,14 @@ export const DEFAULT_CATEGORIES = [
  */
 export function experimentCoverFields() {
   return normalizeFields([
+    // The crest itself, taken from the server's img/ folder — no upload step, and
+    // one file shared by every template that wants it.
+    { key: 'logo', label: 'University Logo', type: 'IMAGE', asset: 'logo.png', x: 16, y: 14, width: 30, height: 30, zIndex: 0 },
     { key: 'university_name', label: 'University Name', type: 'STATIC', staticValue: 'International Standard University', x: 15, y: 22, width: 180, height: 10, fontSize: 18, bold: true, align: 'center' },
     { key: 'department_label', label: 'Department label', type: 'STATIC', staticValue: 'Department of', x: 15, y: 36, width: 180, height: 8, fontSize: 12, align: 'center' },
     { key: 'department', label: 'Department', type: 'AUTO', source: 'department.name', x: 15, y: 44, width: 180, height: 9, fontSize: 14, bold: true, align: 'center' },
-    { key: 'experiment_title', label: 'Experiment', type: 'STATIC', staticValue: 'Experiment', x: 15, y: 60, width: 180, height: 12, fontSize: 22, bold: true, align: 'center' },
+    { key: 'header_rule', label: 'Header rule', type: 'LINE', x: 20, y: 56, width: 170, height: 0.5, color: '#1f3288', zIndex: 1 },
+    { key: 'experiment_title', label: 'Experiment', type: 'STATIC', staticValue: 'Experiment', x: 15, y: 62, width: 180, height: 12, fontSize: 22, bold: true, align: 'center' },
 
     { key: 'course_code', label: 'Course Code', type: 'AUTO', source: 'course.code', formatting: { prefix: 'Course Code: ' }, x: 22, y: 84, width: 166, height: 8, fontSize: 12 },
     { key: 'course_name', label: 'Course Name', type: 'AUTO', source: 'course.name', formatting: { prefix: 'Course Name: ' }, x: 22, y: 92, width: 166, height: 8, fontSize: 12 },

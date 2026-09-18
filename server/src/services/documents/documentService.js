@@ -15,6 +15,7 @@ import { resolveFacultyForCourse } from '../notifications/recipientResolver.js';
 import { emit } from '../notifications/notificationService.js';
 import { buildRenderData } from './fieldResolver.js';
 import { renderHtml } from './templateEngine.js';
+import { assetDataUris } from './assets.js';
 import { effectiveAudience, isTemplateEligible, filterEligibleTemplates } from './eligibility.js';
 
 // Nothing here trusts an id from the request body: the student, the course and
@@ -173,7 +174,10 @@ export async function renderPreview({ user, templateId, courseId, inputData }) {
   const course = await assertCourseAccess(user, courseId);
   const { context } = await buildContext(user, course);
   const { values } = buildRenderData({ fields: version.fields, context, inputData });
-  return renderHtml(version, values, { title: template.name });
+  // The logo (and any other image element) is embedded from the server's own
+  // img/ folder, so the preview shows exactly what the PDF will.
+  const assets = await assetDataUris(version.fields);
+  return renderHtml(version, values, { title: template.name, assets });
 }
 
 /**
@@ -283,7 +287,10 @@ export async function processJob(jobId, { renderPdf, storeDocument } = {}) {
     const render = renderPdf || (await import('../pdf/pdfService.js')).renderPdf;
     const store = storeDocument || (await import('../storage/storageService.js')).storeGeneratedDocument;
 
-    const html = renderHtml(version, values, { title: template.name });
+    const html = renderHtml(version, values, {
+      title: template.name,
+      assets: await assetDataUris(version.fields),
+    });
     const pdf = await render(html);
     const { storageRef } = await store(documentKey(job), pdf);
 

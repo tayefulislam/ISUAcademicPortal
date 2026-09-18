@@ -563,6 +563,14 @@ export const adminDocumentApi = {
   // The field vocabulary (types, sources, formats) the editor builds its
   // dropdowns from — served so the client can never drift from the server.
   meta: () => api.get('/admin/document-templates/meta').then((r) => r.data),
+  // The image library a design can place (the university logo and anything else
+  // in the server's img/ folder).
+  assets: () => api.get('/admin/document-assets').then((r) => r.data),
+  // Fetched as a blob: the images are served by the authenticated API, never as
+  // public URLs, so an <img src> cannot carry the token itself.
+  assetUrl: (name) =>
+    api.get(`/admin/document-assets/${encodeURIComponent(name)}`, { responseType: 'blob' })
+      .then((r) => URL.createObjectURL(r.data)),
   templates: (params) => api.get('/admin/document-templates', { params }).then((r) => r.data),
   template: (id) => api.get(`/admin/document-templates/${id}`).then((r) => r.data),
   create: (formData) =>

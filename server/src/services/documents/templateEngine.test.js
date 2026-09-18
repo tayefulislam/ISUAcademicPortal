@@ -87,3 +87,73 @@ describe('renderHtml', () => {
     assert.match(html, /<title>&lt;b&gt;x&lt;\/b&gt;<\/title>/);
   });
 });
+
+describe('renderHtml — image elements', () => {
+  const LOGO = 'data:image/png;base64,iVBORw0KGgo=';
+
+  test('an image element embeds the resolved asset', () => {
+    const html = renderHtml(
+      { ...VERSION, fields: [{ key: 'logo', type: 'IMAGE', asset: 'logo.png', x: 10, y: 10, width: 30, height: 30, zIndex: 0 }] },
+      {},
+      { assets: { 'logo.png': LOGO } }
+    );
+    assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo="/);
+    assert.match(html, /object-fit:contain/);
+  });
+
+  test('an image whose file is missing prints nothing (never a broken box)', () => {
+    const html = renderHtml(
+      { ...VERSION, fields: [{ key: 'logo', type: 'IMAGE', asset: 'gone.png' }] },
+      {},
+      { assets: {} }
+    );
+    assert.doesNotMatch(html, /<img/);
+  });
+
+  test('an image element with no asset set prints nothing', () => {
+    const html = renderHtml({ ...VERSION, fields: [{ key: 'logo', type: 'IMAGE', asset: '' }] }, {}, { assets: { 'x.png': LOGO } });
+    assert.doesNotMatch(html, /<img/);
+  });
+
+  test('a non-image data URI is refused', () => {
+    const html = renderHtml(
+      { ...VERSION, fields: [{ key: 'logo', type: 'IMAGE', asset: 'evil.png' }] },
+      {},
+      { assets: { 'evil.png': 'data:text/html;base64,PHNjcmlwdD4=' } }
+    );
+    assert.doesNotMatch(html, /<img/);
+  });
+});
+
+describe('renderHtml — rule elements', () => {
+  test('a line renders as a border whose width is its thickness', () => {
+    const html = renderHtml(
+      { ...VERSION, fields: [{ key: 'rule', type: 'LINE', x: 20, y: 50, width: 170, height: 0.5, color: '#1f3288' }] },
+      {}
+    );
+    assert.match(html, /border-top:0\.5mm solid #1f3288/);
+    assert.match(html, /height:0/);
+  });
+
+  test('a line needs no value', () => {
+    const html = renderHtml({ ...VERSION, fields: [{ key: 'rule', type: 'LINE', width: 100 }] }, {});
+    assert.match(html, /border-top:/);
+  });
+});
+
+describe('renderHtml — draw order', () => {
+  test('elements are painted in z order, so "bring to front" wins in the PDF too', () => {
+    const html = renderHtml(
+      {
+        ...VERSION,
+        fields: [
+          { key: 'front', type: 'STATIC', zIndex: 5 },
+          { key: 'back', type: 'STATIC', zIndex: 1 },
+        ],
+      },
+      { front: 'FRONT', back: 'BACK' }
+    );
+    assert.ok(html.indexOf('BACK') < html.indexOf('FRONT'), 'the lower z-index must be rendered first');
+    assert.match(html, /z-index:5/);
+  });
+});

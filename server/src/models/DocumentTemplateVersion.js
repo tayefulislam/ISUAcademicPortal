@@ -57,6 +57,12 @@ const fieldSchema = new mongoose.Schema(
     italic: { type: Boolean, default: false },
     align: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
     color: { type: String, default: '#111111' },
+
+    // An IMAGE element's file name in the server's `img/` folder (e.g. the
+    // university logo). A name, never a path or a URL — see services/documents/assets.js.
+    asset: { type: String, default: '' },
+    // Draw order within the page; a higher number paints on top.
+    zIndex: { type: Number, default: 0 },
   },
   { _id: false }
 );

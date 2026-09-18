@@ -105,6 +105,27 @@ describe('normalizeFields — geometry and validation bounds', () => {
     expectApiError(() => normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', validation: { regex: '([' } }]));
   });
 
+  test('a rule keeps a sub-millimetre thickness, while a text box keeps its floor', () => {
+    // `height` means thickness for a LINE and box height for everything else.
+    assert.equal(normalizeFields([{ key: 'r', label: 'Rule', type: 'LINE', height: 0.5 }])[0].height, 0.5);
+    assert.equal(normalizeFields([{ key: 't', label: 'Text', type: 'STATIC', height: 0.5 }])[0].height, 2);
+    // A rule can never become a bar, nor collapse to nothing.
+    assert.equal(normalizeFields([{ key: 'r', label: 'Rule', type: 'LINE', height: 99 }])[0].height, 5);
+    assert.equal(normalizeFields([{ key: 'r', label: 'Rule', type: 'LINE', height: 0 }])[0].height, 0.1);
+  });
+
+  test('an image element keeps only a real file name for its asset', () => {
+    assert.equal(normalizeFields([{ key: 'l', label: 'Logo', type: 'IMAGE', asset: 'logo.png' }])[0].asset, 'logo.png');
+    // A path, a traversal, or a non-image is dropped rather than stored.
+    assert.equal(normalizeFields([{ key: 'l', label: 'Logo', type: 'IMAGE', asset: '../secret.png' }])[0].asset, '');
+    assert.equal(normalizeFields([{ key: 'l', label: 'Logo', type: 'IMAGE', asset: 'evil.exe' }])[0].asset, '');
+  });
+
+  test('z-order is kept and bounded', () => {
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', zIndex: 7 }])[0].zIndex, 7);
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', zIndex: 100000 }])[0].zIndex, 999);
+  });
+
   test('a valid regex and numeric bounds are kept', () => {
     const [field] = normalizeFields([{
       key: 'a', label: 'A', type: 'NUMBER', validation: { regex: '^[0-9]+$', min: 1, max: 10, maxLength: 3 },
