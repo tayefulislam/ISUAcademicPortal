@@ -22,9 +22,16 @@ import {
 
 const router = Router();
 
-// Reading is open to any signed-in user: the audience is derived from their own
-// record inside academicEventService, so a student asking for "my routine" can
-// only ever receive their own. No viewer-supplied filter can widen it.
+// Public on purpose, and the only route here that is: the registration form has
+// to offer the configured class groups BEFORE the student has a session, and it
+// is the same list the routine manager reads — one endpoint, not a second one
+// that could drift. It is a configuration label list (BOTH / A1 / A2 …), no more
+// sensitive than the already-public /departments, /batches and /semesters.
+router.get('/groups', getGroups);
+
+// Everything below is open to any signed-in user: the audience is derived from
+// their own record inside academicEventService, so a student asking for "my
+// routine" can only ever receive their own. No viewer-supplied filter can widen it.
 router.use(authenticate);
 
 router.get('/my', getMyRoutine);
@@ -32,9 +39,7 @@ router.get('/today', getTodayRoutine);
 router.get('/week', getWeekRoutine);
 router.get('/month', getMonthRoutine);
 
-// Lookups the routine form needs: the configured group values, and which
-// faculty member a course belongs to (so it can be preselected).
-router.get('/groups', getGroups);
+// Which faculty member teaches a course, so the routine form can preselect them.
 router.get('/faculty', getFacultyForCourse);
 
 // Managing the recurring rules. Faculty reach these through allowRoles;

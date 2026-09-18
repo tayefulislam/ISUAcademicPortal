@@ -82,3 +82,24 @@ export function broadcastEmail(subject, bodyText) {
     text: bodyText,
   };
 }
+
+/**
+ * The generic template for a notification email — one rendered Notification
+ * ({title, message, url}) turned into mail. Used by the notification service for
+ * every type, so a new notification type needs no email template of its own;
+ * the in-app title/message IS the email.
+ *
+ * `url` is expected to be absolute by the caller (the notification service joins
+ * the app route onto the configured CLIENT_URL), so this only has to guard
+ * against its being absent.
+ */
+export function notificationEmail({ title, message, url }) {
+  const link = url
+    ? `<p style="margin-top:16px"><a href="${url}" style="color:#4338ca">Open in the ISU Academic Portal</a></p>`
+    : '';
+  return {
+    subject: title,
+    html: wrap(escapeHtml(title), `<p>${escapeHtml(message)}</p>${link}`),
+    text: `${message}${url ? `\n\n${url}` : ''}`,
+  };
+}

@@ -2,6 +2,10 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { env } from '../../config/env.js';
 import UserDevice from '../../models/UserDevice.js';
+import { delay } from '../../utils/retry.js';
+
+const FCM_ATTEMPTS = 3;
+const FCM_BASE_DELAY_MS = 250;
 
 // The channel the Android client creates at startup (NotificationChannels.java).
 // Kept here as well because the system tray notification for a backgrounded app
@@ -82,6 +86,42 @@ function isDeadToken(error) {
   );
 }
 
+/**
+ * Sends `message` to `tokens`, retrying only what could plausibly succeed on a
+ * second try: a thrown error means the whole call failed (network/quota), and a
+ * per-token error that is not a dead token is transient. A dead token is
+ * reported back so the caller retires it rather than retrying it.
+ *
+ * @returns {Promise<{sent:number, dead:string[], unretried:number}>}
+ */
+async function sendMulticastWithRetry(client, tokens, message) {
+  let pending = [...tokens];
+  const dead = [];
+  let sent = 0;
+
+  for (let attempt = 1; attempt <= FCM_ATTEMPTS && pending.length; attempt += 1) {
+    if (attempt > 1) await delay(FCM_BASE_DELAY_MS * 2 ** (attempt - 2));
+
+    let response;
+    try {
+      response = await client.sendEachForMulticast({ ...message, tokens: pending });
+    } catch (err) {
+      if (attempt >= FCM_ATTEMPTS) console.error('[fcm] multicast failed after retries:', err.message);
+      continue;
+    }
+
+    const retry = [];
+    response.responses.forEach((result, index) => {
+      if (result.success) sent += 1;
+      else if (isDeadToken(result.error)) dead.push(pending[index]);
+      else retry.push(pending[index]);
+    });
+    pending = retry;
+  }
+
+  return { sent, dead, unretried: pending.length };
+}
+
 export function buildPushData({ notificationId, type, entityType, entityId, url, vars = {} }) {
   const raw = { notificationId, type, entityType, entityId, url, ...vars };
   const data = {};
@@ -125,39 +165,32 @@ export async function sendToUserDevices(userId, payload = {}) {
     if (typeof value === 'string' && value) safeData[key] = value;
   }
 
-  try {
-    const response = await client.sendEachForMulticast({
-      tokens: devices.map((d) => d.fcmToken),
-      notification: { title: String(title ?? ''), body: String(body ?? '') },
-      data: safeData,
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: ANDROID_CHANNEL_ID,
-          sound: 'default',
-        },
+  const message = {
+    notification: { title: String(title ?? ''), body: String(body ?? '') },
+    data: safeData,
+    android: {
+      priority: 'high',
+      notification: {
+        channelId: ANDROID_CHANNEL_ID,
+        sound: 'default',
       },
-    });
+    },
+  };
 
-    // Retire tokens Firebase has rejected as permanently gone, so the next send
-    // does not retry them. Anything else (transient/network) is left active.
-    const dead = [];
-    response.responses.forEach((result, index) => {
-      if (!result.success && isDeadToken(result.error)) {
-        dead.push(devices[index].fcmToken);
-      } else if (!result.success) {
-        console.error('[fcm] send failed', result.error?.code || result.error?.message);
-      }
-    });
-    if (dead.length) {
-      await UserDevice.updateMany({ fcmToken: { $in: dead } }, { $set: { isActive: false } });
-    }
+  // A transient failure is retried; a token Firebase has permanently rejected is
+  // retired instead, so the next send does not keep addressing it.
+  const { sent, dead, unretried } = await sendMulticastWithRetry(
+    client,
+    devices.map((d) => d.fcmToken),
+    message
+  );
 
-    return { sent: response.successCount, failed: response.failureCount };
-  } catch (err) {
-    console.error('[fcm] multicast failed:', err.message);
-    return { sent: 0, failed: devices.length };
+  if (dead.length) {
+    await UserDevice.updateMany({ fcmToken: { $in: dead } }, { $set: { isActive: false } });
   }
+  if (unretried) console.error(`[fcm] ${unretried} device(s) still failing after ${FCM_ATTEMPTS} attempts`);
+
+  return { sent, failed: dead.length + unretried };
 }
 
 export default { sendToUserDevices, buildPushData, ANDROID_CHANNEL_ID };

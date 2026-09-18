@@ -115,3 +115,51 @@ describe('updateProfile — Department/Batch locked for Student and CR', () => {
     assert.equal(String(res.body.data.batch._id), batchA._id.toString());
   });
 });
+
+// A class group (BOTH / A1 / A2 …) is deliberately NOT locked alongside
+// department/batch. Moving department or batch moves someone across cohorts,
+// which is why the academic office owns those; a group only decides which part of
+// the student's own batch's timetable they are shown. It is useless as data unless
+// the student can state it, so it is self-service — and validated against the
+// configured list like every other write of this field.
+describe('updateProfile — the student sets their own class group', () => {
+  test('a student sets their own group, normalized to upper case', async () => {
+    const student = await User.create({ name: 'S', email: 'g1@test.local', password: 'password123', role: 'student' });
+    const { res, error } = await call(updateProfile, { user: student, body: { group: 'a1' } });
+
+    assert.equal(error, undefined);
+    assert.equal(res.body.data.group, 'A1');
+  });
+
+  test('an empty group means the whole batch', async () => {
+    const student = await User.create({
+      name: 'S', email: 'g2@test.local', password: 'password123', role: 'student', group: 'A2',
+    });
+    const { res } = await call(updateProfile, { user: student, body: { group: '' } });
+
+    assert.equal(res.body.data.group, 'BOTH');
+  });
+
+  test('a group that is not configured is rejected', async () => {
+    const student = await User.create({ name: 'S', email: 'g3@test.local', password: 'password123', role: 'student' });
+    const { error } = await call(updateProfile, { user: student, body: { group: 'ZZ9' } });
+
+    assert.equal(error?.statusCode, 400);
+  });
+
+  test('setting a group does not unlock department/batch in the same call', async () => {
+    const student = await User.create({
+      name: 'S', email: 'g4@test.local', password: 'password123', role: 'student',
+      department: deptA._id, batch: batchA._id,
+    });
+    const { res, error } = await call(updateProfile, {
+      user: student,
+      body: { group: 'A1', department: deptB._id.toString(), batch: batchB._id.toString() },
+    });
+
+    assert.equal(error, undefined);
+    assert.equal(res.body.data.group, 'A1', 'the group is the student to state');
+    assert.equal(String(res.body.data.department._id), deptA._id.toString(), 'the department is not');
+    assert.equal(String(res.body.data.batch._id), batchA._id.toString(), 'the batch is not');
+  });
+});

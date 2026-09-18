@@ -10,9 +10,10 @@ import { addMinutes, formatInAppTimezone, dhakaClock } from '../utils/academicSc
 // Idempotency is the Notification unique index, not bookkeeping here: every
 // reminder carries a `slot` of its offset plus the instant it counts down to
 // (see reminderSlot below), so re-running the endpoint inside the same window
-// re-attempts the insert and the duplicate is rejected by the index. A missed
-// cron tick is therefore harmless — the next one still catches the window — and
-// a duplicated tick cannot double-notify.
+// re-attempts the insert and the duplicate is rejected by the index. A
+// duplicated tick therefore cannot double-notify, and because the offsets'
+// windows partition the countdown (see REMINDER_OFFSETS below) a delayed tick
+// still lands in exactly one of them rather than being dropped or sent early.
 //
 // Two offsets for one class are two different slots, so the 30- and 10-minute
 // reminders are genuinely separate notifications; and once a class is moved its
@@ -20,10 +21,22 @@ import { addMinutes, formatInAppTimezone, dhakaClock } from '../utils/academicSc
 // rather than being swallowed by the one that has already fired. That is the
 // invalidate-then-recreate behaviour the spec asks for.
 
+// Each offset owns the stretch of the countdown between its own target and the
+// next nearer one, i.e. roughly `(fromMinutes, minutesBefore]` before the class.
+// That partition is what makes the arithmetic honest:
+//   * the upper bound is the target itself, so an offset never fires early (the
+//     old symmetric ±5 window sent "starts in 30 minutes" at 35 minutes out);
+//   * the lower bound is the next offset's target, so the 10-minute reminder
+//     cannot also fire at 0 minutes and the "starting now" one cannot fire early;
+//   * any distance is covered by exactly one offset, so a tick delayed by several
+//     minutes still lands somewhere rather than dropping the reminder — and when
+//     it does, the message reports the true remaining time, not the offset's.
+// The 0-offset's floor is negative so a slightly late tick still says "starting
+// now", without a long-past class ever doing so.
 export const REMINDER_OFFSETS = [
-  { minutesBefore: 30, type: 'CLASS_REMINDER' },
-  { minutesBefore: 10, type: 'CLASS_REMINDER' },
-  { minutesBefore: 0, type: 'CLASS_STARTING' },
+  { minutesBefore: 30, type: 'CLASS_REMINDER', fromMinutes: 10 },
+  { minutesBefore: 10, type: 'CLASS_REMINDER', fromMinutes: 0 },
+  { minutesBefore: 0, type: 'CLASS_STARTING', fromMinutes: -2 },
 ];
 
 /**
@@ -35,13 +48,6 @@ export const REMINDER_OFFSETS = [
 function reminderSlot(minutesBefore, startAt) {
   return `${minutesBefore}@${new Date(startAt).toISOString()}`;
 }
-
-/**
- * The window to scan. Deliberately a little wider than the offsets themselves:
- * a cron that runs every minute will normally see an exact match, but a tick
- * delayed by a few minutes must still fire the reminder it slept through.
- */
-const WINDOW_TOLERANCE_MINUTES = 5;
 
 const POPULATE = [
   { path: 'course', select: 'name courseId' },
@@ -56,20 +62,24 @@ const POPULATE = [
 export async function runDueReminders(now = new Date()) {
   const summary = { scanned: 0, sent: 0, pushed: 0, offsets: [] };
 
-  for (const { minutesBefore, type } of REMINDER_OFFSETS) {
-    const target = addMinutes(now, minutesBefore);
-    const from = addMinutes(target, -WINDOW_TOLERANCE_MINUTES);
-    const to = addMinutes(target, WINDOW_TOLERANCE_MINUTES);
+  for (const { minutesBefore, type, fromMinutes } of REMINDER_OFFSETS) {
+    // The offset's stretch of the countdown: nearer than the offset (inclusive)
+    // but not nearer than the next offset, which owns that stretch instead.
+    const from = addMinutes(now, fromMinutes);
+    const to = addMinutes(now, minutesBefore);
 
     const query = {
       // A cancelled occurrence never reminds anyone.
       status: { $nin: ['CANCELLED'] },
-      startAt: { $gte: from, $lte: to },
+      startAt: { $gt: from, $lte: to },
     };
 
     const [instances, events] = await Promise.all([
       ScheduleInstance.find(query).populate(POPULATE),
-      AcademicEvent.find(query).populate(POPULATE),
+      // Only one-off *classes* get class reminders. An exam, deadline or general
+      // event that happens to fall in this window is not a class and must not be
+      // told it is one; exams are covered by runExamReminders instead.
+      AcademicEvent.find({ ...query, eventType: 'CLASS' }).populate(POPULATE),
     ]);
 
     const due = [...instances, ...events];
@@ -78,10 +88,14 @@ export async function runDueReminders(now = new Date()) {
     let sent = 0;
     let pushed = 0;
     for (const entry of due) {
+      // Report what is actually true at send time rather than the offset that
+      // triggered it: a tick that runs a few minutes late then still produces an
+      // honest countdown instead of claiming the class is further away than it is.
+      const minutesAway = Math.max(0, Math.round((new Date(entry.startAt).getTime() - now.getTime()) / 60000));
       const result = await notifyOccurrence(entry, type, {
         slot: reminderSlot(minutesBefore, entry.startAt),
         extraVars: {
-          minutesBefore,
+          minutesBefore: minutesAway,
           // The clock time; the 0-minute template phrases itself as
           // "starting now", which is why `minutesBefore` is only used by the
           // 30/10-minute template.
@@ -109,9 +123,12 @@ export async function runDueReminders(now = new Date()) {
  */
 export async function runExamReminders(now = new Date()) {
   const dayBefore = addMinutes(now, 24 * 60);
+  // A day-ahead reminder states no countdown, so the window can be symmetric —
+  // a tick up to five minutes either side of the exact 24-hour mark still counts.
+  const examTolerance = 5;
   const window = {
     status: { $nin: ['CANCELLED'] },
-    startAt: { $gte: addMinutes(dayBefore, -WINDOW_TOLERANCE_MINUTES), $lte: addMinutes(dayBefore, WINDOW_TOLERANCE_MINUTES) },
+    startAt: { $gte: addMinutes(dayBefore, -examTolerance), $lte: addMinutes(dayBefore, examTolerance) },
   };
 
   const events = await AcademicEvent.find({ ...window, eventType: 'EXAM' }).populate(POPULATE);

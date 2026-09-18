@@ -1,4 +1,4 @@
-import { test, describe, before, after, beforeEach } from "node:test";
+import { test, describe, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import {
@@ -6,6 +6,7 @@ import {
   dropAndDisconnect,
   clearCollections,
 } from "../../test/dbTestUtils.js";
+import { env } from "../../config/env.js";
 import User from "../../models/User.js";
 import Notification from "../../models/Notification.js";
 import { emit } from "./notificationService.js";
@@ -243,6 +244,75 @@ describe("emit", () => {
         }),
         1,
       );
+    });
+  });
+
+  describe("the email channel", () => {
+    // These assert the *attempt* count emit() returns, not delivery: the test
+    // harness forces the console transport (see dbTestUtils.js) so a checkout
+    // whose .env holds live SMTP credentials never sends real mail here.
+    //
+    // The channel is OFF by default (NOTIFICATION_EMAIL_ENABLED), so these turn
+    // it on for themselves and restore it after.
+    beforeEach(() => {
+      env.notifications.emailEnabled = true;
+    });
+    afterEach(() => {
+      env.notifications.emailEnabled = false;
+    });
+
+    const notice = () => ({
+      type: "NOTICE_CREATED",
+      entityType: "NOTICE",
+      entityId: new mongoose.Types.ObjectId(),
+      vars: { title: "Campus closed", noticeId: "n1" },
+      recipients: [userA._id],
+    });
+
+    test("the master switch off suppresses the email copy, but not the notification", async () => {
+      env.notifications.emailEnabled = false;
+
+      const result = await emit(notice());
+      assert.equal(result.created, 1, "the in-app row and push are unaffected");
+      assert.equal(result.emailed, 0);
+    });
+
+    test("emails a copy to a recipient who has the channel enabled", async () => {
+      const result = await emit(notice());
+      assert.equal(result.created, 1);
+      assert.equal(result.emailed, 1, "the email preference defaults to on");
+    });
+
+    test("skips a recipient who turned email off", async () => {
+      userA.notificationPreferences.email = false;
+      await userA.save();
+
+      const result = await emit(notice());
+      assert.equal(result.created, 1, "the in-app row is still written");
+      assert.equal(result.emailed, 0, "but no mail is sent");
+    });
+
+    test("a retried event does not email a second copy", async () => {
+      const event = notice();
+      const first = await emit(event);
+      const second = await emit(event);
+
+      assert.equal(first.emailed, 1);
+      assert.equal(second.emailed, 0, "no new row, so nothing to email");
+    });
+
+    test("class reminders stay out of email — three per class would be a flood", async () => {
+      const result = await emit({
+        type: "CLASS_REMINDER",
+        entityType: "ScheduleInstance",
+        entityId: new mongoose.Types.ObjectId(),
+        slot: "30@2026-09-20T04:00:00.000Z",
+        vars: { courseCode: "CSE-101", minutesBefore: 30, when: "10:00" },
+        recipients: [userA._id],
+      });
+
+      assert.equal(result.created, 1, "the in-app reminder is still created");
+      assert.equal(result.emailed, 0);
     });
   });
 });

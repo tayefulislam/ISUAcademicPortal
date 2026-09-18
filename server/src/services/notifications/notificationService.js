@@ -1,9 +1,12 @@
 import mongoose from 'mongoose';
 import Notification from '../../models/Notification.js';
 import User from '../../models/User.js';
+import { env } from '../../config/env.js';
 import { renderTemplate } from './notificationTemplates.js';
 import { sendToUser } from './pushService.js';
 import { sendToUserDevices, buildPushData } from './fcmService.js';
+import { sendEmail } from '../email/emailService.js';
+import { notificationEmail } from '../email/templates.js';
 
 // A user's `notificationPreferences.types` Map only exists on documents
 // created after that field was added — missing means "never explicitly
@@ -17,6 +20,27 @@ function typeEnabledFor(user, type) {
 
 function pushEnabledFor(user) {
   return user.notificationPreferences?.push !== false;
+}
+
+function emailEnabledFor(user) {
+  return user.notificationPreferences?.email !== false;
+}
+
+// Time-based class reminders are push/in-app only. Three of them fire per class
+// (30, 10 and 0 minutes), and emailing each would be a flood nobody opted into —
+// the email copy is meant for the event-style notifications, not the ticking ones.
+const EMAIL_EXCLUDED_TYPES = new Set(['CLASS_REMINDER', 'CLASS_STARTING']);
+
+// Fan-out runs in bounded batches. A broadcast to every student would otherwise
+// issue one device lookup (and one socket write) per recipient all at once, while
+// the admin "send now" endpoint awaits the whole thing inside its HTTP request —
+// enough concurrency to swamp the pool for a message that has no deadline.
+const FANOUT_BATCH_SIZE = 25;
+
+async function forEachBatch(items, size, worker) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.allSettled(items.slice(i, i + size).map(worker));
+  }
 }
 
 /**
@@ -47,18 +71,18 @@ function pushEnabledFor(user) {
  */
 export async function emit({ type, actorId = null, entityType = '', entityId = null, slot = '', course = null, department = null, vars = {}, recipients }) {
   const requested = [...new Set((recipients || []).map(String))].filter((id) => id !== String(actorId));
-  if (!requested.length) return { created: 0 };
+  if (!requested.length) return { created: 0, pushed: 0, emailed: 0 };
 
   // Per-type opt-out (Settings -> Notifications) is checked BEFORE creating
   // the in-app row, not just before push — disabling a type means "don't
   // notify me about this at all", not "notify silently in-app only".
-  const users = await User.find({ _id: { $in: requested } }).select('notificationPreferences');
+  const users = await User.find({ _id: { $in: requested } }).select('notificationPreferences email name');
   const byId = new Map(users.map((u) => [String(u._id), u]));
   const uniqueRecipients = requested.filter((id) => {
     const u = byId.get(id);
     return !u || typeEnabledFor(u, type); // fail-open if the user doc is missing/stale
   });
-  if (!uniqueRecipients.length) return { created: 0, pushed: 0 };
+  if (!uniqueRecipients.length) return { created: 0, pushed: 0, emailed: 0 };
 
   const { title, message, url } = renderTemplate(type, vars);
   const effectiveEntityId = entityId || new mongoose.Types.ObjectId();
@@ -82,7 +106,7 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
   const freshRecipients = uniqueRecipients.filter((id) => !alreadyNotified.has(id));
 
   // Nothing new to say: no row, and crucially no push either — see below.
-  if (!freshRecipients.length) return { created: 0, pushed: 0 };
+  if (!freshRecipients.length) return { created: 0, pushed: 0, emailed: 0 };
 
   const docs = freshRecipients.map((recipient) => ({
     recipient,
@@ -132,7 +156,9 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     .map((id) => byId.get(id))
     .filter((u) => u && pushEnabledFor(u));
 
-  await Promise.allSettled(toPush.map((u) => sendToUser(u._id, { title, body: message, url, type })));
+  await forEachBatch(toPush, FANOUT_BATCH_SIZE, (u) =>
+    sendToUser(u._id, { title, body: message, url, type })
+  );
 
   // FCM is a second *transport* for the same event, not a second notification
   // system: it carries the id of the row just created (plus the ids the Android
@@ -143,24 +169,49 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
   const notificationIdByRecipient = new Map(
     inserted.map((doc) => [String(doc.recipient), String(doc._id)])
   );
-  await Promise.allSettled(
-    toPush.map((u) =>
-      sendToUserDevices(u._id, {
-        title,
-        body: message,
-        data: buildPushData({
-          notificationId: notificationIdByRecipient.get(String(u._id)),
-          type,
-          entityType,
-          entityId: String(effectiveEntityId),
-          url,
-          vars,
-        }),
-      })
-    )
+  await forEachBatch(toPush, FANOUT_BATCH_SIZE, (u) =>
+    sendToUserDevices(u._id, {
+      title,
+      body: message,
+      data: buildPushData({
+        notificationId: notificationIdByRecipient.get(String(u._id)),
+        type,
+        entityType,
+        entityId: String(effectiveEntityId),
+        url,
+        vars,
+      }),
+    })
   );
 
-  return { created: inserted.length, pushed: toPush.length };
+  // Email is a third transport for the same event, honouring the user's own
+  // `email` preference (which used to be stored and echoed but read by nothing).
+  // Only recipients whose row was actually created are mailed, so a retried event
+  // cannot send a second copy. Best-effort and batched: an SMTP failure must not
+  // fail the notification, and with no mail credentials sendEmail logs to the
+  // console instead of sending (see services/email/emailService.js) — so this is
+  // safe to run in every environment.
+  //
+  // The whole channel sits behind NOTIFICATION_EMAIL_ENABLED (off by default):
+  // the in-app row, Web Push and FCM above are unaffected, so an event still
+  // reaches people while the email copy is switched off.
+  const toEmail = !env.notifications.emailEnabled || EMAIL_EXCLUDED_TYPES.has(type)
+    ? []
+    : freshRecipients
+        .filter((id) => createdIds.has(id))
+        .map((id) => byId.get(id))
+        .filter((u) => u && u.email && emailEnabledFor(u));
+  if (toEmail.length) {
+    const base = env.clientUrls?.[0] || '';
+    const link = url && url.startsWith('/') ? `${base}${url}` : url;
+    const mail = notificationEmail({ title, message, url: link });
+    await forEachBatch(toEmail, FANOUT_BATCH_SIZE, (u) =>
+      sendEmail({ to: u.email, subject: mail.subject, html: mail.html, text: mail.text })
+        .catch((err) => console.error('[notifications] email failed', u.email, err?.message || err))
+    );
+  }
+
+  return { created: inserted.length, pushed: toPush.length, emailed: toEmail.length };
 }
 
 export default { emit };

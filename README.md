@@ -334,28 +334,44 @@ notificationService.emit()
       │                            for Notices, single-user for messages
       ├─▶ notificationTemplates.js — renders {title, message, url} per type
       ├─▶ Notification.insertMany() — one row per recipient, deduplicated by
-      │                                a {recipient,type,entityType,entityId}
+      │                                a {recipient,type,entityType,entityId,slot}
       │                                unique index (a retried request never
-      │                                double-notifies)
-      └─▶ pushService.sendToUser() — Web Push to every active device of
-                                      each recipient who has that type + the
-                                      push channel enabled; auto-deactivates
-                                      a subscription the push service says
-                                      is gone (410/404)
+      │                                double-notifies; `slot` splits the several
+      │                                reminders a class produces over time, and a
+      │                                moved or edited class gets a fresh row)
+      ├─▶ pushService.sendToUser() — Web Push to every active device of each
+      │                              recipient with the push channel enabled;
+      │                              transient failures are retried, a
+      │                              subscription the service says is gone
+      │                              (410/404) is retired instead
+      ├─▶ fcmService.sendToUserDevices() — the Android transport, same policy
+      │                                    (per-token retry; dead tokens retired)
+      └─▶ emailService.sendEmail() — a copy by email, only when the global
+                                     NOTIFICATION_EMAIL_ENABLED=true (off by
+                                     default) AND the recipient's own email
+                                     preference is on. Transport comes from
+                                     EMAIL_PROVIDER (smtp|resend|console); with
+                                     none configured it logs instead of sending
 ```
 
-**Triggers already wired**: file upload/replace → `COURSE_MATERIAL`/
-`FILE_UPDATED`; assignment publish/update → `ASSIGNMENT_CREATED`/
-`_UPDATED`; grading a submission → `ASSIGNMENT_RESULT`; quiz/exam publish →
-`EXAM_CREATED`/`_UPDATED`; an attempt finishing grading (auto or manual) →
-`EXAM_RESULT`; notice publish → `NOTICE_CREATED`/`_UPDATED`; sending a
-message → `MESSAGE_RECEIVED`; enrollment request/approval →
-`JOIN_REQUEST`/`JOIN_REQUEST_APPROVED`.
+**Triggers already wired**: staff file upload/replace → `COURSE_MATERIAL`/
+`FILE_UPDATED`; a *student's* material submission → `FILE_UPLOADED` (to the
+CR/admin-tier reviewers who work the queue; faculty only when
+`NOTIFY_FACULTY_ON_STUDENT_UPLOAD=true`); assignment publish/update →
+`ASSIGNMENT_CREATED`/`_UPDATED`; a student handing in an assignment →
+`ASSIGNMENT_SUBMITTED` (to faculty — previously silent); grading a submission →
+`ASSIGNMENT_RESULT`, and re-grading it → `GRADE_PUBLISHED`; quiz/exam publish →
+`EXAM_CREATED`/`_UPDATED`; an auto-graded attempt → `EXAM_RESULT`, a manually
+graded one → `RESULT_PUBLISHED`; notice publish → `NOTICE_CREATED`/`_UPDATED`;
+sending a message → `MESSAGE_RECEIVED`; enrollment request/approval →
+`JOIN_REQUEST`/`JOIN_REQUEST_APPROVED`, staff-initiated (direct/bulk) enrollment →
+`COURSE_ENROLLED`; editing a course → `COURSE_UPDATED`.
 
 **Client side**: `NotificationBell`/`Dropdown`/`List`/`Item` components
 (polled unread count, react-query-backed), a full `/notifications` page and
 `/notifications/settings` (per-type + push/email toggles — `SYSTEM` alerts
-are mandatory and can't be disabled), and `EnableNotificationPrompt` — a
+are mandatory and can't be disabled; the email toggle only takes effect while the
+server's `NOTIFICATION_EMAIL_ENABLED` is on), and `EnableNotificationPrompt` — a
 friendly opt-in card shown once, never re-prompted after "Maybe Later" or a
 hard browser denial (spec-compliant: never asks on first load).
 
@@ -369,12 +385,23 @@ push silently no-ops and everything still works via in-app notifications.
 On iOS/iPadOS, Safari only allows Web Push for a PWA added to the Home
 Screen — the UI detects this and prompts accordingly.
 
+**Notification-email switches** (separate from the mail transport above, and both
+`false` unless explicitly `true`): `NOTIFICATION_EMAIL_ENABLED` turns on the email
+copy of event notifications — off by default, and irrelevant to transactional mail
+(verify code, reset password, enrollment), which always sends.
+`NOTIFY_FACULTY_ON_STUDENT_UPLOAD` adds faculty to the student-submission notice;
+by default it goes only to the CR/admin-tier reviewers who work the review queue,
+so faculty are not disturbed by routine uploads.
+
 **Class & exam reminders** are a separate delivery path, because they are
 time-triggered rather than event-triggered. There is no scheduler in this stack,
 so an external cron calls `POST /api/internal/reminders/run` every minute,
 authenticated with `REMINDER_CRON_SECRET` in the `x-reminder-secret` header (the
 endpoint refuses to run at all while that is unset). Each run is a pure function
-of "now", so a missed or repeated tick is harmless. Reminders are deduped on
+of "now", so a repeated tick is a no-op. The offsets' windows partition the
+countdown, so a delayed tick still lands in exactly one of them, no offset fires
+early, and the message states the class's true remaining time rather than the
+offset's. Reminders are deduped on
 `{recipient, type, entityType, entityId, slot}`, where `slot` is the offset plus
 the class's *effective* start instant — which keeps the 30- and 10-minute
 reminders separate, and gives a class that moved a new reminder rather than

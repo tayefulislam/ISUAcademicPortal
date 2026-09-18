@@ -7,6 +7,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
 import { getEffectiveCourseIds } from '../services/courseAccessService.js';
+import { emit } from '../services/notifications/notificationService.js';
+import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
 import {
   RECENT_BATCH_LIMIT,
   recentBatches,
@@ -139,6 +141,24 @@ export const updateCourse = asyncHandler(async (req, res) => {
     runValidators: true,
   });
   if (!course) throw new ApiError(404, 'Course not found');
+
+  // Tell the students who already have the course that it changed — a renamed or
+  // rescheduled course otherwise changed silently under them.
+  resolveCourseScopedRecipients({ course: course._id })
+    .then((recipients) =>
+      emit({
+        type: 'COURSE_UPDATED',
+        actorId: req.user._id,
+        entityType: 'COURSE',
+        entityId: course._id,
+        course: course._id,
+        department: course.department,
+        vars: { courseName: course.name, courseId: course._id },
+        recipients,
+      })
+    )
+    .catch((err) => console.error('[notify] course updated', err));
+
   res.json({ success: true, data: course });
 });
 

@@ -1,6 +1,14 @@
 import webpush from 'web-push';
 import { env } from '../../config/env.js';
 import PushSubscription from '../../models/PushSubscription.js';
+import { withRetry } from '../../utils/retry.js';
+
+/** A subscription the push service says will never work again. */
+function isGone(error) {
+  return error?.statusCode === 404 || error?.statusCode === 410;
+}
+
+const PUSH_ATTEMPTS = 3;
 
 let configured = false;
 function ensureConfigured() {
@@ -32,15 +40,20 @@ export async function sendToUser(userId, payload) {
   await Promise.allSettled(
     subscriptions.map(async (sub) => {
       try {
-        await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body);
+        // A transient failure (network, 5xx, 429) is retried; a gone
+        // subscription is not — retrying it only burns the attempts.
+        await withRetry(
+          () => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body),
+          { attempts: PUSH_ATTEMPTS, baseDelayMs: 250, isRetryable: (err) => !isGone(err) }
+        );
         sub.lastUsedAt = new Date();
         await sub.save();
       } catch (err) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
+        if (isGone(err)) {
           sub.isActive = false;
           await sub.save();
         } else {
-          console.error('[push] send failed', sub.endpoint, err.statusCode || err.message);
+          console.error('[push] send failed after retries', sub.endpoint, err.statusCode || err.message);
         }
       }
     })

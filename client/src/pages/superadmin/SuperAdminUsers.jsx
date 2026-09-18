@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, ShieldCheck, ShieldOff, Clock, Pencil, X, Download } from 'lucide-react';
-import { superAdminApi, departmentApi, batchApi, semesterApi, roleApi, courseApi } from '../../api/endpoints.js';
+import { superAdminApi, departmentApi, batchApi, semesterApi, roleApi, courseApi, routineApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -368,10 +368,20 @@ function EditUserProfileModal({ user, departments, batches, semesters, allCourse
     department: user.department?._id || '',
     batch: user.batch?._id || '',
     semester: user.semester?._id || '',
+    group: user.group || '',
     assignedDepartments: (user.assignedDepartments || []).map(String),
     assignedCourses: (user.assignedCourses || []).map(String),
   });
   const [saving, setSaving] = useState(false);
+
+  // The class group lives on this form because an administrator is the one who
+  // fixes a group a student got wrong — the student states it at registration, and
+  // this is the correction path.
+  const { data: groupsData } = useQuery({ queryKey: ['routine', 'groups'], queryFn: routineApi.groups });
+  const groupOptions = (groupsData?.data?.groups || []).map((g) => ({
+    value: g,
+    label: g === 'BOTH' ? 'Both (whole batch)' : g,
+  }));
 
   const toggleScope = (key) => (id) => {
     setForm((f) => ({ ...f, [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id] }));
@@ -421,6 +431,13 @@ function EditUserProfileModal({ user, departments, batches, semesters, allCourse
           <select value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} className="input">
             <option value="">No semester</option>
             {(semesters || []).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+          <select value={form.group} onChange={(e) => setForm({ ...form, group: e.target.value })} className="input">
+            <option value="">No group</option>
+            {groupOptions.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            {form.group && !groupOptions.some((g) => g.value === form.group) && (
+              <option value={form.group}>{form.group}</option>
+            )}
           </select>
 
           {showScope && (

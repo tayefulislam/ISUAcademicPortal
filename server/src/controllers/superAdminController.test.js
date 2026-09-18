@@ -210,10 +210,10 @@ describe('updateSystemSettings — officialEmailDomains (list setting)', () => {
   });
 });
 
-// A student's class group (BOTH / A1 / A2 / ...) is academic placement, so it is
-// edited here alongside department/batch/semester and never by the student
-// themselves (profileController deliberately does not expose it). Without this
-// there would be no way to put anyone in A1 before the group UI exists.
+// A student's class group (BOTH / A1 / A2 / ...) can be set here by an
+// administrator, and it is the only place a WRONG group gets corrected — the
+// student states their own at registration and in their profile, and this is how
+// staff fix it. Same field, same validation, whichever side writes it.
 describe('updateUserProfile — academic group', () => {
   const target = () => ({ user: superAdminUser, params: { id: String(approvedStudent._id) } });
 
@@ -234,11 +234,9 @@ describe('updateUserProfile — academic group', () => {
     assert.equal(res.body.data.group, 'BOTH');
   });
 
-  test('a student cannot change their own group through their own profile', async () => {
-    // The profile endpoint must not expose `group` — verified through the
-    // editable-field list rather than by calling it, since that list is the
-    // actual gate.
+  test('an unrelated edit through this endpoint leaves the group alone', async () => {
+    await call(updateUserProfile, { ...target(), body: { group: 'A1' } });
     const { res } = await call(updateUserProfile, { ...target(), body: { name: 'Renamed' } });
-    assert.equal(res.body.data.group, 'BOTH', 'unrelated edits leave the group alone');
+    assert.equal(res.body.data.group, 'A1');
   });
 });

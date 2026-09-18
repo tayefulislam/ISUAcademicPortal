@@ -700,12 +700,22 @@ export const gradeAttempt = asyncHandler(async (req, res) => {
   await attempt.save();
 
   if (!stillUngraded && attempt.student) {
+    // A manually graded attempt (long-answer questions) publishes a *result*
+    // after the fact, where an auto-graded one emits EXAM_RESULT as it is
+    // submitted — two genuinely different moments, so neither duplicates the other.
     emit({
-      type: 'EXAM_RESULT',
+      type: 'RESULT_PUBLISHED',
       actorId: req.user._id,
       entityType: 'QUIZ_ATTEMPT',
       entityId: attempt._id,
-      vars: { title: quiz.title, attemptId: attempt._id },
+      vars: {
+        title: quiz.title,
+        quizId: quiz._id,
+        attemptId: attempt._id,
+        // The Android push payload needs quizId + attemptId to open the attempt's
+        // result page; the web client follows this same route.
+        url: `/student/results/${attempt._id}`,
+      },
       recipients: [attempt.student],
     }).catch((err) => console.error('[notify] manual grade attempt', err));
   }

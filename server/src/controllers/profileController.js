@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { isAdminTierRole } from '../models/Role.js';
+import { resolveGroup } from '../utils/groups.js';
 
 const POPULATE = [
   { path: 'department', select: 'name code' },
@@ -25,8 +26,15 @@ export const getProfile = asyncHandler(async (req, res) => {
 // department/batch through their own profile form. Every other field these
 // two roles had before (name/rollNo/phone/semester) stays editable; every
 // other role is unaffected.
+//
+// `group` is NOT locked with them, and the distinction is deliberate: moving
+// department or batch moves someone across cohorts, which is why the academic
+// office owns those. A class group only decides which half of the student's OWN
+// batch's timetable they are shown — the same kind of self-declared placement as
+// semester, and useless as data unless the student can state it. It is validated
+// against the configured list like every other write of this field.
 async function resolveEditableFields(user) {
-  const base = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester'];
+  const base = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester', 'group'];
   const isCustomAdminTierRole = user.role !== 'admin' && (await isAdminTierRole(user.role));
   if (user.role === 'student' || isCustomAdminTierRole) {
     return base.filter((key) => key !== 'department' && key !== 'batch');
@@ -39,6 +47,13 @@ export const updateProfile = asyncHandler(async (req, res) => {
   const update = {};
   for (const key of allowed) {
     if (req.body[key] === undefined) continue;
+    // `group` comes from an admin-editable list and is a plain string, not an
+    // ObjectId, so it is validated and normalised rather than passed through —
+    // and an empty value means "the whole batch" rather than null.
+    if (key === 'group') {
+      update.group = await resolveGroup(req.body[key]);
+      continue;
+    }
     update[key] = key === 'rollNo' || key === 'phone' ? String(req.body[key] || '').trim() : req.body[key] || null;
   }
 

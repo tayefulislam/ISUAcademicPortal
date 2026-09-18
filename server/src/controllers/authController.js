@@ -10,6 +10,7 @@ import { otpEmail, passwordResetEmail } from '../services/email/templates.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { emailDomainMatches, isOfficialUniversityEmail, getNextRequiredStep, NEXT_STEP } from '../services/registrationFlowService.js';
+import { resolveGroup } from '../utils/groups.js';
 
 // Re-exported so any existing import site (including tests) that imports
 // these from authController.js keeps working — the actual implementation
@@ -133,7 +134,7 @@ export const getPublicSettings = asyncHandler(async (req, res) => {
 export const register = asyncHandler(async (req, res) => {
   // Only these fields are ever read from the request — role/status/tokenVersion
   // are never accepted from the client, no matter what the body contains.
-  const { name, email, password, department, batch, semester, rollNo, phone } = req.body;
+  const { name, email, password, department, batch, semester, group, rollNo, phone } = req.body;
 
   // Normalized the same way the schema stores it (lowercase, trimmed) before
   // checking — two people typing "Name@Example.com" and "name@example.com"
@@ -183,6 +184,14 @@ export const register = asyncHandler(async (req, res) => {
 
   // Public registration always creates a student account; admin/super_admin
   // are provisioned via the seed script or by an existing Super Admin.
+  //
+  // `group` is the class group within the batch (BOTH / A1 / A2 …). It decides
+  // which half of the batch's timetable this student is shown, so it has to be
+  // captured here: with everyone left on the BOTH default the group axis matches
+  // nobody in particular and a group-split routine is invisible to all of them.
+  // Optional in the body — an omitted value stays BOTH, so an older client keeps
+  // registering — but validated against the configured list rather than stored
+  // as sent, and normalised to upper case by resolveGroup.
   const user = await User.create({
     name,
     email,
@@ -190,6 +199,7 @@ export const register = asyncHandler(async (req, res) => {
     department: department || null,
     batch: batch || null,
     semester: semester || null,
+    group: await resolveGroup(group),
     rollNo: trimmedRollNo || '',
     phone: trimmedPhone || '',
     role: 'student',

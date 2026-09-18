@@ -25,7 +25,8 @@ import { sanitizeQuery } from '../utils/textSearch.js';
 import { parsePagination } from '../utils/pagination.js';
 import { getSettings } from '../models/Settings.js';
 import { emit } from '../services/notifications/notificationService.js';
-import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
+import { resolveCourseScopedRecipients, resolveReviewersForCourse } from '../services/notifications/recipientResolver.js';
+import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
 import { assertBatchesForCourse } from '../services/teachingService.js';
@@ -48,6 +49,31 @@ function notifyCourseMaterial(file, actor, type) {
       })
     )
     .catch((err) => logger.error(err, { source: 'notifyCourseMaterial' }));
+}
+
+// A student's own submission lands in the review queue, so the people told about
+// it are the reviewers who work that queue — the CR/admin-tier reviewers, not
+// faculty (see resolveReviewersForCourse; faculty can be added back by env var).
+// Distinct from notifyCourseMaterial: that is staff publishing material, this is
+// material arriving to be reviewed. In-app + push always; the email copy rides
+// the NOTIFICATION_EMAIL_ENABLED switch inside emit().
+function notifyReviewRequest(file, actor) {
+  resolveReviewersForCourse(file.course, {
+    includeFaculty: env.notifications.notifyFacultyOnStudentUpload,
+  })
+    .then((recipients) =>
+      emit({
+        type: 'FILE_UPLOADED',
+        actorId: actor._id,
+        entityType: 'FILE',
+        entityId: file._id,
+        course: file.course,
+        department: file.department,
+        vars: { actorName: actor.name, fileName: file.title, courseName: file.courseName, fileId: file._id },
+        recipients,
+      })
+    )
+    .catch((err) => logger.error(err, { source: 'notifyReviewRequest' }));
 }
 
 const LIST_FIELDS = [
@@ -402,6 +428,8 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
     uploadedBy: req.user._id,
     approvalStatus: 'pending',
   });
+
+  notifyReviewRequest(file, req.user);
 
   res.status(201).json({
     success: true,

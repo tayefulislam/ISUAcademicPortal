@@ -283,6 +283,42 @@ describe('reminder slots — each offset and each time is its own reminder', () 
     assert.match(messages, /starts in 10 minutes/);
   });
 
+  test('an offset is never fired early', async () => {
+    // 31 minutes out is nearer than the old symmetric ±5 window tolerated, but
+    // *further* than the 30-minute target — the old code fired here and said "30".
+    await makeInstance({ startTime: '10:31' });
+
+    const summary = await runDueReminders(new Date('2026-09-20T10:00:00+06:00'));
+
+    assert.equal(summary.sent, 0, 'a class more than 30 minutes out must not remind yet');
+    assert.equal(await Notification.countDocuments(), 0);
+  });
+
+  test('a delayed tick still fires, reporting the true remaining time', async () => {
+    // The cron was ten minutes late for the 30-minute offset. The reminder has to
+    // go out rather than be lost, and its text must not claim the class is 30 away.
+    await makeInstance({ startTime: '10:30' });
+
+    await runDueReminders(new Date('2026-09-20T10:10:00+06:00'));
+
+    const reminder = await Notification.findOne({ type: 'CLASS_REMINDER' });
+    assert.ok(reminder, 'a missed 30-minute tick still reminds');
+    assert.match(reminder.message, /starts in 20 minutes/);
+  });
+
+  test('a one-off exam in the same window is not reminded as a class', async () => {
+    await AcademicEvent.create({
+      department: cse._id, batch: batch14._id, semester: sem1._id, course: cse101._id,
+      group: 'BOTH', title: 'CSE 101 CT-1', classType: 'CT',
+      date: '2026-09-20', startTime: '10:30', endTime: '11:30', createdBy: faculty._id,
+    });
+
+    const summary = await runDueReminders(new Date('2026-09-20T10:00:00+06:00'));
+
+    assert.equal(summary.sent, 0, 'an exam is reminded by EXAM_REMINDER, not by "Class Reminder"');
+    assert.equal(await Notification.countDocuments(), 0);
+  });
+
   test('a class that is moved gets a fresh reminder for its new time', async () => {
     const instance = await makeInstance({ startTime: '10:00', endTime: '11:30' });
     const originalStart = instance.startAt.toISOString();
