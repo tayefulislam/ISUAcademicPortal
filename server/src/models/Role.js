@@ -21,6 +21,20 @@ export const PERMISSION_MODULES = [
   { key: 'emails', label: 'Email Center', description: 'Send broadcast emails.' },
   { key: 'enrollments', label: 'Course Enrollment Management', description: 'Review/approve/reject additional-course enrollment requests and manage enrollments.' },
   { key: 'notifications', label: 'Notification Management', description: 'Send notifications to users/courses/departments and view delivery stats.' },
+  // Class routine & academic calendar. Split per action rather than one
+  // "routine" key so a CR can be given "add exams" without also being able to
+  // rewrite the official timetable. Student/Faculty/CR reach these routes
+  // through requirePermission's allowRoles escape hatch (they hold no Role
+  // document), so granting an admin-tier role here is additive.
+  { key: 'routine_view', label: 'Routine — View', description: 'See the class routine and academic calendar for a wider scope than their own.' },
+  { key: 'routine_create', label: 'Routine — Create', description: 'Create class routine entries and recurring schedules.' },
+  { key: 'routine_update', label: 'Routine — Update', description: 'Edit, cancel or reschedule class routine entries.' },
+  { key: 'routine_delete', label: 'Routine — Delete', description: 'Delete class routine entries and templates.' },
+  { key: 'exam_view', label: 'Exams — View', description: 'See exam/CT/final entries for a wider scope than their own.' },
+  { key: 'exam_create', label: 'Exams — Create', description: 'Schedule CT / Mid Term / Final / Quiz and other academic events.' },
+  { key: 'exam_update', label: 'Exams — Update', description: 'Edit scheduled exams and academic events.' },
+  { key: 'exam_delete', label: 'Exams — Delete', description: 'Delete scheduled exams and academic events.' },
+  { key: 'calendar_manage', label: 'Calendar — Manage', description: 'Override schedule conflicts and manage calendar-wide actions.' },
 ];
 
 const roleSchema = new mongoose.Schema(

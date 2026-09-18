@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { NOTIFICATION_TYPES } from './Notification.js';
+import { GROUP_BOTH } from './Settings.js';
 
 // The 4 "fixed" roles baked into the app's core behavior (approval workflow,
 // department/course scoping, unrestricted access). Beyond these, Super Admin
@@ -27,6 +28,14 @@ const userSchema = new mongoose.Schema(
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
     batch: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch', default: null },
     semester: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', default: null },
+    // The student's class group within their batch (BOTH / A1 / A2 / ...).
+    // The permitted values come from Settings.academicGroups rather than a
+    // Mongoose enum, so a batch can be split further without a code change.
+    // 'BOTH' is the default and means "the whole batch": every group-agnostic
+    // routine entry is stored as BOTH, and a student whose own group is BOTH is
+    // matched by entries for any group — which is what makes an unsplit batch
+    // behave exactly as it always has.
+    group: { type: String, default: GROUP_BOTH, uppercase: true, trim: true },
 
     favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
 
@@ -144,6 +153,12 @@ userSchema.index({ rollNo: 1 }, { unique: true, partialFilterExpression: { rollN
 // $gt:'' rather than $ne is required here) — a phone number, once set, must
 // be unique too, since it doubles as a login identifier just like rollNo.
 userSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { phone: { $type: 'string', $gt: '' } } });
+
+// Audience lookup for the class routine: "who is in CSE / Batch 14 / Semester 1
+// / group A1". The routine fan-out and the notification recipient resolver both
+// start from exactly these four axes, so they share one index rather than each
+// scanning the collection.
+userSchema.index({ department: 1, batch: 1, semester: 1, group: 1 });
 
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();

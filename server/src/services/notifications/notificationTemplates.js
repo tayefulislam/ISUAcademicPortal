@@ -50,17 +50,53 @@ export const TEMPLATES = {
     title: () => "New Exam",
     message: (v) =>
       `${v.title} has been published${v.startAt ? `. Starts ${v.startAt}` : ""}`,
-    url: (v) => `/student/exams/${v.quizId}`,
+    // A quiz-backed exam links to its own screen; a scheduled exam/CT has no
+    // quiz behind it, so it falls back to the calendar (spec: the notification
+    // should link straight to the event).
+    url: (v) => (v.quizId ? `/student/exams/${v.quizId}` : '/routine'),
   },
   EXAM_UPDATED: {
     title: () => "Exam Updated",
     message: (v) => `${v.title} has been updated`,
-    url: (v) => `/student/exams/${v.quizId}`,
+    url: (v) => (v.quizId ? `/student/exams/${v.quizId}` : '/routine'),
   },
   EXAM_REMINDER: {
     title: () => "Exam Reminder",
     message: (v) => `Your ${v.title} exam starts soon`,
     url: (v) => `/student/exams/${v.quizId}`,
+  },
+  // Class routine reminders. `when` is the Dhaka-formatted window ("10:00 AM"),
+  // formatted by the sender so every channel shows the institution's clock
+  // rather than the reader's.
+  CLASS_REMINDER: {
+    title: () => "Class Reminder",
+    message: (v) =>
+      `${v.courseCode || v.courseName || "Your class"} starts in ${v.minutesBefore} minutes${v.when ? ` at ${v.when}` : ""}${v.room ? ` — Room ${v.room}` : ""}`,
+    url: () => "/routine",
+  },
+  CLASS_STARTING: {
+    title: () => "Class Starting Now",
+    message: (v) =>
+      `${v.courseCode || v.courseName || "Your class"} is starting now${v.room ? ` — Room ${v.room}` : ""}`,
+    url: () => "/routine",
+  },
+  CLASS_CANCELLED: {
+    title: () => "Class Cancelled",
+    message: (v) =>
+      `${v.courseCode || v.courseName || "Your class"}${v.when ? ` at ${v.when}` : ""} has been cancelled.`,
+    url: () => "/routine",
+  },
+  CLASS_RESCHEDULED: {
+    title: () => "Class Rescheduled",
+    message: (v) =>
+      `${v.courseCode || v.courseName || "Your class"} has moved${v.when ? ` to ${v.when}` : ""}${v.room ? ` — Room ${v.room}` : ""}.`,
+    url: () => "/routine",
+  },
+  CLASS_ROOM_CHANGED: {
+    title: () => "Room Changed",
+    message: (v) =>
+      `${v.courseCode || v.courseName || "Your class"}${v.when ? ` at ${v.when}` : ""}: Room ${v.fromRoom} → Room ${v.toRoom}`,
+    url: () => "/routine",
   },
   EXAM_RESULT: {
     title: () => "Result Published",

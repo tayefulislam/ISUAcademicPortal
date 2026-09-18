@@ -1,6 +1,7 @@
 import User from '../../models/User.js';
 import Course from '../../models/Course.js';
 import CourseEnrollment, { ACCESS_GRANTING_STATUSES } from '../../models/CourseEnrollment.js';
+import { GROUP_BOTH } from '../../models/Settings.js';
 
 // This module is the "smart recipient detection" piece — every resolver
 // here reuses the app's existing course-access concepts instead of
@@ -102,6 +103,58 @@ export async function resolveNoticeRecipients(targeting) {
 /** A single explicit recipient (messages, direct grading, etc). */
 export function resolveSingleUser(userId) {
   return userId ? [userId] : [];
+}
+
+/**
+ * Students who should receive a class routine entry or an academic event.
+ *
+ * Two shapes, because not every entry has a course behind it:
+ *  - with `course` — the same course-access rule as everything else
+ *    (same-department active students UNION students with an access-granting
+ *    enrolment);
+ *  - with only `department` — every active student in that department, which is
+ *    what a general academic event (an orientation, a deadline) addresses.
+ *
+ * Then AND-narrowed by batch, semester and group.
+ *
+ * `groups` is what the entry targets. A student whose own group is BOTH is in
+ * the whole batch, so they are included for any target; a student in A1 is
+ * included for an A1 entry (or a BOTH entry) and never for A2 — which is the
+ * whole point of the group axis.
+ *
+ * Faculty are deliberately not included: a class reminder goes to the students
+ * attending it. Faculty see their own timetable through the faculty view.
+ */
+export async function resolveRoutineAudience({
+  course = null,
+  department = null,
+  batches = [],
+  semesters = [],
+  groups = [],
+}) {
+  let studentIds;
+  if (course) {
+    const courseDoc = await resolveCourseDoc(course);
+    if (!courseDoc) return [];
+    studentIds = await studentsWithCourseAccess(courseDoc);
+  } else if (department) {
+    studentIds = await User.find({ role: 'student', status: 'active', department }).distinct('_id');
+  } else {
+    return [];
+  }
+  if (!studentIds.length) return [];
+
+  // The department axis is already spent by the base query when there is no
+  // course, so the remainder is the batch/semester/group narrowing.
+  const extraFilter = { _id: { $in: studentIds } };
+  if (batches.length) extraFilter.batch = { $in: batches };
+  if (semesters.length) extraFilter.semester = { $in: semesters };
+  if (groups.length) {
+    extraFilter.$or = [{ group: { $in: groups } }, { group: GROUP_BOTH }];
+  }
+
+  const students = await User.find(extraFilter).select('_id');
+  return students.map((s) => s._id);
 }
 
 /** Faculty assigned to (or overseeing) a course — for staff-facing events. */

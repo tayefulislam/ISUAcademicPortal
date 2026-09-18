@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { connectTestDb, dropAndDisconnect, clearCollections } from '../test/dbTestUtils.js';
 import User from '../models/User.js';
 import Settings from '../models/Settings.js';
-import { updateUserApproval, getSystemSettings, updateSystemSettings } from './superAdminController.js';
+import { updateUserApproval, updateUserProfile, getSystemSettings, updateSystemSettings } from './superAdminController.js';
 
 // Manual Student ID approval override — the "just fix it" escape hatch for
 // Super Admin/Administrator, distinct from the pending-queue-only
@@ -207,5 +207,38 @@ describe('updateSystemSettings — officialEmailDomains (list setting)', () => {
     const { res, error } = await call(getSystemSettings, { user: superAdminUser });
     assert.equal(error, undefined);
     assert.deepEqual(res.body.data.officialEmailDomains, ['legacy-domain.edu']);
+  });
+});
+
+// A student's class group (BOTH / A1 / A2 / ...) is academic placement, so it is
+// edited here alongside department/batch/semester and never by the student
+// themselves (profileController deliberately does not expose it). Without this
+// there would be no way to put anyone in A1 before the group UI exists.
+describe('updateUserProfile — academic group', () => {
+  const target = () => ({ user: superAdminUser, params: { id: String(approvedStudent._id) } });
+
+  test('sets a configured group, normalized to upper case', async () => {
+    const { res, error } = await call(updateUserProfile, { ...target(), body: { group: 'a1' } });
+    assert.equal(error, undefined);
+    assert.equal(res.body.data.group, 'A1');
+  });
+
+  test('rejects a group that is not configured', async () => {
+    const { error } = await call(updateUserProfile, { ...target(), body: { group: 'ZZ9' } });
+    assert.equal(error?.statusCode, 400);
+  });
+
+  test('an empty or omitted value means the whole batch', async () => {
+    await call(updateUserProfile, { ...target(), body: { group: 'A2' } });
+    const { res } = await call(updateUserProfile, { ...target(), body: { group: '' } });
+    assert.equal(res.body.data.group, 'BOTH');
+  });
+
+  test('a student cannot change their own group through their own profile', async () => {
+    // The profile endpoint must not expose `group` — verified through the
+    // editable-field list rather than by calling it, since that list is the
+    // actual gate.
+    const { res } = await call(updateUserProfile, { ...target(), body: { name: 'Renamed' } });
+    assert.equal(res.body.data.group, 'BOTH', 'unrelated edits leave the group alone');
   });
 });

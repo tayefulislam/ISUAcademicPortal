@@ -25,6 +25,11 @@ const DATA_KEYS = [
   'attemptId',
   'noticeId',
   'conversationId',
+  // Class routine / academic calendar. The Android NotificationRouter reads
+  // these to open the routine screen and to focus the right occurrence.
+  'routineId',
+  'eventId',
+  'eventType',
 ];
 
 let messaging = null;

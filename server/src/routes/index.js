@@ -31,6 +31,11 @@ import notificationRoutes from './notificationRoutes.js';
 import adminNotificationRoutes from './adminNotificationRoutes.js';
 import studentIdRoutes from './studentIdRoutes.js';
 import deviceRoutes from './deviceRoutes.js';
+import routineRoutes from './routineRoutes.js';
+import eventRoutes from './eventRoutes.js';
+import examRoutes from './examRoutes.js';
+import eventsRoutes from './eventsRoutes.js';
+import reminderRoutes from './reminderRoutes.js';
 
 const router = Router();
 
@@ -68,5 +73,13 @@ router.use('/notifications', notificationRoutes);
 router.use('/admin/notifications', adminNotificationRoutes);
 router.use('/student-id', studentIdRoutes);
 router.use('/devices', deviceRoutes);
+
+// Class routine & academic calendar.
+router.use('/routine', routineRoutes);
+router.use('/calendar', eventRoutes);
+router.use('/exams', examRoutes);
+router.use('/events', eventsRoutes);
+// Cron target for class/exam reminders — secret-authenticated, not user-authenticated.
+router.use('/internal/reminders', reminderRoutes);
 
 export default router;

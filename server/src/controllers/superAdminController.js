@@ -10,6 +10,7 @@ import { sanitizeQuery } from '../utils/textSearch.js';
 import { parsePagination } from '../utils/pagination.js';
 import { logger } from '../utils/logger.js';
 import { emit } from '../services/notifications/notificationService.js';
+import { resolveGroup } from '../utils/groups.js';
 
 // 'administrator' has every super_admin capability except visibility/control
 // over super_admin accounts themselves, and only an actual super_admin can
@@ -271,9 +272,15 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Another Super Admin's profile cannot be edited here", null, 'FORBIDDEN');
   }
 
+  // `group` sits with department/batch/semester: it is academic placement, only
+  // ever set by an administrator, and validated against the configured group
+  // list so a value the routine matcher could never match cannot be stored.
   const allowed = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) target[key] = req.body[key] || null;
+  }
+  if (req.body.group !== undefined) {
+    target.group = await resolveGroup(req.body.group);
   }
   // rollNo/phone/name are plain strings, not refs — null would fail validation.
   if (req.body.name !== undefined) target.name = req.body.name;
