@@ -169,6 +169,31 @@ describe('reminder offsets', () => {
     assert.equal(first.sent, 1);
     assert.equal(second.sent, 0, 'the second run inside the same window must be a no-op');
     assert.equal(await Notification.countDocuments(), 1);
+
+    // The regression this guards: the push fan-out used to be driven by the
+    // requested recipients rather than by what was actually inserted, so a
+    // per-minute cron re-sent the SAME push on every tick even though the
+    // in-app row was correctly deduped. A student saw "class starts in 30
+    // minutes" arrive again every minute for the length of the window.
+    assert.equal(first.pushed, 1, 'the first run delivers one push');
+    assert.equal(second.pushed, 0, 'and a repeat delivers none — no row, nothing to push');
+  });
+
+  test('the window is wide enough to repeat, so the guard has to hold', async () => {
+    // A class 30 minutes out is still inside the 30-minute offset's window for
+    // several consecutive minutes. Every one of those ticks must be a no-op —
+    // this is precisely the situation that produced the duplicate flood.
+    await makeInstance({ startTime: '10:30' });
+
+    let totalPushed = 0;
+    for (let minute = 0; minute < 5; minute += 1) {
+      const tick = new Date(new Date('2026-09-20T10:00:00+06:00').getTime() + minute * 60_000);
+      const summary = await runDueReminders(tick);
+      totalPushed += summary.pushed;
+    }
+
+    assert.equal(totalPushed, 1, 'five consecutive ticks, one push between them');
+    assert.equal(await Notification.countDocuments({ type: 'CLASS_REMINDER' }), 1);
   });
 
   test('a cancelled class reminds nobody', async () => {

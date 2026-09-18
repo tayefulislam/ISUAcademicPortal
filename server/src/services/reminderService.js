@@ -38,7 +38,7 @@ const POPULATE = [
  * @returns {Promise<{scanned:number, sent:number, offsets:object[]}>}
  */
 export async function runDueReminders(now = new Date()) {
-  const summary = { scanned: 0, sent: 0, offsets: [] };
+  const summary = { scanned: 0, sent: 0, pushed: 0, offsets: [] };
 
   for (const { minutesBefore, type } of REMINDER_OFFSETS) {
     const target = addMinutes(now, minutesBefore);
@@ -60,6 +60,7 @@ export async function runDueReminders(now = new Date()) {
     summary.scanned += due.length;
 
     let sent = 0;
+    let pushed = 0;
     for (const entry of due) {
       const result = await notifyOccurrence(entry, type, {
         extraVars: {
@@ -73,10 +74,12 @@ export async function runDueReminders(now = new Date()) {
         },
       });
       sent += result?.created || 0;
+      pushed += result?.pushed || 0;
     }
 
-    summary.offsets.push({ minutesBefore, type, matched: due.length, recipients: sent });
+    summary.offsets.push({ minutesBefore, type, matched: due.length, recipients: sent, pushed });
     summary.sent += sent;
+    summary.pushed += pushed;
   }
 
   return summary;

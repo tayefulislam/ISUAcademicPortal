@@ -53,12 +53,32 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     const u = byId.get(id);
     return !u || typeEnabledFor(u, type); // fail-open if the user doc is missing/stale
   });
-  if (!uniqueRecipients.length) return { created: 0 };
+  if (!uniqueRecipients.length) return { created: 0, pushed: 0 };
 
   const { title, message, url } = renderTemplate(type, vars);
   const effectiveEntityId = entityId || new mongoose.Types.ObjectId();
 
-  const docs = uniqueRecipients.map((recipient) => ({
+  // The unique index {recipient,type,entityType,entityId} is what makes this
+  // atomic, but it is NOT sufficient on its own: an index that failed to build
+  // (a deployment whose collection predates it, or one that could not be built
+  // because duplicates already existed) silently stops deduping, and every
+  // retry then writes another row. One indexed lookup here means a repeated
+  // event is a no-op even in that state.
+  const existing = await Notification.find({
+    recipient: { $in: uniqueRecipients },
+    type,
+    entityType,
+    entityId: effectiveEntityId,
+  })
+    .select('recipient')
+    .lean();
+  const alreadyNotified = new Set(existing.map((row) => String(row.recipient)));
+  const freshRecipients = uniqueRecipients.filter((id) => !alreadyNotified.has(id));
+
+  // Nothing new to say: no row, and crucially no push either — see below.
+  if (!freshRecipients.length) return { created: 0, pushed: 0 };
+
+  const docs = freshRecipients.map((recipient) => ({
     recipient,
     sender: actorId,
     type,
@@ -86,13 +106,25 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     // actual driver error (code/errmsg) lives on `.err`, not the wrapper
     // itself; reading `.code` directly here always misses and would
     // misclassify every intended dedupe as a "real" error.
-    const realErrors = (err.writeErrors || []).filter((e) => (e.err?.code ?? e.code) !== 11000);
+    const realErrors = (err.writeErrors || []).filter((e) => (err.err?.code ?? e.code) !== 11000);
     if (realErrors.length) console.error('[notifications] insert errors', realErrors.map((e) => e.err?.errmsg || e.errmsg));
   }
 
-  // Push fan-out — of the (already type-filtered) recipients, only those
-  // with the push channel itself enabled. Never blocks/throws past this point.
-  const toPush = uniqueRecipients.map((id) => byId.get(id)).filter((u) => u && pushEnabledFor(u));
+  // Push fan-out — but only for recipients whose row was ACTUALLY created.
+  //
+  // This is the difference between a notification and a delivery attempt. The
+  // in-app row is the system of record; a push is a transport for it, so if
+  // there is no new row there is nothing to push. Fanning out from the
+  // requested list instead would re-send the same push on every retry — which
+  // is exactly what a per-minute cron does inside a reminder window, and it
+  // meant a "class starts in 10 minutes" reminder arriving every minute even
+  // though its notification had been correctly deduped.
+  const createdIds = new Set(inserted.map((doc) => String(doc.recipient)));
+  const toPush = freshRecipients
+    .filter((id) => createdIds.has(id))
+    .map((id) => byId.get(id))
+    .filter((u) => u && pushEnabledFor(u));
+
   await Promise.allSettled(toPush.map((u) => sendToUser(u._id, { title, body: message, url, type })));
 
   // FCM is a second *transport* for the same event, not a second notification
@@ -121,7 +153,7 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     )
   );
 
-  return { created: inserted.length };
+  return { created: inserted.length, pushed: toPush.length };
 }
 
 export default { emit };

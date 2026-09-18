@@ -10,6 +10,7 @@ import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import Course from './models/Course.js';
+import Notification from './models/Notification.js';
 import Question from './models/Question.js';
 import User from './models/User.js';
 import { logger } from './utils/logger.js';
@@ -110,6 +111,28 @@ async function start() {
     await User.syncIndexes();
   } catch (err) {
     logger.error(err, { source: 'app:User.syncIndexes' });
+  }
+
+  // The notification dedupe index. EVERY reminder/repeat guarantee rests on
+  // {recipient, type, entityType, entityId} being unique: emit() relies on a
+  // duplicate-key error to make a retried event a no-op. The collection is also
+  // the one most likely to predate its own index (notifications shipped before
+  // the reminder engine did), and a unique index that cannot be built — because
+  // duplicates already exist — fails silently, after which every cron tick
+  // writes another copy. Built here so a deployment cannot be left without it.
+  //
+  // A failure here is logged loudly rather than thrown: the process must still
+  // start, but the admin needs to see it. See scripts/dedupeNotifications.js to
+  // clear existing duplicates and then rebuild the index.
+  try {
+    await Notification.syncIndexes();
+  } catch (err) {
+    logger.error(err, { source: 'app:Notification.syncIndexes' });
+    console.error(
+      '[notifications] Could not build the notification dedupe index — duplicate '
+      + 'notifications may be created until this is fixed. Run: '
+      + 'npm --prefix server run dedupe:notifications'
+    );
   }
 
   app.listen(env.port, () => {
