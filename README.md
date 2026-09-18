@@ -139,7 +139,8 @@ isucloud/
 │       ├── models/                    User, Department, Course, Batch, Semester, Category, Chapter, Topic,
 │       │                              File, Notice, Assignment, Submission, Question, Quiz, QuizAttempt,
 │       │                              Conversation, Message, EmailLog, CourseEnrollment, Role, Notification,
-│       │                              PushSubscription, Feedback, Settings
+│       │                              PushSubscription, Feedback, Settings, RoutineTemplate,
+│       │                              ScheduleInstance, AcademicEvent
 │       ├── routes/                    REST route definitions, one file per resource
 │       ├── services/
 │       │   ├── storage/                 storageService.js (the ONLY module the app talks to for files),
@@ -149,6 +150,10 @@ isucloud/
 │       │   │                            notificationTemplates.js, pushService.js
 │       │   ├── examEngine.js            shared grading/result engine for course quizzes AND public exams
 │       │   ├── courseAccessService.js   single source of truth for "which courses can this student reach"
+│       │   ├── routineService.js        recurring-rule materialisation + routine→occurrence sync
+│       │   ├── academicEventService.js  the one "what can this person see / what is on now" reader
+│       │   ├── reminderService.js       class/exam reminders, driven by the cron endpoint
+│       │   ├── routineNotifications.js  who hears about a cancellation, a move or a routine change
 │       │   └── fileQueryBuilder.js      shared search/filter/visibility query logic
 │       ├── utils/                      seed.js, jwt.js, ApiError.js, fileTypes.js, textSearch.js (fuzzy search engine)
 │       ├── test/                       dbTestUtils.js (disposable-DB helper for integration tests)
@@ -241,6 +246,7 @@ proxy as the API) and point `VITE_API_URL` at the deployed API's `/api` URL.
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | SMTP provider settings |
 | `RESEND_API_KEY` | Resend provider API key |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push credentials — generate with `npx web-push generate-vapid-keys`; `VAPID_SUBJECT` is a `mailto:` contact address required by the Push protocol |
+| `REMINDER_CRON_SECRET` | Shared secret for the class/exam reminder cron target (`POST /api/internal/reminders/run`). The endpoint refuses to run at all while this is unset, rather than being left open; pair it with an external cron hitting that URL every minute |
 | `VITE_API_URL` | Frontend → backend base URL, e.g. `http://localhost:7050/api` |
 | `VITE_GA_MEASUREMENT_ID` | Google Analytics 4 measurement ID (`G-XXXXXXXXXX`) |
 | `VITE_UPLOADCARE_PUBLIC_KEY` | Enables the Uploadcare widget on upload pages |
@@ -262,8 +268,10 @@ proxy as the API) and point `VITE_API_URL` at the deployed API's `/api` URL.
 | `EmailLog` | Broadcast email send history + per-recipient delivery status. |
 | `CourseEnrollment` | The explicit student↔course access layer beyond department membership (retake/extra/backlog/improvement/advance), with a Faculty approval workflow. |
 | `Role` | Custom admin-tier roles and their granted permission keys. |
-| `Notification` | In-app notification feed — one row per recipient per event, with a `{recipient, type, entityType, entityId}` unique index for idempotency. |
+| `Notification` | In-app notification feed — one row per recipient per event, with a `{recipient, type, entityType, entityId, slot}` unique index for idempotency. `slot` is used by class/exam reminders (the offset plus the effective start instant), so one class legitimately produces several reminders and a moved class gets a fresh one instead of colliding with the reminder already sent for its old time. |
 | `PushSubscription` | One row per subscribed browser/device per user. |
+| `RoutineTemplate` / `ScheduleInstance` | The class routine: a recurring rule (the master) and the dated occurrences it generates. An occurrence stores the effective values plus `overriddenFields[]` — the fields that date changed for itself — so editing the rule updates every future class that has no individual change, while a changed date keeps its own value. |
+| `AcademicEvent` | One-off dated academic events (CT/mid-term/final/quiz/deadline) with no recurring rule behind them — a template/instance split is unnecessary when there is no series. |
 | `Feedback` | Public feedback form submissions. |
 | `Settings` | Singleton document holding every system-wide feature toggle. |
 
@@ -299,6 +307,9 @@ exhaustive spec.
 | `/course-enrollments` | Request/approve/reject/manage additional-course enrollment |
 | `/notifications` | Self-service list/read/preferences/push-subscribe |
 | `/admin/notifications` | Super Admin stats/logs/ad-hoc send |
+| `/routine` | Recurring rules and their dated occurrences — `PATCH /routine/templates/:id` is the one edit that brings every future class into line, with an `applyFrom` scope |
+| `/calendar`, `/exams`, `/events` | One-off academic events and exams; `/events/my/current-next` is the schedule widget's single call |
+| `/internal/reminders` | The cron target that fires due class/exam reminders (secret-header auth, deliberately not JWT) |
 | `/admin`, `/super-admin` | Admin/Super Admin management surfaces (users, faculty, files, settings, etc.) |
 
 ---
@@ -357,6 +368,18 @@ set `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`. Without these,
 push silently no-ops and everything still works via in-app notifications.
 On iOS/iPadOS, Safari only allows Web Push for a PWA added to the Home
 Screen — the UI detects this and prompts accordingly.
+
+**Class & exam reminders** are a separate delivery path, because they are
+time-triggered rather than event-triggered. There is no scheduler in this stack,
+so an external cron calls `POST /api/internal/reminders/run` every minute,
+authenticated with `REMINDER_CRON_SECRET` in the `x-reminder-secret` header (the
+endpoint refuses to run at all while that is unset). Each run is a pure function
+of "now", so a missed or repeated tick is harmless. Reminders are deduped on
+`{recipient, type, entityType, entityId, slot}`, where `slot` is the offset plus
+the class's *effective* start instant — which keeps the 30- and 10-minute
+reminders separate, and gives a class that moved a new reminder rather than
+leaving the old one active. The schedule itself is the
+[§7](#7-api-reference) routine/calendar group.
 
 **Scope decision**: notification fan-out runs in-process (unawaited,
 errors caught/logged) rather than through a queue/worker — there's no
@@ -590,6 +613,7 @@ S3-compatible/Uploadcare storage instead.
 - [ ] Document storage is durable (persistent disk, or S3-compatible/Uploadcare).
 - [ ] Email provider configured (`EMAIL_PROVIDER=smtp` or `resend`) — otherwise OTP/reset/broadcast emails just log to console.
 - [ ] `FIREBASE_SERVICE_ACCOUNT` set — otherwise Android push notifications are silently skipped (in-app notifications are unaffected). See [`docs/FCM_PUSH_SETUP.md`](docs/FCM_PUSH_SETUP.md).
+- [ ] `REMINDER_CRON_SECRET` set, and an external cron hitting `POST /api/internal/reminders/run` (header `x-reminder-secret`) every minute — otherwise no class or exam reminder is ever sent. The endpoint refuses to run (503) while the secret is unset.
 - [ ] `.env` files are not committed (already covered by `.gitignore`).
 - [ ] HTTPS is active on both frontend and backend.
 

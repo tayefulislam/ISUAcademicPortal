@@ -1,15 +1,18 @@
 import mongoose from 'mongoose';
 import { GROUP_BOTH } from './Settings.js';
-import { CLASS_TYPES, DELIVERY_MODES, INSTANCE_STATUSES } from '../utils/academicEventTypes.js';
+import { CLASS_TYPES, DELIVERY_MODES, INSTANCE_STATUSES, INHERITED_FIELDS } from '../utils/academicEventTypes.js';
 import { isDateOnly, isTimeOnly, normalizeTime, combineDhakaDateTime } from '../utils/academicSchedule.js';
 
 // One dated occurrence of a class — the thing a student actually sees on a
 // given day, and the thing a reminder is fired against. Either materialised
 // from a RoutineTemplate (recurring) or created on its own (a one-off).
 //
-// Materialising is what makes exceptions cheap: cancelling 4 October, or moving
-// it to Tuesday, writes to that one instance and leaves the recurring rule and
-// every other week untouched.
+// The fields here are the *effective* values a reader uses: the routine's value
+// unless this date was individually changed, in which case the changed value
+// and the field's name sits in `overriddenFields`. Editing the routine therefore
+// rewrites every inherited field on every future occurrence at once, while an
+// individually changed date keeps its own value — see
+// routineService.syncInstancesWithTemplate.
 
 const scheduleInstanceSchema = new mongoose.Schema(
   {
@@ -39,6 +42,12 @@ const scheduleInstanceSchema = new mongoose.Schema(
     onlineLink: { type: String, default: '', trim: true },
 
     status: { type: String, enum: INSTANCE_STATUSES, default: 'NORMAL' },
+
+    // The inherited fields individually changed on THIS date. Empty means a pure
+    // copy of the routine: the cascade rewrites every field, so the stored value
+    // always follows the rule. A named field is left alone and survives a later
+    // change to the routine.
+    overriddenFields: { type: [String], default: [] },
 
     // Set when this occurrence is moved, so the original slot stays visible in
     // the audit trail ("moved from Sunday 10:00").
@@ -72,6 +81,13 @@ scheduleInstanceSchema.pre('validate', function normalize(next) {
 
   if (this.deliveryMode !== 'OFFLINE' && !this.onlineLink) {
     this.invalidate('onlineLink', 'An online link is required for an online or hybrid class');
+  }
+
+  // Only the fields that actually exist on the routine may be marked as
+  // overridden — a typo here would silently stop a field from ever syncing.
+  const unknown = (this.overriddenFields || []).filter((field) => !INHERITED_FIELDS.includes(field));
+  if (unknown.length) {
+    this.invalidate('overriddenFields', `Unknown overridden field(s): ${unknown.join(', ')}`);
   }
   next();
 });

@@ -8,7 +8,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { getSettings } from '../models/Settings.js';
 import { isSuperAdminTier } from '../models/Role.js';
 import { assertFacultyCourseAccess, facultyCourseClause } from '../services/teachingService.js';
-import { generateInstancesForTemplate, findConflicts } from '../services/routineService.js';
+import { generateInstancesForTemplate, findConflicts, syncInstancesWithTemplate, applyBoundaryFor, withInheritedValues } from '../services/routineService.js';
 import { notifyOccurrence } from '../services/routineNotifications.js';
 import { resolveFacultyForCourse } from '../services/notifications/recipientResolver.js';
 import {
@@ -20,7 +20,7 @@ import {
   getCurrentAndNext,
 } from '../services/academicEventService.js';
 import { resolveGroup, getAcademicGroups } from '../utils/groups.js';
-import { CLASS_TYPES, DELIVERY_MODES } from '../utils/academicEventTypes.js';
+import { CLASS_TYPES, DELIVERY_MODES, INHERITED_FIELDS, APPLY_SCOPES } from '../utils/academicEventTypes.js';
 import { parseAsDhakaTime, isDateOnly, isTimeOnly, combineDhakaDateTime, endOfDhakaDay, formatInAppTimezone } from '../utils/academicSchedule.js';
 
 // Class routine: the recurring rules an administrator/CR/faculty member sets up,
@@ -326,10 +326,24 @@ export const createRoutine = asyncHandler(async (req, res) => {
   });
 });
 
-/** PATCH /routine/templates/:id — edit the rule and bring future dates into line. */
+/**
+ * PATCH /routine/templates/:id — edit the rule and bring its future occurrences
+ * into line.
+ *
+ * This is the single admin edit that updates everything downstream: an
+ * occurrence whose field was individually changed keeps that value, and every
+ * other occurrence in scope inherits the new one. `applyFrom` decides how far
+ * back the change reaches — `all` ("All future classes") is the default, so
+ * completed dates are only rewritten when the caller explicitly asks.
+ */
 export const updateTemplate = asyncHandler(async (req, res) => {
   await assertRoutineEnabled();
   assertClassTypes(req.body);
+
+  const applyFrom = req.body.applyFrom === undefined ? 'all' : String(req.body.applyFrom);
+  if (!APPLY_SCOPES.includes(applyFrom)) {
+    throw new ApiError(400, `Unknown applyFrom "${applyFrom}" — expected one of ${APPLY_SCOPES.join(', ')}`);
+  }
 
   const template = await RoutineTemplate.findById(req.params.id);
   if (!template) throw new ApiError(404, 'Routine not found');
@@ -344,17 +358,64 @@ export const updateTemplate = asyncHandler(async (req, res) => {
   await template.validate();
   await template.save();
 
-  // Existing occurrences are the exception record and are never rewritten —
-  // only dates that have no occurrence yet are added, so a cancelled or moved
-  // date survives an edit to the rule.
+  // A newly selected weekday or an extended range brings dates into existence;
+  // they are materialised from the rule as it now stands.
   const generated = await generateInstancesForTemplate(template, req.user._id);
+
+  // Everything already in range is then brought into line: an individually
+  // changed field keeps its value, every other inherited field follows the rule.
+  const from = await applyBoundaryFor(template, { scope: applyFrom, date: req.body.applyFromDate, now: new Date() });
+  const synced = await syncInstancesWithTemplate(template, { from, actorId: req.user._id });
+
+  if (req.body.notifyStudents === true || req.body.notifyStudents === 'true') {
+    await notifyRoutineChanges(synced.changed, req.user._id);
+  }
 
   res.json({
     success: true,
-    message: 'Routine updated',
-    data: { template: await template.populate(TEMPLATE_POPULATE), generated },
+    message: `Routine updated — ${synced.updated} future class(es) brought into line${synced.removed ? `, ${synced.removed} removed` : ''}`,
+    data: { template: await template.populate(TEMPLATE_POPULATE), generated, synced },
   });
 });
+
+/**
+ * Tells students about the dates a routine edit actually moved or relocated.
+ *
+ * Deliberately opt-in: one rule can cover a whole term, and turning every date
+ * into a notification unless the administrator asked for it would train people
+ * to ignore them.
+ */
+async function notifyRoutineChanges(changes, actorId) {
+  if (!changes.length) return;
+
+  const instances = await ScheduleInstance.find({ _id: { $in: changes.map((c) => c.id) } }).populate(TEMPLATE_POPULATE);
+  const byId = new Map(changes.map((change) => [change.id, change]));
+
+  for (const instance of instances) {
+    const change = byId.get(String(instance._id));
+    if (!change) continue;
+
+    const moved = change.fields.includes('startTime') || change.fields.includes('endTime');
+    const roomChanged = change.fields.includes('roomNumber');
+    if (!moved && !roomChanged) continue;
+
+    if (moved) {
+      await notifyOccurrence(instance, 'CLASS_RESCHEDULED', {
+        actorId,
+        extraVars: { when: formatInAppTimezone(instance.startAt) },
+      });
+    } else {
+      await notifyOccurrence(instance, 'CLASS_ROOM_CHANGED', {
+        actorId,
+        extraVars: {
+          when: formatInAppTimezone(instance.startAt),
+          fromRoom: change.before?.roomNumber || 'TBA',
+          toRoom: instance.roomNumber || 'TBA',
+        },
+      });
+    }
+  }
+}
 
 /** DELETE /routine/templates/:id — retire a rule and its future occurrences. */
 export const deleteTemplate = asyncHandler(async (req, res) => {
@@ -377,7 +438,14 @@ export const deleteTemplate = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Routine retired', data: { removedFutureOccurrences: removed.deletedCount } });
 });
 
-/** PATCH /routine/instances/:id — edit one date (room, group, faculty, times). */
+/**
+ * PATCH /routine/instances/:id — edit one date (room, group, faculty, times).
+ *
+ * What is supplied here is this date's own value from now on: the field is added
+ * to `overriddenFields`, so a later change to the routine leaves it alone.
+ * `resetFields` hands a field back to the routine and applies its current value
+ * immediately, which is how "this date is normal again" is expressed.
+ */
 export const updateInstance = asyncHandler(async (req, res) => {
   await assertRoutineEnabled();
   assertClassTypes(req.body);
@@ -387,6 +455,8 @@ export const updateInstance = asyncHandler(async (req, res) => {
   await assertScheduleScope(req.user, instance.course._id || instance.course);
 
   const previousRoom = instance.roomNumber;
+  const supplied = INHERITED_FIELDS.filter((field) => req.body[field] !== undefined);
+
   for (const key of ['roomNumber', 'faculty', 'classType', 'deliveryMode', 'onlineLink', 'note', 'status']) {
     if (req.body[key] !== undefined) instance[key] = req.body[key];
   }
@@ -397,6 +467,19 @@ export const updateInstance = asyncHandler(async (req, res) => {
     instance.endTime = req.body.endTime ?? instance.endTime;
   }
   if (req.body.date !== undefined) instance.date = req.body.date;
+
+  const overridden = new Set([...(instance.overriddenFields || []), ...supplied]);
+  const resetFields = (Array.isArray(req.body.resetFields) ? req.body.resetFields : [])
+    .filter((field) => INHERITED_FIELDS.includes(field));
+  for (const field of resetFields) overridden.delete(field);
+
+  // Re-inheriting a field goes through the same rule as the cascade, so a reset
+  // time also moves the derived instants and the row cannot sit on a stale value.
+  if (resetFields.length && instance.template) {
+    const template = await RoutineTemplate.findById(instance.template);
+    if (template) Object.assign(instance, withInheritedValues(instance, template, [...overridden]).patch);
+  }
+  instance.overriddenFields = [...overridden];
 
   instance.updatedBy = req.user._id;
   await instance.validate();
@@ -471,6 +554,17 @@ export const rescheduleInstance = asyncHandler(async (req, res) => {
   instance.startTime = startTime;
   instance.endTime = endTime;
   if (roomNumber) instance.roomNumber = roomNumber;
+
+  // The moved times (and room) are this date's own from now on — a later change
+  // to the routine must not pull them back. `date` is the occurrence's identity,
+  // not an inherited field, so it is not listed here.
+  instance.overriddenFields = [...new Set([
+    ...(instance.overriddenFields || []),
+    'startTime',
+    'endTime',
+    ...(roomNumber ? ['roomNumber'] : []),
+  ])];
+
   instance.status = 'RESCHEDULED';
   instance.updatedBy = req.user._id;
   await instance.validate();

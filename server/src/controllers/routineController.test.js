@@ -17,7 +17,10 @@ import {
   listInstances,
   cancelInstance,
   rescheduleInstance,
+  updateTemplate,
+  updateInstance,
 } from './routineController.js';
+import { generateInstancesForTemplate } from '../services/routineService.js';
 
 // Controller-level behaviour: what a client can influence, and what it cannot.
 //
@@ -268,5 +271,126 @@ describe('exceptions on a single occurrence', () => {
   test('an id that does not exist is a 404, not a crash', async () => {
     const { error } = await call(cancelInstance, { user: faculty, params: { id: '6a9c60e962b5c81cf6100960' } });
     assert.equal(error?.statusCode, 404);
+  });
+});
+
+// The whole point of the master/occurrence model: one administrator edit updates
+// every dependent date, and a date that was changed individually keeps its own
+// value through that edit.
+describe('routine edits propagate to their occurrences', () => {
+  /** A rule covering every day of a short, far-off range, so no assertion depends on the wall clock. */
+  async function makeDailyTemplate({ startDate = '2035-01-01', endDate = '2035-01-05' } = {}) {
+    const template = await RoutineTemplate.create({
+      department: cse._id, batch: batch14._id, semester: sem1._id, course: cse101._id,
+      group: 'BOTH', faculty: faculty._id, roomNumber: '501',
+      days: [0, 1, 2, 3, 4, 5, 6], startDate, endDate,
+      startTime: '10:00', endTime: '11:30', createdBy: faculty._id,
+    });
+    await generateInstancesForTemplate(template, faculty._id);
+    return template;
+  }
+
+  test('one routine edit brings every date into line', async () => {
+    const template = await makeDailyTemplate();
+
+    const { res, error } = await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { startTime: '14:00', endTime: '15:30', roomNumber: '777', applyFrom: 'entire' },
+    });
+
+    assert.equal(error, undefined);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.data.synced.updated, 5);
+
+    const rows = await ScheduleInstance.find({ template: template._id });
+    assert.equal(rows.length, 5);
+    assert.ok(rows.every((row) => row.startTime === '14:00' && row.roomNumber === '777'));
+  });
+
+  test('a date changed individually keeps its value through a routine edit', async () => {
+    const template = await makeDailyTemplate();
+    const target = await ScheduleInstance.findOne({ template: template._id, date: '2035-01-03' });
+
+    await call(updateInstance, { user: faculty, params: { id: String(target._id) }, body: { roomNumber: '603' } });
+    const edited = await ScheduleInstance.findById(target._id);
+    assert.deepEqual(edited.overriddenFields, ['roomNumber'], 'the edit is recorded as this date\'s own value');
+
+    await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { roomNumber: '777', startTime: '14:00', endTime: '15:30', applyFrom: 'entire' },
+    });
+
+    const after = await ScheduleInstance.findById(target._id);
+    assert.equal(after.roomNumber, '603', 'the override wins over the routine');
+    assert.equal(after.startTime, '14:00', 'the field it did not touch still follows the routine');
+  });
+
+  test('resetFields hands a date back to the routine', async () => {
+    const template = await makeDailyTemplate();
+    const target = await ScheduleInstance.findOne({ template: template._id, date: '2035-01-02' });
+
+    await call(updateInstance, { user: faculty, params: { id: String(target._id) }, body: { roomNumber: '603' } });
+    await call(updateInstance, { user: faculty, params: { id: String(target._id) }, body: { resetFields: ['roomNumber'] } });
+
+    const after = await ScheduleInstance.findById(target._id);
+    assert.deepEqual(after.overriddenFields, []);
+    assert.equal(after.roomNumber, '501', 'back to the routine value straight away');
+  });
+
+  test('rescheduling one date records the move as that date\'s own times', async () => {
+    const template = await makeDailyTemplate();
+    const target = await ScheduleInstance.findOne({ template: template._id, date: '2035-01-04' });
+
+    await call(rescheduleInstance, {
+      user: faculty,
+      params: { id: String(target._id) },
+      body: { date: '2035-01-06', startTime: '16:00', endTime: '17:30' },
+    });
+
+    const after = await ScheduleInstance.findById(target._id);
+    assert.equal(after.status, 'RESCHEDULED');
+    assert.ok(after.overriddenFields.includes('startTime'));
+    assert.ok(after.overriddenFields.includes('endTime'));
+
+    // A later routine edit must not pull the moved class back to the rule.
+    await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { startTime: '09:00', endTime: '10:30', applyFrom: 'entire' },
+    });
+    const stillMoved = await ScheduleInstance.findById(target._id);
+    assert.equal(stillMoved.startTime, '16:00');
+  });
+
+  test('completed dates are only rewritten when the caller asks for it', async () => {
+    const template = await makeDailyTemplate({ startDate: '2020-01-01', endDate: '2020-01-05' });
+
+    await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { startTime: '14:00', endTime: '15:30' },
+    });
+    let rows = await ScheduleInstance.find({ template: template._id });
+    assert.ok(rows.every((row) => row.startTime === '10:00'), 'history is untouched by the default scope');
+
+    await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { startTime: '16:00', endTime: '17:30', applyFrom: 'entire' },
+    });
+    rows = await ScheduleInstance.find({ template: template._id });
+    assert.ok(rows.every((row) => row.startTime === '16:00'), 'entire reaches back into history');
+  });
+
+  test('an unknown applyFrom is rejected', async () => {
+    const template = await makeDailyTemplate();
+    const { error } = await call(updateTemplate, {
+      user: faculty,
+      params: { id: String(template._id) },
+      body: { applyFrom: 'someday' },
+    });
+    assert.equal(error?.statusCode, 400);
   });
 });

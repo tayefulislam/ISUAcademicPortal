@@ -17,10 +17,12 @@ export const NOTIFICATION_TYPES = [
   'EXAM_REMINDER',
   'EXAM_RESULT',
 
-  // Class routine. Each reminder offset is its own type, not just its own
-  // message: the idempotency index is {recipient,type,entityType,entityId}, so
-  // the type is the only thing that keeps "starts in 30 minutes" and "starts
-  // now" for the SAME occurrence from collapsing into one row.
+  // Class routine. The offsets share a settings toggle but must not share an
+  // idempotency row: the notification id is {recipient,type,entityType,entityId,slot},
+  // and `slot` carries the offset plus the occurrence's effective start instant —
+  // see services/reminderService.js. So "starts in 30 minutes" and "starts in 10
+  // minutes" for the same occurrence are two rows, and a class that is moved gets
+  // a fresh reminder for its new time instead of colliding with the old one.
   'CLASS_REMINDER',
   'CLASS_STARTING',
   'CLASS_CANCELLED',
@@ -63,6 +65,12 @@ const notificationSchema = new mongoose.Schema(
     entityType: { type: String, default: '' },
     entityId: { type: mongoose.Schema.Types.ObjectId, default: null },
 
+    // A further discriminator within one (recipient, type, entity) — currently
+    // only class/exam reminders use it, to tell one reminder offset apart from
+    // another and to supersede an offset once the occurrence has moved. Empty
+    // for everything else, which keeps those deduped exactly as before.
+    slot: { type: String, default: '' },
+
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', default: null },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
 
@@ -83,7 +91,12 @@ const notificationSchema = new mongoose.Schema(
 // re-upload reusing the same entityId is treated as "already notified" —
 // an acceptable simplification; update flows use FILE_UPDATED/EXAM_UPDATED
 // (a different `type`) so a genuine update still gets through.
-notificationSchema.index({ recipient: 1, type: 1, entityType: 1, entityId: 1 }, { unique: true });
+//
+// `slot` extends the same idea to recurring reminders, where one entity
+// legitimately produces several notifications over time: the offset is part of
+// its value, so re-running a cron tick inside the same window is still a no-op
+// while a moved occurrence produces a new row rather than being swallowed.
+notificationSchema.index({ recipient: 1, type: 1, entityType: 1, entityId: 1, slot: 1 }, { unique: true });
 notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
 notificationSchema.index({ recipient: 1, createdAt: -1 });
 

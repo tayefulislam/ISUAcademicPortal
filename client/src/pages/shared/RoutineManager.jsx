@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarPlus, Plus, Trash2, CalendarX, Clock, X } from 'lucide-react';
+import { CalendarPlus, Plus, Trash2, CalendarX, Clock, X, Pencil, RotateCcw } from 'lucide-react';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -28,6 +28,22 @@ const WEEKDAYS = [
   { value: 5, label: 'Friday' },
   { value: 6, label: 'Saturday' },
 ];
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const weekdayNames = (days) => (days || []).map((day) => WEEKDAY_NAMES[day]).join(', ');
+
+// The inherited fields an occurrence can carry a change for, named the way the
+// manager talks about them.
+const OVERRIDE_LABELS = {
+  roomNumber: 'Room',
+  startTime: 'Start time',
+  endTime: 'End time',
+  faculty: 'Faculty',
+  group: 'Group',
+  classType: 'Class type',
+  deliveryMode: 'Mode',
+  onlineLink: 'Online link',
+};
+const overrideLabel = (field) => OVERRIDE_LABELS[field] || field;
 
 const input = 'w-full h-11 sm:h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500';
 
@@ -41,6 +57,7 @@ export default function RoutineManager() {
   const [showAdd, setShowAdd] = useState(false);
   const [showExam, setShowExam] = useState(false);
   const [rescheduling, setRescheduling] = useState(null);
+  const [editingRoutine, setEditingRoutine] = useState(null);
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
@@ -74,6 +91,18 @@ export default function RoutineManager() {
 
   const instances = instancesData?.data || [];
 
+  // The repeating rules behind those occurrences. Editing one of these is the
+  // single change that updates every future date it generated.
+  const { data: templatesData } = useQuery({
+    queryKey: ['routine', 'templates', scope.batch, scope.semester],
+    queryFn: () => routineApi.templates({
+      ...(scope.batch ? { batch: scope.batch } : {}),
+      ...(scope.semester ? { semester: scope.semester } : {}),
+    }),
+    enabled: Boolean(scope.batch || scope.semester),
+  });
+  const templates = templatesData?.data || [];
+
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['routine'] });
   };
@@ -89,6 +118,14 @@ export default function RoutineManager() {
   const remove = useMutation({
     mutationFn: (id) => routineApi.removeInstance(id),
     onSuccess: () => { toast('Entry deleted', 'success'); refresh(); },
+    onError,
+  });
+
+  // Hands a date back to the routine: the field stops being this date's own and
+  // the routine's current value is applied immediately.
+  const resetToRoutine = useMutation({
+    mutationFn: (row) => routineApi.updateInstance(row._id, { resetFields: row.overriddenFields || [] }),
+    onSuccess: () => { toast('Reset to the routine', 'success'); refresh(); },
     onError,
   });
 
@@ -156,6 +193,36 @@ export default function RoutineManager() {
         </Field>
       </div>
 
+      {/* The recurring rules generating the dates in the timetable. One edit here
+          reaches every future class, which is why it is kept separate from the
+          per-date actions below. */}
+      {scopeReady && templates.length > 0 && (
+        <div className="mb-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Recurring routines</h2>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+            {templates.map((routine) => (
+              <div key={routine._id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-800">{routine.course?.courseId || routine.course?.name || 'Course'}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {weekdayNames(routine.days)} · {routine.startTime}–{routine.endTime}
+                    {' · '}{routine.roomNumber || 'No room'}
+                    {' · '}{routine.startDate} → {routine.endDate}
+                    {routine.faculty?.name ? ` · ${routine.faculty.name}` : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingRoutine(routine)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Pencil size={15} /> Edit routine
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {showAdd && (
         <AddClassForm
           scope={scope}
@@ -205,7 +272,18 @@ export default function RoutineManager() {
                 return (
                   <tr key={row._id} className={cancelled ? 'opacity-60' : ''}>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                      {row.startTime}–{row.endTime}
+                      <span>{row.startTime}–{row.endTime}</span>
+                      {/* A date that was changed for itself, rather than
+                          cancelled, is still a class — the badge is what says it
+                          will survive the next routine edit. */}
+                      {row.overriddenFields?.length > 0 && (
+                        <span
+                          className="ml-2 inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 align-middle"
+                          title={`Changed for this date: ${row.overriddenFields.map(overrideLabel).join(', ')}`}
+                        >
+                          Changed
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800">{row.course?.courseId || row.course?.name}</p>
@@ -236,6 +314,15 @@ export default function RoutineManager() {
                             </button>
                           </>
                         )}
+                        {row.overriddenFields?.length > 0 && (
+                          <button
+                            onClick={() => resetToRoutine.mutate(row)}
+                            className="p-1.5 rounded text-slate-400 hover:text-brand-700 hover:bg-brand-50"
+                            title={`Reset this date to the routine (${row.overriddenFields.map(overrideLabel).join(', ')})`}
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
                         <button
                           onClick={() => remove.mutate(row._id)}
                           className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
@@ -260,6 +347,15 @@ export default function RoutineManager() {
           onDone={() => { setRescheduling(null); refresh(); }}
         />
       )}
+
+      {editingRoutine && (
+        <EditRoutineDialog
+          template={editingRoutine}
+          groupOptions={groupOptions}
+          onClose={() => setEditingRoutine(null)}
+          onDone={() => { setEditingRoutine(null); refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -282,23 +378,11 @@ function AddClassForm({ scope, date, courseOptions, groupOptions, onDone, onCanc
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({
-    course: '', group: 'BOTH', classType: 'REGULAR', deliveryMode: 'OFFLINE', onlineLink: '',
+    course: '', faculty: '', group: 'BOTH', classType: 'REGULAR', deliveryMode: 'OFFLINE', onlineLink: '',
     roomNumber: '', startTime: '10:00', endTime: '11:30',
     startDate: date, endDate: date, days: [],
   });
-
-  // The faculty member is inferred from the course (spec §42) — preselected when
-  // exactly one teaches it, and only changed deliberately.
-  const { data: facultyData } = useQuery({
-    queryKey: ['routine', 'faculty', form.course],
-    queryFn: () => routineApi.facultyForCourse(form.course),
-    enabled: Boolean(form.course),
-  });
-  const facultyOptions = (facultyData?.data || []).map((f) => ({ value: f._id, label: f.name }));
-  const [faculty, setFaculty] = useState('');
-
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const toggleDay = (d) => set({ days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d].sort() });
 
   const create = useMutation({
     mutationFn: () => routineApi.create({
@@ -307,7 +391,7 @@ function AddClassForm({ scope, date, courseOptions, groupOptions, onDone, onCanc
       semester: scope.semester,
       course: form.course,
       group: form.group,
-      faculty: faculty || undefined,
+      faculty: form.faculty || undefined,
       roomNumber: form.roomNumber,
       days: form.days,
       startDate: form.startDate,
@@ -344,21 +428,72 @@ function AddClassForm({ scope, date, courseOptions, groupOptions, onDone, onCanc
         <button type="button" onClick={onCancel} className="p-1 rounded text-slate-400 hover:text-slate-600"><X size={16} /></button>
       </div>
 
+      <RoutineFields form={form} set={set} courseOptions={courseOptions} groupOptions={groupOptions} />
+
+      <p className="text-xs text-slate-400 mt-2">
+        The server generates one entry per matching date in the range. Editing the routine later
+        updates every future date that has no individual change.
+      </p>
+
+      <div className="flex justify-end gap-2 mt-4">
+        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+        <button type="submit" disabled={!ready || create.isPending} className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+          {create.isPending ? 'Creating…' : 'Create routine'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The fields a recurring rule is made of, shared by the create form and the edit
+ * dialog so the two can never drift apart.
+ *
+ * Passing `courseLabel` renders the course read-only: a rule stays on the course
+ * it was created for, and everything else about it is editable.
+ */
+function RoutineFields({ form, set, courseOptions, groupOptions, courseLabel = null }) {
+  // The faculty member is inferred from the course (spec §42) — preselected when
+  // exactly one teaches it, and only changed deliberately.
+  const { data: facultyData } = useQuery({
+    queryKey: ['routine', 'faculty', form.course],
+    queryFn: () => routineApi.facultyForCourse(form.course),
+    enabled: Boolean(form.course),
+  });
+  const facultyOptions = (facultyData?.data || []).map((f) => ({ value: f._id, label: f.name }));
+
+  const toggleDay = (day) => set({
+    days: form.days.includes(day) ? form.days.filter((value) => value !== day) : [...form.days, day].sort(),
+  });
+
+  return (
+    <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <Field label="Course">
-          <SearchableSelect value={form.course} onChange={(v) => { set({ course: v }); setFaculty(''); }} options={courseOptions} placeholder="Select course" />
+          {courseLabel === null ? (
+            <SearchableSelect
+              value={form.course}
+              onChange={(value) => set({ course: value, faculty: '' })}
+              options={courseOptions}
+              placeholder="Select course"
+            />
+          ) : (
+            <p className="w-full h-11 sm:h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 flex items-center">
+              {courseLabel}
+            </p>
+          )}
         </Field>
         <Field label="Faculty">
           <SearchableSelect
-            value={faculty}
-            onChange={setFaculty}
+            value={form.faculty}
+            onChange={(value) => set({ faculty: value })}
             options={[{ value: '', label: 'Not assigned' }, ...facultyOptions]}
             placeholder={form.course ? 'Who teaches it' : 'Pick a course first'}
             disabled={!form.course}
           />
         </Field>
         <Field label="Group">
-          <SearchableSelect value={form.group} onChange={(v) => set({ group: v })} options={groupOptions} />
+          <SearchableSelect value={form.group} onChange={(value) => set({ group: value })} options={groupOptions} />
         </Field>
         <Field label="Class type">
           <select value={form.classType} onChange={(e) => set({ classType: e.target.value })} className={input}>
@@ -395,34 +530,143 @@ function AddClassForm({ scope, date, courseOptions, groupOptions, onDone, onCanc
       <div className="mt-3">
         <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Repeats on</span>
         <div className="flex flex-wrap gap-1.5">
-          {WEEKDAYS.map((d) => (
+          {WEEKDAYS.map((day) => (
             <button
-              key={d.value}
+              key={day.value}
               type="button"
-              onClick={() => toggleDay(d.value)}
+              onClick={() => toggleDay(day.value)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-                form.days.includes(d.value)
+                form.days.includes(day.value)
                   ? 'bg-brand-600 border-brand-600 text-white'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
               }`}
-              aria-pressed={form.days.includes(d.value)}
+              aria-pressed={form.days.includes(day.value)}
             >
-              {d.label}
+              {day.label}
             </button>
           ))}
         </div>
-        <p className="text-xs text-slate-400 mt-2">
-          The server generates one entry per matching date in the range, so a single cancellation later stays cancelled.
-        </p>
       </div>
+    </>
+  );
+}
 
-      <div className="flex justify-end gap-2 mt-4">
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-        <button type="submit" disabled={!ready || create.isPending} className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
-          {create.isPending ? 'Creating…' : 'Create routine'}
-        </button>
-      </div>
-    </form>
+/**
+ * Editing the rule behind a series — the one control that reaches beyond a single
+ * date, so it says so in plain words and asks how far back the change should go.
+ */
+function EditRoutineDialog({ template, groupOptions, onClose, onDone }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const [form, setForm] = useState({
+    course: template.course?._id || template.course || '',
+    faculty: template.faculty?._id || template.faculty || '',
+    group: template.group || 'BOTH',
+    classType: template.classType || 'REGULAR',
+    deliveryMode: template.deliveryMode || 'OFFLINE',
+    onlineLink: template.onlineLink || '',
+    roomNumber: template.roomNumber || '',
+    startTime: template.startTime,
+    endTime: template.endTime,
+    startDate: template.startDate,
+    endDate: template.endDate,
+    days: [...(template.days || [])],
+  });
+  const [applyFrom, setApplyFrom] = useState('all');
+  const [applyFromDate, setApplyFromDate] = useState(template.startDate);
+  const [notifyStudents, setNotifyStudents] = useState(false);
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  const courseLabel = [template.course?.courseId, template.course?.name].filter(Boolean).join(' — ');
+
+  const save = useMutation({
+    mutationFn: () => routineApi.updateTemplate(template._id, {
+      faculty: form.faculty || null,
+      group: form.group,
+      classType: form.classType,
+      deliveryMode: form.deliveryMode,
+      onlineLink: form.onlineLink,
+      roomNumber: form.roomNumber,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      days: form.days,
+      applyFrom,
+      ...(applyFrom === 'date' ? { applyFromDate } : {}),
+      notifyStudents,
+    }),
+    onSuccess: (res) => {
+      toast(res.message || 'Routine updated', 'success');
+      qc.invalidateQueries({ queryKey: ['routine'] });
+      onDone();
+    },
+    onError: (err) => toast(err?.response?.data?.message || 'Could not update the routine', 'error'),
+  });
+
+  const ready = form.days.length > 0 && form.startDate && form.endDate && form.startTime && form.endTime
+    && (form.deliveryMode === 'OFFLINE' || form.onlineLink);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 grid place-items-start sm:place-items-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
+      <form
+        onSubmit={(e) => { e.preventDefault(); save.mutate(); }}
+        className="w-full max-w-3xl bg-white rounded-xl p-5 my-8"
+      >
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="font-semibold text-slate-800">Update Routine</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Changing this routine will update future classes that don&apos;t have individual schedule changes.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 rounded text-slate-400 hover:text-slate-600"><X size={16} /></button>
+        </div>
+
+        <RoutineFields
+          form={form}
+          set={set}
+          courseOptions={[]}
+          groupOptions={groupOptions}
+          courseLabel={courseLabel || 'Course'}
+        />
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Apply change from">
+            <select value={applyFrom} onChange={(e) => setApplyFrom(e.target.value)} className={input}>
+              <option value="all">All future classes</option>
+              <option value="today">Today</option>
+              <option value="date">Selected date</option>
+              <option value="next">Next occurrence</option>
+              <option value="entire">Entire routine (including past)</option>
+            </select>
+          </Field>
+          {applyFrom === 'date' && (
+            <Field label="Start from date">
+              <input type="date" value={applyFromDate} onChange={(e) => setApplyFromDate(e.target.value)} className={input} required />
+            </Field>
+          )}
+        </div>
+
+        <label className="flex items-center gap-2 mt-3 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={notifyStudents}
+            onChange={(e) => setNotifyStudents(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          Notify students about the classes that actually change
+        </label>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="submit" disabled={!ready || save.isPending} className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+            {save.isPending ? 'Applying…' : 'Apply to Future Classes'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -546,9 +790,9 @@ function RescheduleDialog({ instance, onClose, onDone }) {
         onSubmit={(e) => { e.preventDefault(); move.mutate(); }}
         className="w-full max-w-md bg-white rounded-xl p-5"
       >
-        <h2 className="font-semibold text-slate-800 mb-1">Reschedule this class</h2>
+        <h2 className="font-semibold text-slate-800 mb-1">Edit {instance.date} class</h2>
         <p className="text-sm text-slate-500 mb-4">
-          {eventTitle({ course: instance.course, title: instance.course?.name })} · moves the {instance.date} occurrence only.
+          {eventTitle({ course: instance.course, title: instance.course?.name })} · changes will apply only to this specific class.
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -561,7 +805,7 @@ function RescheduleDialog({ instance, onClose, onDone }) {
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
           <button type="submit" disabled={move.isPending} className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
-            {move.isPending ? 'Moving…' : 'Move class'}
+            {move.isPending ? 'Saving…' : 'Save This Class'}
           </button>
         </div>
       </form>

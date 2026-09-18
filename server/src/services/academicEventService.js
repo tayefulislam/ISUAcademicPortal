@@ -124,6 +124,10 @@ function toView(doc, source, now) {
     state: eventStateFor({ status, startAt: doc.startAt, endAt: doc.endAt }, now),
     instructions: isRoutine ? '' : (doc.instructions || ''),
     templateId: isRoutine && doc.template ? String(doc.template) : null,
+    // Which fields this date was individually changed on. Empty means it is a
+    // pure copy of the routine, so a client can tell "changed for this date"
+    // apart from "as the routine says" without a second lookup.
+    overriddenFields: isRoutine ? (doc.overriddenFields || []) : [],
   };
 }
 

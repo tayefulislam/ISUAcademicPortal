@@ -29,6 +29,30 @@ export const DELIVERY_MODES = ['OFFLINE', 'ONLINE', 'HYBRID'];
 // touching the recurring template behind it.
 export const INSTANCE_STATUSES = ['NORMAL', 'CANCELLED', 'RESCHEDULED', 'SPECIAL'];
 
+// The fields an occurrence inherits from its routine and may individually
+// override. Anything absent from an instance's `overriddenFields` is a copy of
+// the routine's value and is rewritten whenever the routine changes — see
+// routineService.syncInstancesWithTemplate.
+//
+// `date` and `status` are deliberately NOT here: a date is the occurrence's own
+// identity rather than an inherited value, and a cancellation is an exception in
+// its own right.
+export const INHERITED_FIELDS = [
+  'group',
+  'faculty',
+  'roomNumber',
+  'startTime',
+  'endTime',
+  'classType',
+  'deliveryMode',
+  'onlineLink',
+];
+
+// How far back an edit to the routine reaches. `all` is "All future classes" and
+// is the default everywhere — history is only rewritten when the caller asks for
+// it explicitly with `entire`.
+export const APPLY_SCOPES = ['today', 'date', 'next', 'all', 'entire'];
+
 // The states a client renders, computed from the times rather than stored —
 // "in progress" is a fact about now, not something a write should decide.
 export const EVENT_STATES = ['UPCOMING', 'STARTING_SOON', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];

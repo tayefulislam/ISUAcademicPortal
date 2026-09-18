@@ -263,3 +263,45 @@ describe('exam reminders', () => {
     assert.equal(await Notification.countDocuments({ type: 'EXAM_REMINDER' }), 1);
   });
 });
+
+describe('reminder slots — each offset and each time is its own reminder', () => {
+  test('the 10-minute reminder is emitted as well as the 30-minute one', async () => {
+    await makeInstance({ startTime: '10:30' });
+
+    await runDueReminders(new Date('2026-09-20T10:00:00+06:00'));
+    assert.equal(await Notification.countDocuments({ type: 'CLASS_REMINDER' }), 1);
+
+    // The regression this guards: both offsets used to share the type
+    // CLASS_REMINDER and therefore the same idempotency row, so the 10-minute
+    // reminder was silently swallowed by the 30-minute one and never sent.
+    await runDueReminders(new Date('2026-09-20T10:20:00+06:00'));
+
+    const reminders = await Notification.find({ type: 'CLASS_REMINDER' });
+    assert.equal(reminders.length, 2, 'each offset is its own reminder');
+    const messages = reminders.map((row) => row.message).join(' | ');
+    assert.match(messages, /starts in 30 minutes/);
+    assert.match(messages, /starts in 10 minutes/);
+  });
+
+  test('a class that is moved gets a fresh reminder for its new time', async () => {
+    const instance = await makeInstance({ startTime: '10:00', endTime: '11:30' });
+    const originalStart = instance.startAt.toISOString();
+
+    await runDueReminders(new Date('2026-09-20T09:30:00+06:00'));
+    assert.equal(await Notification.countDocuments({ type: 'CLASS_REMINDER' }), 1, 'the 09:50 reminder for the 10:00 class');
+
+    instance.startTime = '14:00';
+    instance.endTime = '15:30';
+    await instance.save();
+
+    await runDueReminders(new Date('2026-09-20T13:30:00+06:00'));
+
+    const reminders = await Notification.find({ type: 'CLASS_REMINDER' });
+    assert.equal(reminders.length, 2, 'the new time must not be swallowed by the reminder already sent for the old one');
+    assert.ok(
+      reminders.some((row) => row.slot.includes(originalStart)),
+      'the reminder for the original time is still on record'
+    );
+    assert.match(reminders.map((row) => row.message).join(' | '), /at 14:00/);
+  });
+});

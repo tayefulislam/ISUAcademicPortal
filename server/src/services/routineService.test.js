@@ -10,7 +10,8 @@ import Settings, { getSettings } from '../models/Settings.js';
 import RoutineTemplate from '../models/RoutineTemplate.js';
 import ScheduleInstance from '../models/ScheduleInstance.js';
 import AcademicEvent from '../models/AcademicEvent.js';
-import { generateInstancesForTemplate, findConflicts } from './routineService.js';
+import { generateInstancesForTemplate, findConflicts, syncInstancesWithTemplate, applyBoundaryFor } from './routineService.js';
+import { combineDhakaDateTime } from '../utils/academicSchedule.js';
 
 // Recurrence expansion and the double-booking check.
 //
@@ -238,5 +239,148 @@ describe('template validation', () => {
     );
     const ok = await makeTemplate({ deliveryMode: 'ONLINE', onlineLink: 'https://meet.example/x' });
     assert.equal(ok.deliveryMode, 'ONLINE');
+  });
+});
+
+describe('routine -> occurrence synchronisation', () => {
+  /** A rule covering every day of a short range, so nothing here depends on which weekday a date falls on. */
+  async function makeDaily(overrides = {}) {
+    const template = await makeTemplate({
+      days: [0, 1, 2, 3, 4, 5, 6],
+      startDate: '2026-09-20',
+      endDate: '2026-09-22',
+      ...overrides,
+    });
+    await generateInstancesForTemplate(template, rahman._id);
+    return template;
+  }
+
+  test('editing the routine rewrites every inherited field on its occurrences', async () => {
+    const template = await makeDaily();
+    template.startTime = '14:00';
+    template.endTime = '15:30';
+    template.roomNumber = '777';
+    await template.save();
+
+    const result = await syncInstancesWithTemplate(template, { from: new Date(0), actorId: rahman._id });
+    assert.equal(result.updated, 3);
+
+    const rows = await ScheduleInstance.find({ template: template._id }).sort({ date: 1 });
+    for (const row of rows) {
+      assert.equal(row.startTime, '14:00');
+      assert.equal(row.endTime, '15:30');
+      assert.equal(row.roomNumber, '777');
+      assert.deepEqual(row.overriddenFields, [], 'a plain copy holds no overrides');
+    }
+    // The derived instant follows the wall-clock — that is what the widget and
+    // the reminder engine actually read.
+    assert.equal(rows[0].startAt.toISOString(), '2026-09-20T08:00:00.000Z');
+  });
+
+  test('a date that changed a field for itself keeps it while everything else follows', async () => {
+    const template = await makeDaily();
+
+    const target = await ScheduleInstance.findOne({ template: template._id, date: '2026-09-21' });
+    target.roomNumber = '603';
+    target.overriddenFields = ['roomNumber'];
+    await target.save();
+
+    template.startTime = '14:00';
+    template.endTime = '15:30';
+    template.roomNumber = '777';
+    await template.save();
+    await syncInstancesWithTemplate(template, { from: new Date(0), actorId: rahman._id });
+
+    const after = await ScheduleInstance.findOne({ template: template._id, date: '2026-09-21' });
+    assert.equal(after.roomNumber, '603', 'the override survives the routine edit');
+    assert.equal(after.startTime, '14:00', 'the field it did not change still inherits');
+  });
+
+  test('history is left alone unless the caller reaches back for it', async () => {
+    const template = await makeDaily();
+    template.startTime = '14:00';
+    template.endTime = '15:30';
+    await template.save();
+
+    const result = await syncInstancesWithTemplate(template, {
+      from: combineDhakaDateTime('2026-09-22', '00:00'),
+      actorId: rahman._id,
+    });
+
+    assert.equal(result.updated, 1, 'only the last date is in scope');
+    const first = await ScheduleInstance.findOne({ template: template._id, date: '2026-09-20' });
+    assert.equal(first.startTime, '10:00', 'the completed date keeps its history');
+  });
+
+  test('a date the rule no longer covers is removed while it is still a plain copy', async () => {
+    const template = await makeDaily();
+    template.days = [0]; // Sundays only
+    await template.save();
+
+    const result = await syncInstancesWithTemplate(template, { from: new Date(0), actorId: rahman._id });
+
+    assert.equal(result.removed, 2, 'the Monday and the Tuesday are gone');
+    const dates = (await ScheduleInstance.find({ template: template._id })).map((row) => row.date);
+    assert.deepEqual(dates, ['2026-09-20']);
+  });
+
+  test('a date carrying an exception survives its weekday being dropped', async () => {
+    const template = await makeDaily();
+
+    const keeping = await ScheduleInstance.findOne({ template: template._id, date: '2026-09-21' });
+    keeping.roomNumber = '603';
+    keeping.overriddenFields = ['roomNumber'];
+    await keeping.save();
+
+    template.days = [0];
+    await template.save();
+    const result = await syncInstancesWithTemplate(template, { from: new Date(0), actorId: rahman._id });
+
+    assert.equal(result.removed, 1, 'only the untouched date is removed');
+    assert.ok(await ScheduleInstance.findOne({ template: template._id, date: '2026-09-21' }));
+  });
+
+  test('is a no-op when the occurrences already match the rule', async () => {
+    const template = await makeDaily();
+    const result = await syncInstancesWithTemplate(template, { from: new Date(0), actorId: rahman._id });
+    assert.equal(result.updated, 0);
+    assert.equal(result.removed, 0);
+    assert.equal(result.changed.length, 0);
+  });
+});
+
+describe('apply scope', () => {
+  test('entire reaches back to the beginning of time', async () => {
+    const template = await makeTemplate();
+    assert.deepEqual(await applyBoundaryFor(template, { scope: 'entire' }), new Date(0));
+  });
+
+  test('the default is "from now" — all future classes', async () => {
+    const template = await makeTemplate();
+    const now = new Date('2026-09-20T10:00:00+06:00');
+    assert.deepEqual(await applyBoundaryFor(template, { now }), now);
+    assert.deepEqual(await applyBoundaryFor(template, { scope: 'all', now }), now);
+  });
+
+  test('today starts at the beginning of the Dhaka day', async () => {
+    const template = await makeTemplate();
+    const boundary = await applyBoundaryFor(template, { scope: 'today', now: new Date('2026-09-20T10:00:00+06:00') });
+    assert.equal(boundary.toISOString(), '2026-09-19T18:00:00.000Z');
+  });
+
+  test('date uses the chosen day, and a missing one is rejected', async () => {
+    const template = await makeTemplate();
+    const boundary = await applyBoundaryFor(template, { scope: 'date', date: '2026-10-04' });
+    assert.equal(boundary.toISOString(), '2026-10-03T18:00:00.000Z');
+
+    await assert.rejects(() => applyBoundaryFor(template, { scope: 'date' }), /applyFromDate/);
+  });
+
+  test('next is the start of the next occurrence', async () => {
+    const template = await makeTemplate();
+    await generateInstancesForTemplate(template, rahman._id);
+
+    const boundary = await applyBoundaryFor(template, { scope: 'next', now: new Date('2026-09-25T00:00:00Z') });
+    assert.equal(boundary.toISOString(), '2026-09-27T04:00:00.000Z');
   });
 });

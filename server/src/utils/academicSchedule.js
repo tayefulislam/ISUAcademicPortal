@@ -65,10 +65,11 @@ export function eachDateInclusive(startDate, endDate) {
   const end = Date.UTC(ey, em - 1, ed);
   if (Number.isNaN(cursor) || Number.isNaN(end) || cursor > end) return dates;
 
-  // Guard against an unbounded range: a year of daily slots is far more than
-  // any real timetable, and a typo'd end date should not materialise thousands
-  // of documents.
-  const MAX_DAYS = 366;
+  // Guard against an unbounded range: a few years of slots is far more than any
+  // real timetable, and a typo'd end date should not materialise thousands of
+  // documents. Kept high enough that extending a rule to the end of an academic
+  // programme still materialises the whole tail.
+  const MAX_DAYS = 1100;
   for (let i = 0; i <= MAX_DAYS && cursor <= end; i += 1) {
     dates.push(new Date(cursor).toISOString().slice(0, 10));
     cursor += MS_PER_DAY;

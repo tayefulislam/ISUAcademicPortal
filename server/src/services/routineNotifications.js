@@ -31,14 +31,16 @@ export function eventVars(entry, extra = {}) {
  * Notifies the students an occurrence concerns.
  *
  * Idempotency is the existing Notification unique index
- * ({recipient, type, entityType, entityId}) — the occurrence id is the entity,
- * so a retried cancel/reschedule cannot double-send.
+ * ({recipient, type, entityType, entityId, slot}) — the occurrence id is the
+ * entity, so a retried cancel/reschedule cannot double-send. Reminders pass a
+ * `slot` (offset + effective start) so the several reminders one class produces
+ * over time are distinct rows, and a moved class gets a fresh one.
  *
  * `AcademicEvent` documents carry their own `eventType` field and routine
  * occurrences do not, which is what distinguishes the two here without every
  * caller having to say which collection it loaded from.
  */
-export async function notifyOccurrence(entry, type, { actorId = null, entityType = null, extraVars = {} } = {}) {
+export async function notifyOccurrence(entry, type, { actorId = null, entityType = null, extraVars = {}, slot = '' } = {}) {
   const recipients = await resolveRoutineAudience({
     course: entry.course?._id || entry.course || null,
     // Only used when the entry has no course (a general academic event).
@@ -59,6 +61,7 @@ export async function notifyOccurrence(entry, type, { actorId = null, entityType
     actorId,
     entityType: resolvedEntityType,
     entityId: entry._id,
+    slot,
     course: entry.course?._id || entry.course || null,
     department: entry.department?._id || entry.department || null,
     vars: eventVars(entry, extraVars),

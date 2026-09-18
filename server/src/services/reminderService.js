@@ -7,18 +7,34 @@ import { addMinutes, formatInAppTimezone, dhakaClock } from '../utils/academicSc
 // as a *pure function of now* that a cron hit drives — every run recomputes
 // what is due rather than relying on a timer having fired.
 //
-// Idempotency is the Notification unique index, not bookkeeping here: each
-// reminder offset is its own notification TYPE (CLASS_REMINDER for 30 minutes,
-// CLASS_STARTING for 0), so re-running the endpoint inside the same window
-// re-attempts the insert and the duplicate is rejected by the index. That means
-// a missed cron tick is harmless — the next one still catches the window — and
+// Idempotency is the Notification unique index, not bookkeeping here: every
+// reminder carries a `slot` of its offset plus the instant it counts down to
+// (see reminderSlot below), so re-running the endpoint inside the same window
+// re-attempts the insert and the duplicate is rejected by the index. A missed
+// cron tick is therefore harmless — the next one still catches the window — and
 // a duplicated tick cannot double-notify.
+//
+// Two offsets for one class are two different slots, so the 30- and 10-minute
+// reminders are genuinely separate notifications; and once a class is moved its
+// reminder counts down to a different instant, so a new reminder is created
+// rather than being swallowed by the one that has already fired. That is the
+// invalidate-then-recreate behaviour the spec asks for.
 
 export const REMINDER_OFFSETS = [
   { minutesBefore: 30, type: 'CLASS_REMINDER' },
   { minutesBefore: 10, type: 'CLASS_REMINDER' },
   { minutesBefore: 0, type: 'CLASS_STARTING' },
 ];
+
+/**
+ * The idempotency slot for one reminder: the offset plus the instant the class
+ * actually starts. Deterministic, so the same tick in the same window is a
+ * no-op; different for the same offset once the class has moved, so the reminder
+ * for the new time cannot be mistaken for the one already sent for the old.
+ */
+function reminderSlot(minutesBefore, startAt) {
+  return `${minutesBefore}@${new Date(startAt).toISOString()}`;
+}
 
 /**
  * The window to scan. Deliberately a little wider than the offsets themselves:
@@ -63,6 +79,7 @@ export async function runDueReminders(now = new Date()) {
     let pushed = 0;
     for (const entry of due) {
       const result = await notifyOccurrence(entry, type, {
+        slot: reminderSlot(minutesBefore, entry.startAt),
         extraVars: {
           minutesBefore,
           // The clock time; the 0-minute template phrases itself as
@@ -102,6 +119,8 @@ export async function runExamReminders(now = new Date()) {
   let sent = 0;
   for (const entry of events) {
     const result = await notifyOccurrence(entry, 'EXAM_REMINDER', {
+      // A day-ahead reminder is one slot per exam; a moved exam gets its own.
+      slot: reminderSlot(24 * 60, entry.startAt),
       extraVars: {
         title: entry.title,
         when: formatInAppTimezone(entry.startAt),
