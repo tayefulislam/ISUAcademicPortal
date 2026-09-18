@@ -1,19 +1,25 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Pencil } from 'lucide-react';
+import { Plus, Trash2, Pencil, Search } from 'lucide-react';
 import { departmentApi, courseApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 
 const empty = { name: '', courseId: '', department: '', credit: 3, semester: '', description: '' };
 
 export default function AdminCourses() {
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
+  const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q, 300);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
-  const { data, isLoading } = useQuery({ queryKey: ['all-courses'], queryFn: () => courseApi.list({ limit: 500 }) });
+  const { data, isLoading } = useQuery({
+    queryKey: ['all-courses', debouncedQ],
+    queryFn: () => courseApi.list({ q: debouncedQ || undefined, limit: 500 }),
+  });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -77,8 +83,20 @@ export default function AdminCourses() {
       </div>
 
       <div className="lg:col-span-2 space-y-2">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by course name or course ID..."
+            className="input"
+            style={{ paddingLeft: '2.25rem' }}
+          />
+        </div>
         {isLoading ? (
           <p className="text-slate-400">Loading...</p>
+        ) : (data?.data || []).length === 0 ? (
+          <p className="text-slate-400">{q.trim() ? `No courses matched "${q.trim()}".` : 'No courses yet.'}</p>
         ) : (
           (data?.data || []).map((c) => (
             <div key={c._id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">

@@ -1,21 +1,28 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Plus, Pencil, ShieldCheck, ShieldOff, Search } from 'lucide-react';
 import { superAdminApi, departmentApi, courseApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDate } from '../../utils/format.js';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 
 const empty = { name: '', email: '', password: '', assignedDepartments: [], assignedCourses: [] };
 
 export default function SuperAdminFaculty() {
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
+  const [q, setQ] = useState('');
+  const [courseQuery, setCourseQuery] = useState('');
+  const debouncedQ = useDebouncedValue(q, 300);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
   const { data: courses } = useQuery({ queryKey: ['all-courses'], queryFn: () => courseApi.list({ limit: 500 }) });
-  const { data, isLoading } = useQuery({ queryKey: ['faculty-list'], queryFn: superAdminApi.listFaculty });
+  const { data, isLoading } = useQuery({
+    queryKey: ['faculty-list', debouncedQ],
+    queryFn: () => superAdminApi.listFaculty({ q: debouncedQ || undefined }),
+  });
 
   const toggleIn = (key) => (id) => {
     setForm((f) => ({ ...f, [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id] }));
@@ -68,6 +75,10 @@ export default function SuperAdminFaculty() {
   };
 
   const faculty = data?.data || [];
+  const courseTerm = courseQuery.trim().toLowerCase();
+  const filteredCourses = (courses?.data || []).filter((c) =>
+    !courseTerm || `${c.courseId} ${c.name}`.toLowerCase().includes(courseTerm)
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -116,19 +127,33 @@ export default function SuperAdminFaculty() {
 
           <div>
             <p className="text-xs font-semibold text-slate-500 mb-1.5">Assigned Courses</p>
-            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-              {(courses?.data || []).map((c) => (
-                <button
-                  type="button"
-                  key={c._id}
-                  onClick={() => toggleIn('assignedCourses')(c._id)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                    form.assignedCourses.includes(c._id) ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-300 text-slate-600'
-                  }`}
-                >
-                  {c.courseId}
-                </button>
-              ))}
+            <div className="relative mb-2">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={courseQuery}
+                onChange={(e) => setCourseQuery(e.target.value)}
+                placeholder="Search courses by ID or name..."
+                className="input"
+                style={{ paddingLeft: '2.25rem' }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+              {filteredCourses.length === 0 ? (
+                <p className="text-xs text-slate-400">No courses matched.</p>
+              ) : (
+                filteredCourses.map((c) => (
+                  <button
+                    type="button"
+                    key={c._id}
+                    onClick={() => toggleIn('assignedCourses')(c._id)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                      form.assignedCourses.includes(c._id) ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-300 text-slate-600'
+                    }`}
+                  >
+                    {c.courseId} | {c.name}
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
@@ -144,10 +169,20 @@ export default function SuperAdminFaculty() {
       </div>
 
       <div className="lg:col-span-2 space-y-2">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search faculty by name or email..."
+            className="input"
+            style={{ paddingLeft: '2.25rem' }}
+          />
+        </div>
         {isLoading ? (
           <p className="text-slate-400">Loading...</p>
         ) : faculty.length === 0 ? (
-          <p className="text-slate-400">No faculty accounts yet.</p>
+          <p className="text-slate-400">{q.trim() ? `No faculty matched "${q.trim()}".` : 'No faculty accounts yet.'}</p>
         ) : (
           faculty.map((f) => (
             <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3">

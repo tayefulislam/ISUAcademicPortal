@@ -6,6 +6,7 @@ import Semester from '../models/Semester.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
+import { sanitizeQuery } from '../utils/textSearch.js';
 import { getEffectiveCourseIds } from '../services/courseAccessService.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
@@ -110,11 +111,19 @@ export const getCourseBatches = asyncHandler(async (req, res) => {
   });
 });
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const listCourses = asyncHandler(async (req, res) => {
   const { department } = req.query;
   const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50 });
   const filter = { status: 'active' };
   if (department) filter.department = department;
+  // Search box: a course's name or its human code ("CSE-203").
+  const q = sanitizeQuery(req.query.q);
+  if (q) {
+    const re = new RegExp(escapeRegex(q), 'i');
+    filter.$or = [{ name: re }, { courseId: re }];
+  }
 
   const [courses, total] = await Promise.all([
     Course.find(filter).populate('department', 'name code').sort({ name: 1 }).skip(skip).limit(limit),
