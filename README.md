@@ -677,6 +677,11 @@ app, and no parallel auth, storage or notification system.
   fields to portal data or to student input, position them on an A4 canvas and
   publish. New categories, department- and course-specific templates and new
   versions need no code change.
+- **A real visual editor.** Drag elements in from a palette (text, dynamic field,
+  image/logo, rule), move and snap them on the A4 page, align, reorder (bring to
+  front / send to back), and save as a new version. Images come from the server's
+  `img/` folder — the university logo is drag-and-droppable straight onto a
+  design.
 - **Nothing official is editable.** Student name, Student ID, batch, group,
   department, course code/name and teacher are resolved **server-side** from the
   authenticated user's own records; the client can never submit them.

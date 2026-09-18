@@ -7,6 +7,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { storeTemplateSource, getTemplateSourceStream, deleteTemplateSource } from '../services/storage/storageService.js';
 import { normalizeFields } from '../services/documents/normalizeFields.js';
 import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS } from '../services/documents/fieldSources.js';
+import { listAssets, readAssetBuffer, assetMimeType, isAssetFileName } from '../services/documents/assets.js';
 import { getSafeExtension } from '../utils/fileTypes.js';
 
 // A template's reference design may only be a PDF or a raster image — those are
@@ -116,6 +117,35 @@ export const getMetadata = asyncHandler(async (req, res) => {
       dateFormats: ['', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD MMM YYYY', 'MMMM D, YYYY', 'YYYY-MM-DD'],
     },
   });
+});
+
+/**
+ * The images a template may place — the university logo and anything else in the
+ * server's `img/` folder. Listed by name (not uploaded through a template), so
+ * the same logo can be used by many designs and a change to it is a file
+ * replacement rather than an edit to each one.
+ */
+export const getAssets = asyncHandler(async (req, res) => {
+  const assets = await listAssets();
+  res.json({
+    success: true,
+    data: assets.map((asset) => ({
+      ...asset,
+      url: `/api/admin/document-assets/${encodeURIComponent(asset.name)}`,
+    })),
+  });
+});
+
+/** Streams one image for the editor (the canvas background and the picker). */
+export const streamAsset = asyncHandler(async (req, res) => {
+  const name = String(req.params.name || '');
+  if (!isAssetFileName(name)) throw new ApiError(400, 'Invalid image name');
+
+  const buffer = await readAssetBuffer(name);
+  res.setHeader('Content-Type', assetMimeType(name));
+  // Private: these are fetched with the caller's token, and a logo rarely changes.
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.send(buffer);
 });
 
 export const listTemplates = asyncHandler(async (req, res) => {

@@ -3,7 +3,7 @@
 // modules (for rendering/validation) without dragging Mongoose into a unit test.
 
 /** The kinds of field a template can define. */
-export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC'];
+export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC', 'LINE'];
 
 /**
  * Every value a field's `source` may take. Each one is resolved server-side

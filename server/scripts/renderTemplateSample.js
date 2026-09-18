@@ -10,6 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { renderHtml } from '../src/services/documents/templateEngine.js';
 import { buildRenderData } from '../src/services/documents/fieldResolver.js';
+import { assetDataUris } from '../src/services/documents/assets.js';
 import { experimentCoverFields } from '../src/utils/seedDocumentTemplates.js';
 
 const context = {
@@ -36,8 +37,11 @@ const inputData = {
 
 const fields = experimentCoverFields();
 const { values } = buildRenderData({ fields, context, inputData });
+// The logo (and any other image element) is embedded from the server's img/
+// folder — the same path the worker takes.
+const assets = await assetDataUris(fields);
 const version = { pageSize: 'A4', orientation: 'portrait', styleConfig: {}, fields };
-const html = renderHtml(version, values, { title: 'ISU Experiment Cover' });
+const html = renderHtml(version, values, { title: 'ISU Experiment Cover', assets });
 
 const htmlPath = path.resolve(process.cwd(), 'document-sample.html');
 await fs.writeFile(htmlPath, html);

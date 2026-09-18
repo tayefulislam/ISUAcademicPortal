@@ -40,6 +40,7 @@ import documentRoutes from './documentRoutes.js';
 import documentTemplateRoutes from './documentTemplateRoutes.js';
 import documentCategoryRoutes from './documentCategoryRoutes.js';
 import adminDocumentRoutes from './adminDocumentRoutes.js';
+import adminDocumentAssetRoutes from './adminDocumentAssetRoutes.js';
 
 const router = Router();
 
@@ -60,6 +61,7 @@ router.use('/files', fileRoutes);
 // Document Generator. The /admin/... router is mounted BEFORE the generic /admin
 // router so its path is matched first and never swallowed by it.
 router.use('/admin/document-templates', adminDocumentRoutes);
+router.use('/admin/document-assets', adminDocumentAssetRoutes);
 router.use('/document-categories', documentCategoryRoutes);
 router.use('/document-templates', documentTemplateRoutes);
 router.use('/documents', documentRoutes);
