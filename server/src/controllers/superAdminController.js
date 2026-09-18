@@ -433,7 +433,15 @@ const FACULTY_POPULATE = [
 ];
 
 export const listFaculty = asyncHandler(async (req, res) => {
-  const faculty = await User.find({ role: 'faculty' }).populate(FACULTY_POPULATE).sort({ createdAt: -1 });
+  const filter = { role: 'faculty' };
+  // Search box: matches the faculty member's name or email, the same two
+  // fields the users list searches.
+  const q = sanitizeQuery(req.query.q);
+  if (q) {
+    const re = new RegExp(escapeRegex(q), 'i');
+    filter.$or = [{ name: re }, { email: re }];
+  }
+  const faculty = await User.find(filter).populate(FACULTY_POPULATE).sort({ createdAt: -1 });
   res.json({ success: true, data: faculty.map((f) => f.toSafeObject()) });
 });
 

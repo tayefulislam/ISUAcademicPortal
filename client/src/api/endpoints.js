@@ -426,7 +426,7 @@ export const superAdminApi = {
   updateSettings: (data) => api.patch('/super-admin/settings', data).then((r) => r.data),
 
   // ----- Faculty management -----
-  listFaculty: () => api.get('/super-admin/faculty').then((r) => r.data),
+  listFaculty: (params) => api.get('/super-admin/faculty', { params }).then((r) => r.data),
   createFaculty: (data) => api.post('/super-admin/faculty', data).then((r) => r.data),
   updateFaculty: (id, data) => api.patch(`/super-admin/faculty/${id}`, data).then((r) => r.data),
 
