@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bookmark, KeyRound, Pencil } from 'lucide-react';
-import { profileApi, authApi, departmentApi, batchApi, semesterApi } from '../api/endpoints.js';
+import { profileApi, authApi, departmentApi, batchApi, semesterApi, routineApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatDate } from '../utils/format.js';
@@ -29,6 +29,15 @@ export default function Profile() {
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
 
+  // The configured class groups. Editable here, unlike Department/Batch: a group
+  // only decides which part of the student's OWN batch's timetable they are shown,
+  // so it is theirs to state — and to correct if they got it wrong at registration.
+  const { data: groupsData } = useQuery({ queryKey: ['routine', 'groups'], queryFn: routineApi.groups });
+  const groupOptions = (groupsData?.data?.groups || []).map((g) => ({
+    value: g,
+    label: g === 'BOTH' ? 'Both (whole batch)' : g,
+  }));
+
   useEffect(() => {
     if (profile && !form) {
       setForm({
@@ -38,6 +47,7 @@ export default function Profile() {
         department: profile.department?._id || '',
         batch: profile.batch?._id || '',
         semester: profile.semester?._id || '',
+        group: profile.group || '',
       });
     }
   }, [profile, form]);
@@ -104,6 +114,7 @@ export default function Profile() {
             <Detail label="Department" value={profile.department ? `${profile.department.name} (${profile.department.code})` : '-'} />
             <Detail label="Batch" value={profile.batch?.name || '-'} />
             <Detail label="Semester" value={profile.semester?.name || '-'} />
+            <Detail label="Group" value={groupLabel(profile.group)} />
             <Detail label="Joined" value={formatDate(profile.createdAt)} />
           </div>
         ) : (
@@ -149,6 +160,18 @@ export default function Profile() {
                 <select value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} className="input">
                   <option value="">Select</option>
                   {(semesters?.data || []).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Group">
+                <select value={form.group} onChange={(e) => setForm({ ...form, group: e.target.value })} className="input">
+                  <option value="">Select</option>
+                  {groupOptions.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                  {/* Keep whatever is stored selectable even if the list has not
+                      loaded (or no longer offers it): a select that silently shows
+                      nothing is how a group gets blanked by accident. */}
+                  {form.group && !groupOptions.some((g) => g.value === form.group) && (
+                    <option value={form.group}>{form.group}</option>
+                  )}
                 </select>
               </Field>
             </div>
@@ -226,6 +249,12 @@ function Detail({ label, value }) {
       <p className="text-slate-700 font-medium">{value}</p>
     </div>
   );
+}
+
+/** "A1" reads as itself; BOTH is the whole batch and should say so. */
+function groupLabel(value) {
+  if (!value) return '-';
+  return value === 'BOTH' ? 'Both (whole batch)' : value;
 }
 
 function Field({ label, children }) {

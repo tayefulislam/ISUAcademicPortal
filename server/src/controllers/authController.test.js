@@ -1,8 +1,9 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import mongoose from 'mongoose';
 import { connectTestDb, dropAndDisconnect, clearCollections } from '../test/dbTestUtils.js';
 import User from '../models/User.js';
-import Settings, { updateSettings } from '../models/Settings.js';
+import Settings, { getSettings, updateSettings } from '../models/Settings.js';
 // Registered for their side effect: login()/me() return the user's placement
 // refs populated, and populate() throws MissingSchemaError unless the target
 // models have been loaded. The app loads every model through routes/index.js;
@@ -10,7 +11,7 @@ import Settings, { updateSettings } from '../models/Settings.js';
 import '../models/Department.js';
 import '../models/Batch.js';
 import '../models/Semester.js';
-import { login, emailDomainMatches, isOfficialUniversityEmail, maybeAutoApproveStudent } from './authController.js';
+import { login, register, emailDomainMatches, isOfficialUniversityEmail, maybeAutoApproveStudent } from './authController.js';
 
 // Exercises login() directly (not through Express/supertest) against a real,
 // disposable local MongoDB — same convention as recipientResolver.test.js —
@@ -291,5 +292,67 @@ describe('maybeAutoApproveStudent — Automatic Student Approval (spec Part 1 / 
     const s = await mkPendingStudent({ email: 'student@isu.ac.bd', emailVerified: true, rejectionReason: 'old reason' });
     await maybeAutoApproveStudent(s, { officialEmailDomains: ['isu.ac.bd'] }, {});
     assert.equal(s.rejectionReason, '');
+  });
+});
+
+// The student's class group within their batch (BOTH / A1 / A2 …) decides which
+// part of the batch's timetable they are shown. Registration is where a student
+// already declares their own placement, so it has to be captured here: left on the
+// default for everyone, the group axis matches nobody in particular and a
+// group-split routine is invisible to every student in the batch.
+describe('register — class group', () => {
+  // Valid ObjectIds for the placement refs, which the controller stores as given
+  // (the route's express-validator is what requires them to be present).
+  const audience = () => ({
+    department: new mongoose.Types.ObjectId().toString(),
+    batch: new mongoose.Types.ObjectId().toString(),
+    semester: new mongoose.Types.ObjectId().toString(),
+  });
+
+  async function callRegister(body) {
+    const req = { body, ip: '127.0.0.1' };
+    const res = fakeRes();
+    let error;
+    await register(req, res, (err) => {
+      error = err;
+    });
+    return { res, error };
+  }
+
+  beforeEach(async () => {
+    // Registration is what is under test, not the OTP step — and turning it off
+    // keeps the test offline and deterministic.
+    const settings = await getSettings();
+    settings.otpVerificationEnabled = false;
+    await settings.save();
+  });
+
+  test('stores a configured group, normalized to upper case', async () => {
+    const { error } = await callRegister({
+      ...audience(), name: 'A', email: 'group-a@test.local', password: 'password123', group: 'a1',
+    });
+
+    assert.equal(error, undefined);
+    const user = await User.findOne({ email: 'group-a@test.local' });
+    assert.equal(user.group, 'A1');
+  });
+
+  test('an omitted group stays "the whole batch", so an older client still registers', async () => {
+    const { error } = await callRegister({
+      ...audience(), name: 'B', email: 'group-b@test.local', password: 'password123',
+    });
+
+    assert.equal(error, undefined);
+    const user = await User.findOne({ email: 'group-b@test.local' });
+    assert.equal(user.group, 'BOTH');
+  });
+
+  test('rejects a group that is not configured, and creates nothing', async () => {
+    const { error } = await callRegister({
+      ...audience(), name: 'C', email: 'group-c@test.local', password: 'password123', group: 'ZZ9',
+    });
+
+    assert.equal(error?.statusCode, 400);
+    assert.equal(await User.countDocuments({ email: 'group-c@test.local' }), 0);
   });
 });

@@ -7,11 +7,14 @@ import Course from '../models/Course.js';
 import Batch from '../models/Batch.js';
 import Semester from '../models/Semester.js';
 import CourseEnrollment from '../models/CourseEnrollment.js';
+import Notification from '../models/Notification.js';
 import {
   derivedRegularEnrollments,
   listMyEnrollments,
   listMyActiveEnrollments,
   listMyPendingEnrollments,
+  createEnrollmentDirect,
+  bulkEnrollRegular,
 } from './courseEnrollmentController.js';
 
 // A student's CourseEnrollment rows only ever hold the explicit grants
@@ -61,7 +64,7 @@ async function invoke(handler, req) {
 }
 
 beforeEach(async () => {
-  await clearCollections(User, Department, Course, Batch, Semester, CourseEnrollment);
+  await clearCollections(User, Department, Course, Batch, Semester, CourseEnrollment, Notification);
 
   deptA = await Department.create({ name: 'Computer Science', code: 'CSE' });
   deptB = await Department.create({ name: 'Electrical Engineering', code: 'EEE' });
@@ -191,5 +194,70 @@ describe('listMine', () => {
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].enrollmentType, 'backlog');
     assert.ok(!body.data.some((row) => row.derived), 'derived rows are active, never pending');
+  });
+});
+
+/** Polls for a row the controller writes fire-and-forget (it must not block the response). */
+async function waitFor(fn, { tries = 40, delayMs = 25 } = {}) {
+  for (let i = 0; i < tries; i += 1) {
+    const found = await fn();
+    if (found) return found;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return null;
+}
+
+describe('staff-initiated enrollment', () => {
+  test('a direct enrollment tells the student they are now enrolled', async () => {
+    const admin = await User.create({
+      name: 'Admin', email: `admin-${Math.random().toString(36).slice(2)}@test.local`,
+      password: 'password123', role: 'admin',
+    });
+
+    await invoke(createEnrollmentDirect, {
+      user: admin,
+      body: {
+        studentId: String(student._id),
+        courseId: String(courseA1._id),
+        enrollmentType: 'extra',
+        academicYear: '2026-2027',
+        semesterId: String(semester._id),
+      },
+    });
+
+    // The path had no notification at all before: no request, so neither
+    // JOIN_REQUEST nor JOIN_REQUEST_APPROVED applies.
+    const notice = await waitFor(() =>
+      Notification.findOne({ recipient: student._id, type: 'COURSE_ENROLLED' })
+    );
+    assert.ok(notice, 'the student must be told they were enrolled');
+    assert.equal(notice.url, `/student/courses/${courseA1._id}`);
+  });
+
+  test('bulk regular enrollment notifies every student it enrolls', async () => {
+    const admin = await User.create({
+      name: 'Admin', email: `admin-${Math.random().toString(36).slice(2)}@test.local`,
+      password: 'password123', role: 'admin',
+    });
+    const other = await User.create({
+      name: 'Other', email: `other-${Math.random().toString(36).slice(2)}@test.local`,
+      password: 'password123', role: 'student', department: deptA._id, batch: batch._id, semester: semester._id,
+    });
+
+    await invoke(bulkEnrollRegular, {
+      user: admin,
+      body: {
+        courseId: String(courseA2._id),
+        batchId: String(batch._id),
+        semesterId: String(semester._id),
+        academicYear: '2026-2027',
+      },
+    });
+
+    const notified = await waitFor(async () => {
+      const count = await Notification.countDocuments({ type: 'COURSE_ENROLLED' });
+      return count === 2 ? count : null;
+    });
+    assert.equal(notified, 2, 'both students in the batch are told');
   });
 });

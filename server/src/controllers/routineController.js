@@ -9,7 +9,7 @@ import { getSettings } from '../models/Settings.js';
 import { isSuperAdminTier } from '../models/Role.js';
 import { assertFacultyCourseAccess, facultyCourseClause } from '../services/teachingService.js';
 import { generateInstancesForTemplate, findConflicts, syncInstancesWithTemplate, applyBoundaryFor, withInheritedValues } from '../services/routineService.js';
-import { notifyOccurrence } from '../services/routineNotifications.js';
+import { notifyOccurrence, changeSlot, purgePendingReminders, purgePendingRemindersFor } from '../services/routineNotifications.js';
 import { resolveFacultyForCourse } from '../services/notifications/recipientResolver.js';
 import {
   audienceFilterFor,
@@ -367,6 +367,10 @@ export const updateTemplate = asyncHandler(async (req, res) => {
   const from = await applyBoundaryFor(template, { scope: applyFrom, date: req.body.applyFromDate, now: new Date() });
   const synced = await syncInstancesWithTemplate(template, { from, actorId: req.user._id });
 
+  // A date the edit removed takes its pending reminders with it — otherwise a
+  // "starts in 30 minutes" for a class that no longer exists stays in the list.
+  await purgePendingRemindersFor(synced.removedIds);
+
   if (req.body.notifyStudents === true || req.body.notifyStudents === 'true') {
     await notifyRoutineChanges(synced.changed, req.user._id);
   }
@@ -399,14 +403,18 @@ async function notifyRoutineChanges(changes, actorId) {
     const roomChanged = change.fields.includes('roomNumber');
     if (!moved && !roomChanged) continue;
 
+    // `slot` carries the change's resulting state, so a later edit of the same
+    // date is a new notification rather than being swallowed by this one.
     if (moved) {
       await notifyOccurrence(instance, 'CLASS_RESCHEDULED', {
         actorId,
+        slot: changeSlot(instance, change.fields),
         extraVars: { when: formatInAppTimezone(instance.startAt) },
       });
     } else {
       await notifyOccurrence(instance, 'CLASS_ROOM_CHANGED', {
         actorId,
+        slot: changeSlot(instance, change.fields),
         extraVars: {
           when: formatInAppTimezone(instance.startAt),
           fromRoom: change.before?.roomNumber || 'TBA',
@@ -430,10 +438,14 @@ export const deleteTemplate = asyncHandler(async (req, res) => {
 
   // Past dates stay: a student's history of attended classes should not vanish
   // because the rule behind it was retired.
-  const removed = await ScheduleInstance.deleteMany({
+  const future = await ScheduleInstance.find({
     template: template._id,
     startAt: { $gte: new Date() },
-  });
+  }).select('_id');
+  const removed = await ScheduleInstance.deleteMany({ _id: { $in: future.map((row) => row._id) } });
+
+  // Their pending reminders go too — the classes are not happening.
+  await purgePendingRemindersFor(future.map((row) => row._id));
 
   res.json({ success: true, message: 'Routine retired', data: { removedFutureOccurrences: removed.deletedCount } });
 });
@@ -454,7 +466,15 @@ export const updateInstance = asyncHandler(async (req, res) => {
   if (!instance) throw new ApiError(404, 'Schedule entry not found');
   await assertScheduleScope(req.user, instance.course._id || instance.course);
 
-  const previousRoom = instance.roomNumber;
+  // What the date held before this edit, so the notification can describe what
+  // actually changed rather than what merely appeared in the body.
+  const previous = {
+    roomNumber: instance.roomNumber,
+    startTime: instance.startTime,
+    endTime: instance.endTime,
+    date: instance.date,
+    status: instance.status,
+  };
   const supplied = INHERITED_FIELDS.filter((field) => req.body[field] !== undefined);
 
   for (const key of ['roomNumber', 'faculty', 'classType', 'deliveryMode', 'onlineLink', 'note', 'status']) {
@@ -492,12 +512,41 @@ export const updateInstance = asyncHandler(async (req, res) => {
 
   await instance.save();
 
-  // A moved room is its own notification — it is the change students most often
-  // miss, and the spec calls it out separately.
-  if (previousRoom && instance.roomNumber && previousRoom !== instance.roomNumber) {
+  // One date can change its room, its time or its status in a single PATCH, and
+  // each is worth telling students about — a time change and a cancellation used
+  // to notify nobody at all, even though the dedicated endpoints do. Any pending
+  // reminder is dropped first: a countdown to the old time or room is now false.
+  const changedFields = ['roomNumber', 'startTime', 'endTime', 'date']
+    .filter((field) => previous[field] !== instance[field]);
+  const becameCancelled = previous.status !== 'CANCELLED' && instance.status === 'CANCELLED';
+  const moved = changedFields.some((field) => field === 'startTime' || field === 'endTime' || field === 'date');
+
+  if (changedFields.length || becameCancelled) {
+    await purgePendingReminders(instance);
+  }
+
+  if (becameCancelled) {
+    await notifyOccurrence(instance, 'CLASS_CANCELLED', {
+      actorId: req.user._id,
+      slot: changeSlot(instance, ['status']),
+      extraVars: { when: formatInAppTimezone(instance.startAt) },
+    });
+  } else if (moved) {
+    await notifyOccurrence(instance, 'CLASS_RESCHEDULED', {
+      actorId: req.user._id,
+      slot: changeSlot(instance, changedFields),
+      extraVars: { when: formatInAppTimezone(instance.startAt) },
+    });
+  } else if (changedFields.includes('roomNumber')) {
+    // A moved room is its own notification — the change students most often miss.
     await notifyOccurrence(instance, 'CLASS_ROOM_CHANGED', {
       actorId: req.user._id,
-      extraVars: { fromRoom: previousRoom, toRoom: instance.roomNumber, when: formatInAppTimezone(instance.startAt) },
+      slot: changeSlot(instance, ['roomNumber']),
+      extraVars: {
+        fromRoom: previous.roomNumber || 'TBA',
+        toRoom: instance.roomNumber || 'TBA',
+        when: formatInAppTimezone(instance.startAt),
+      },
     });
   }
 
@@ -521,8 +570,12 @@ export const cancelInstance = asyncHandler(async (req, res) => {
     if (req.body?.note) instance.note = req.body.note;
     instance.updatedBy = req.user._id;
     await instance.save();
+    // A cancelled class keeps no reminders — they describe something that is not
+    // going to happen.
+    await purgePendingReminders(instance);
     await notifyOccurrence(instance, 'CLASS_CANCELLED', {
       actorId: req.user._id,
+      slot: changeSlot(instance, ['status']),
       extraVars: { when: formatInAppTimezone(instance.startAt) },
     });
   }
@@ -576,8 +629,12 @@ export const rescheduleInstance = asyncHandler(async (req, res) => {
   );
 
   await instance.save();
+  // Reminders that counted down to the old instant are stale; the new notice is
+  // keyed on the moved time, so a second move still reaches students.
+  await purgePendingReminders(instance);
   await notifyOccurrence(instance, 'CLASS_RESCHEDULED', {
     actorId: req.user._id,
+    slot: changeSlot(instance, ['startTime', 'endTime', ...(roomNumber ? ['roomNumber'] : [])]),
     extraVars: { when: formatInAppTimezone(instance.startAt) },
   });
 
@@ -595,6 +652,8 @@ export const deleteInstance = asyncHandler(async (req, res) => {
   const instance = await ScheduleInstance.findById(req.params.id);
   if (!instance) throw new ApiError(404, 'Schedule entry not found');
   await assertScheduleScope(req.user, instance.course);
+  // The class and the reminders that pointed at it go together.
+  await purgePendingReminders(instance);
   await instance.deleteOne();
   res.json({ success: true, message: 'Schedule entry deleted' });
 });

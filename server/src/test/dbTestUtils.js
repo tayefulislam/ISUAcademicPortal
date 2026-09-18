@@ -1,4 +1,13 @@
 import mongoose from 'mongoose';
+import { env } from '../config/env.js';
+
+// Tests must never reach a real mail provider, even on a checkout whose .env
+// carries live SMTP/Resend credentials — every notification now also attempts an
+// email, so an unmodified provider here would open real SMTP connections (and
+// send real mail) during the suite. Forcing the console transport keeps the
+// email path exercised without leaving the process.
+env.email.provider = 'console';
+env.email.smtp = { ...env.email.smtp, host: '', user: '', pass: '' };
 
 // Every notification test file gets its own throwaway database (never the
 // real dev DB from .env's MONGODB_URI) so tests can freely create/delete

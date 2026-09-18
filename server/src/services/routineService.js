@@ -122,7 +122,9 @@ export async function generateInstancesForTemplate(template, actorId) {
  * `from` is what makes "future only" the default: pass the start of the next
  * occurrence, today, a chosen date, or `new Date(0)` to reach back into history.
  *
- * @returns {Promise<{updated:number, removed:number, unchanged:number, changed:Array<{id:string, fields:string[]}>}>}
+ * @returns {Promise<{updated:number, removed:number, unchanged:number, changed:Array<{id:string, fields:string[], before:object}>, removedIds:Array}>}
+ *   `removedIds` lets the caller purge the reminders that belonged to the
+ *   occurrences just deleted — a notification is only true while its class exists.
  */
 export async function syncInstancesWithTemplate(template, { from = null, actorId = null } = {}) {
   const instances = await ScheduleInstance.find({
@@ -132,6 +134,7 @@ export async function syncInstancesWithTemplate(template, { from = null, actorId
 
   const operations = [];
   const changed = [];
+  const removedIds = [];
 
   for (const instance of instances) {
     const { patch, changedFields } = withInheritedValues(instance, template);
@@ -139,6 +142,7 @@ export async function syncInstancesWithTemplate(template, { from = null, actorId
 
     if (isOrphanInstance(instance, template) && !exceptions.length && instance.status === 'NORMAL') {
       operations.push({ deleteOne: { filter: { _id: instance._id } } });
+      removedIds.push(instance._id);
       continue;
     }
 
@@ -161,7 +165,7 @@ export async function syncInstancesWithTemplate(template, { from = null, actorId
   }
 
   if (!operations.length) {
-    return { updated: 0, removed: 0, unchanged: instances.length, changed: [] };
+    return { updated: 0, removed: 0, unchanged: instances.length, changed: [], removedIds: [] };
   }
 
   const result = await ScheduleInstance.bulkWrite(operations, { ordered: false });
@@ -172,6 +176,7 @@ export async function syncInstancesWithTemplate(template, { from = null, actorId
     removed,
     unchanged: instances.length - changed.length - removed,
     changed,
+    removedIds,
   };
 }
 

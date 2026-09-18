@@ -9,7 +9,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
 import { emit } from '../services/notifications/notificationService.js';
-import { resolveCourseScopedRecipients } from '../services/notifications/recipientResolver.js';
+import { resolveCourseScopedRecipients, resolveFacultyForCourse } from '../services/notifications/recipientResolver.js';
 
 // An assignment can target multiple courses at once — fan out per course
 // (each may have a different enrolled population) and de-dupe recipients.
@@ -38,6 +38,27 @@ function notifyAssignmentPublished(assignment, actor, type) {
       })
     )
     .catch((err) => console.error('[notify] assignment publish', err));
+}
+
+/**
+ * Tells the people who set the assignment that a student handed it in. Until now
+ * nothing did — a faculty member had to open the submissions list to discover
+ * whether anyone had submitted. Recipients are the assignment's creator plus the
+ * faculty teaching each of its courses; `emit` drops the submitting student.
+ */
+async function notifySubmissionReceived(assignment, submission, student) {
+  const perCourse = await Promise.all(
+    (assignment.courses || []).map((course) => resolveFacultyForCourse(course))
+  );
+  const recipients = [...new Set([...perCourse.flat().map(String), String(assignment.createdBy)])];
+  return emit({
+    type: 'ASSIGNMENT_SUBMITTED',
+    actorId: student._id,
+    entityType: 'SUBMISSION',
+    entityId: submission._id,
+    vars: { title: assignment.title, assignmentId: assignment._id, studentName: student.name },
+    recipients,
+  });
 }
 
 async function assertAssignmentSystemEnabled() {
@@ -381,6 +402,10 @@ export const submitAssignment = asyncHandler(async (req, res) => {
     { upsert: true, new: true }
   );
 
+  notifySubmissionReceived(assignment, submission, req.user).catch((err) =>
+    console.error('[notify] assignment submitted', err)
+  );
+
   res.status(201).json({ success: true, message: status === 'late' ? 'Submitted (late)' : 'Submitted', data: submission });
 });
 
@@ -458,6 +483,12 @@ export const gradeSubmission = asyncHandler(async (req, res) => {
   if (marks === undefined || Number.isNaN(Number(marks))) throw new ApiError(400, 'marks is required');
   if (Number(marks) > assignment.maxMarks) throw new ApiError(400, `marks cannot exceed maxMarks (${assignment.maxMarks})`);
 
+  const previous = await Submission.findOne({ _id: req.params.submissionId, assignment: assignment._id }).select('status');
+  if (!previous) throw new ApiError(404, 'Submission not found');
+  // A second grading of the same submission is a changed grade, not a first
+  // result — the two are separate notifications so neither is ever a duplicate.
+  const regrade = previous.status === 'graded';
+
   const submission = await Submission.findOneAndUpdate(
     { _id: req.params.submissionId, assignment: assignment._id },
     { marks: Number(marks), feedback: feedback || '', status: 'graded', gradedBy: req.user._id, gradedAt: new Date() },
@@ -466,7 +497,7 @@ export const gradeSubmission = asyncHandler(async (req, res) => {
   if (!submission) throw new ApiError(404, 'Submission not found');
 
   emit({
-    type: 'ASSIGNMENT_RESULT',
+    type: regrade ? 'GRADE_PUBLISHED' : 'ASSIGNMENT_RESULT',
     actorId: req.user._id,
     entityType: 'SUBMISSION',
     entityId: submission._id,

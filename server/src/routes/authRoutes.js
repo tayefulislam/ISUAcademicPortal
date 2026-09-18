@@ -39,6 +39,11 @@ router.post(
     body('department').notEmpty().withMessage('Department is required'),
     body('batch').notEmpty().withMessage('Batch is required'),
     body('semester').notEmpty().withMessage('Semester is required'),
+    // The student's class group within the batch (BOTH / A1 / A2 …). Deliberately
+    // not an enum: the permitted values live in Settings.academicGroups, so the
+    // authoritative check is resolveGroup() in the controller — a hard list here
+    // would need a code change every time a batch is split further.
+    body('group').optional().trim(),
     body('rollNo')
       .trim()
       .notEmpty()

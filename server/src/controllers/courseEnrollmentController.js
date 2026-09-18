@@ -99,6 +99,23 @@ async function notifyStudent(enrollment, kind, reason) {
   }
 }
 
+/**
+ * Tells a student they are now enrolled. This is the staff-initiated path —
+ * direct and bulk enrollment create an active row with no request and no
+ * approval step, so neither JOIN_REQUEST nor JOIN_REQUEST_APPROVED applies and
+ * nothing used to be sent at all.
+ */
+function notifyEnrolled(student, course, enrollmentId, actorId) {
+  emit({
+    type: 'COURSE_ENROLLED',
+    actorId,
+    entityType: 'COURSE_ENROLLMENT',
+    entityId: enrollmentId,
+    vars: { courseName: course.name, courseId: course._id },
+    recipients: resolveSingleUser(student._id),
+  }).catch((err) => console.error('[notify] course enrolled', err));
+}
+
 function isDuplicateKeyError(err) {
   return err && err.code === 11000;
 }
@@ -489,6 +506,7 @@ export const createEnrollmentDirect = asyncHandler(async (req, res) => {
       history: [{ action: 'created_direct', performedBy: req.user._id, previousStatus: null, newStatus: 'active', reason: reason || '' }],
     });
     await enrollment.populate(POPULATE);
+    notifyEnrolled(student, course, enrollment._id, req.user._id);
     res.status(201).json({ success: true, message: 'Enrollment created', data: enrollment });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
@@ -524,7 +542,7 @@ export const bulkEnrollRegular = asyncHandler(async (req, res) => {
   let skipped = 0;
   for (const student of students) {
     try {
-      await CourseEnrollment.create({
+      const enrollment = await CourseEnrollment.create({
         student: student._id,
         course: course._id,
         enrollmentType: 'regular',
@@ -536,6 +554,7 @@ export const bulkEnrollRegular = asyncHandler(async (req, res) => {
         approvedAt: new Date(),
         history: [{ action: 'created_direct', performedBy: req.user._id, previousStatus: null, newStatus: 'active', reason: 'Bulk regular enrollment' }],
       });
+      notifyEnrolled(student, course, enrollment._id, req.user._id);
       created += 1;
     } catch (err) {
       if (isDuplicateKeyError(err)) {

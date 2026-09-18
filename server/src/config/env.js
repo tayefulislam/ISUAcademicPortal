@@ -92,6 +92,24 @@ export const env = {
     serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
   },
 
+  // Event-notification policy. Deliberately separate from the mail transport
+  // above: EMAIL_PROVIDER says *how* mail is sent, these say *whether* an
+  // in-app event also emails a copy, and who hears about a student upload.
+  // Both parse strictly (`=== 'true'`), so an unset or misspelled value means
+  // OFF rather than silently on.
+  notifications: {
+    // Master switch for the email copy of an event notification. Off by default,
+    // so events stay in-app + push until mail is deliberately turned on.
+    // Transactional mail (verify code, password reset, enrollment) does not go
+    // through this — it calls sendEmail directly and is unaffected.
+    emailEnabled: process.env.NOTIFICATION_EMAIL_ENABLED === 'true',
+    // Whether Faculty are told about a student's material submission. Off by
+    // default: the submission notification's audience is the CR/admin-tier
+    // reviewers who work the queue, and faculty found the extra noise unwanted.
+    // Flip to true to add faculty back with no code change.
+    notifyFacultyOnStudentUpload: process.env.NOTIFY_FACULTY_ON_STUDENT_UPLOAD === 'true',
+  },
+
   // Shared secret for the class-reminder cron target
   // (POST /api/internal/reminders/run). Reminders need to fire on a clock, and
   // this stack has no scheduler — so an external cron calls that endpoint every

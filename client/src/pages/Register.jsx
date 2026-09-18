@@ -3,10 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { departmentApi, batchApi, semesterApi } from '../api/endpoints.js';
+import { departmentApi, batchApi, semesterApi, routineApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 
-const initialForm = { name: '', email: '', password: '', rollNo: '', phone: '', department: '', batch: '', semester: '' };
+const initialForm = { name: '', email: '', password: '', rollNo: '', phone: '', department: '', batch: '', semester: '', group: '' };
 
 // Student ID (the verification photo) is deliberately NOT collected here —
 // it's a post-registration workflow now (see PendingApproval.jsx / the
@@ -25,6 +25,16 @@ export default function Register() {
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
 
+  // The class groups this deployment recognises (BOTH, A1, A2 …), read from the
+  // server rather than hardcoded so splitting a batch further needs no client
+  // change. This one route is deliberately reachable without a session —
+  // registration is exactly where it is first needed.
+  const { data: groupsData } = useQuery({ queryKey: ['routine', 'groups'], queryFn: routineApi.groups });
+  const groupOptions = (groupsData?.data?.groups || []).map((g) => ({
+    value: g,
+    label: g === 'BOTH' ? 'Both (whole batch)' : g,
+  }));
+
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
   const submit = async (e) => {
@@ -34,6 +44,13 @@ export default function Register() {
     }
     if (!/^01\d{9}$/.test(form.phone.trim())) {
       return toast('Phone number must be exactly 11 digits and start with 01', 'error');
+    }
+    if (!form.group) {
+      // The group decides which half of the batch's timetable this student is
+      // shown. Left unanswered it silently means the whole batch, which is how the
+      // group split ends up doing nothing — so this is a real question, and
+      // "Both (whole batch)" is a real answer for an unsplit batch.
+      return toast('Select your class group', 'error');
     }
     setSubmitting(true);
     try {
@@ -139,6 +156,17 @@ export default function Register() {
               <option key={s._id} value={s._id}>{s.name}</option>
             ))}
           </select>
+        </Field>
+        <Field label="Group">
+          <select required value={form.group} onChange={(e) => set('group')(e.target.value)} className="input">
+            <option value="">Select group</option>
+            {groupOptions.map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-400 mt-1">
+            Which half of your batch you are in. Choose &quot;Both (whole batch)&quot; if your batch is not split.
+          </p>
         </Field>
 
         <button

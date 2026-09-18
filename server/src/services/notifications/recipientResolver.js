@@ -1,6 +1,7 @@
 import User from '../../models/User.js';
 import Course from '../../models/Course.js';
 import CourseEnrollment, { ACCESS_GRANTING_STATUSES } from '../../models/CourseEnrollment.js';
+import Role, { getRole } from '../../models/Role.js';
 import { GROUP_BOTH } from '../../models/Settings.js';
 
 // This module is the "smart recipient detection" piece — every resolver
@@ -155,6 +156,49 @@ export async function resolveRoutineAudience({
 
   const students = await User.find(extraFilter).select('_id');
   return students.map((s) => s._id);
+}
+
+/** The role keys whose holders work the material-review queue. */
+async function reviewerRoleKeys() {
+  // 'reviews' is the permission the /reviews routes gate on. The seeded 'admin'
+  // role holds every permission and the super-admin tier bypasses permissions
+  // entirely, so both are reviewers regardless of what the query returns.
+  await getRole('admin'); // lazily seeds the admin role, if it isn't yet
+  const granted = await Role.find({ permissions: 'reviews' }).distinct('key');
+  return [...new Set([...granted, 'admin', 'super_admin', 'administrator'])];
+}
+
+/**
+ * The people who should hear about a student's material submission — i.e. who
+ * can act on it in the review queue. Mirrors reviewController's audience and
+ * scoping: the super-admin tier and the unrestricted admin role see everything;
+ * a custom admin-tier reviewer (e.g. "CR") only its assigned
+ * Department(s)/Course(s).
+ *
+ * Faculty are excluded by default. The submission notice is for the reviewers
+ * who work the queue, and faculty found the extra noise unwanted; `includeFaculty`
+ * (driven by an env var) adds them back later with no code change.
+ */
+export async function resolveReviewersForCourse(course, { includeFaculty = false } = {}) {
+  const courseDoc = await resolveCourseDoc(course);
+  if (!courseDoc) return [];
+
+  const scoped = [
+    { assignedDepartments: courseDoc.department },
+    { assignedCourses: courseDoc._id },
+  ];
+
+  const roles = await reviewerRoleKeys();
+  const unrestricted = roles.filter((key) => key === 'admin' || key === 'super_admin' || key === 'administrator');
+  const scopedRoles = roles.filter((key) => !unrestricted.includes(key));
+
+  const or = [];
+  if (unrestricted.length) or.push({ role: { $in: unrestricted } });
+  if (scopedRoles.length) or.push({ role: { $in: scopedRoles }, $or: scoped });
+  if (includeFaculty) or.push({ role: 'faculty', $or: scoped });
+  if (!or.length) return [];
+
+  return User.find({ $or: or }).distinct('_id');
 }
 
 /** Faculty assigned to (or overseeing) a course — for staff-facing events. */

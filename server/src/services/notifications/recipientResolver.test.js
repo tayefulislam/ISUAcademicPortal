@@ -7,6 +7,7 @@ import Course from '../../models/Course.js';
 import Batch from '../../models/Batch.js';
 import Semester from '../../models/Semester.js';
 import CourseEnrollment from '../../models/CourseEnrollment.js';
+import Role from '../../models/Role.js';
 import {
   resolveCourseScopedRecipients,
   resolveNoticeRecipients,
@@ -14,6 +15,7 @@ import {
   resolveFacultyForCourse,
   resolveAllEligibleUsers,
   resolveDepartmentRecipients,
+  resolveReviewersForCourse,
 } from './recipientResolver.js';
 
 // This suite is the "smart recipient detection" contract: given a course/
@@ -36,7 +38,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  await clearCollections(User, Department, Course, Batch, Semester, CourseEnrollment);
+  await clearCollections(User, Department, Course, Batch, Semester, CourseEnrollment, Role);
 
   dept = await Department.create({ name: 'Computer Science', code: 'CSE' });
   otherDept = await Department.create({ name: 'Civil Engineering', code: 'CE' });
@@ -208,5 +210,66 @@ describe('resolveAllEligibleUsers / resolveDepartmentRecipients', () => {
     assert.ok(ids.includes(String(studentInDept._id)));
     assert.ok(ids.includes(String(faculty._id)));
     assert.ok(!ids.includes(String(studentOutsideDeptNotEnrolled._id)));
+  });
+});
+
+// A student's material submission is reviewed by the CR/admin-tier reviewers who
+// work the queue — deliberately not faculty, who found the extra notice unwanted
+// (and can be added back with includeFaculty / an env var).
+describe('resolveReviewersForCourse', () => {
+  const mkCr = async (overrides = {}) => {
+    await Role.findOneAndUpdate(
+      { key: 'cr' },
+      { $setOnInsert: { key: 'cr', name: 'CR', permissions: ['reviews'] } },
+      { upsert: true }
+    );
+    return User.create({
+      name: 'CR', email: `cr-${Math.random().toString(36).slice(2)}@test.local`,
+      password: 'password123', role: 'cr', ...overrides,
+    });
+  };
+
+  test("includes a CR granted Material Review in the course's department", async () => {
+    const cr = await mkCr({ assignedDepartments: [dept._id] });
+
+    const ids = (await resolveReviewersForCourse(course)).map(String);
+    assert.ok(ids.includes(String(cr._id)));
+  });
+
+  test('excludes a reviewer scoped to another department', async () => {
+    const otherCr = await mkCr({ assignedDepartments: [otherDept._id] });
+
+    const ids = (await resolveReviewersForCourse(course)).map(String);
+    assert.ok(!ids.includes(String(otherCr._id)));
+  });
+
+  test('excludes faculty by default, and includes them when asked', async () => {
+    const withoutFaculty = (await resolveReviewersForCourse(course)).map(String);
+    assert.ok(!withoutFaculty.includes(String(faculty._id)), 'faculty must not be disturbed by a student upload');
+    assert.ok(!withoutFaculty.includes(String(facultyByCourse._id)));
+
+    const withFaculty = (await resolveReviewersForCourse(course, { includeFaculty: true })).map(String);
+    assert.ok(withFaculty.includes(String(faculty._id)));
+    assert.ok(withFaculty.includes(String(facultyByCourse._id)));
+  });
+
+  test('the unrestricted admin role reviews every course', async () => {
+    const admin = await User.create({
+      name: 'Admin', email: 'admin@test.local', password: 'password123', role: 'admin',
+    });
+
+    const ids = (await resolveReviewersForCourse(course)).map(String);
+    assert.ok(ids.includes(String(admin._id)));
+  });
+
+  test('a role without Material Review is not a reviewer', async () => {
+    await Role.create({ key: 'notices_only', name: 'Notices Only', permissions: ['notices'] });
+    const user = await User.create({
+      name: 'Notices', email: 'notices@test.local', password: 'password123',
+      role: 'notices_only', assignedDepartments: [dept._id],
+    });
+
+    const ids = (await resolveReviewersForCourse(course)).map(String);
+    assert.ok(!ids.includes(String(user._id)));
   });
 });

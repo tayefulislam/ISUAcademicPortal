@@ -124,7 +124,7 @@ export default function NotificationSettings() {
         <div className="flex items-center justify-between border-t border-slate-100 pt-4">
           <div>
             <p className="font-medium text-slate-800">Email Notifications</p>
-            <p className="text-xs text-slate-500">Also receive a copy of important notifications by email.</p>
+            <p className="text-xs text-slate-500">Also email a copy of important notifications.</p>
           </div>
           <Toggle checked={data.email} onChange={(v) => update.mutate({ email: v })} />
         </div>

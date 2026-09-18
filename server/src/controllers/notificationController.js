@@ -128,6 +128,14 @@ export const subscribe = asyncHandler(async (req, res) => {
   }
   const userAgent = req.body.userAgent || req.headers['user-agent'] || '';
 
+  // The same ownership check unsubscribe() makes, in the other direction: an
+  // endpoint already registered to someone else must not be re-pointed at the
+  // caller merely by supplying it here.
+  const existing = await PushSubscription.findOne({ endpoint });
+  if (existing && !existing.user.equals(req.user._id)) {
+    throw new ApiError(403, 'You can only manage your own push subscriptions', null, 'FORBIDDEN');
+  }
+
   const subscription = await PushSubscription.findOneAndUpdate(
     { endpoint },
     {

@@ -240,6 +240,54 @@ describe('exceptions on a single occurrence', () => {
     assert.equal(notifications.length, 1, 'the unique index makes a repeated cancel a no-op');
   });
 
+  test('cancelling clears the reminders that counted down to it', async () => {
+    const instance = await makeInstance();
+    // A reminder the cron already created for this class. Cancelling makes it a
+    // lie, so the write has to remove it rather than leave it in the list forever.
+    await Notification.create({
+      recipient: student._id, type: 'CLASS_REMINDER', title: 'Class Reminder',
+      message: 'CSE-101 starts in 30 minutes', entityType: 'ScheduleInstance',
+      entityId: instance._id, slot: '30@2026-09-20T04:00:00.000Z',
+    });
+
+    await call(cancelInstance, { user: faculty, params: { id: String(instance._id) } });
+
+    assert.equal(
+      await Notification.countDocuments({ entityId: instance._id, type: 'CLASS_REMINDER' }), 0,
+      'a cancelled class keeps no reminder'
+    );
+    assert.equal(
+      await Notification.countDocuments({ entityId: instance._id, type: 'CLASS_CANCELLED' }), 1,
+      'but the cancellation notice itself is kept'
+    );
+  });
+
+  test('editing the time through PATCH notifies, as /reschedule already did', async () => {
+    const instance = await makeInstance();
+    const { error } = await call(updateInstance, {
+      user: faculty,
+      params: { id: String(instance._id) },
+      body: { startTime: '14:00', endTime: '15:30' },
+    });
+
+    assert.equal(error, undefined);
+    const notified = await Notification.find({ entityId: instance._id, type: 'CLASS_RESCHEDULED' });
+    assert.equal(notified.length, 1, 'a PATCH that moves the class must tell the students');
+  });
+
+  test('changing the room twice notifies twice — the slot follows the new value', async () => {
+    const instance = await makeInstance();
+    await call(updateInstance, {
+      user: faculty, params: { id: String(instance._id) }, body: { roomNumber: '603' },
+    });
+    await call(updateInstance, {
+      user: faculty, params: { id: String(instance._id) }, body: { roomNumber: '701' },
+    });
+
+    const notified = await Notification.find({ entityId: instance._id, type: 'CLASS_ROOM_CHANGED' });
+    assert.equal(notified.length, 2, 'a second move must not be swallowed by the first');
+  });
+
   test('rescheduling moves the date and remembers where it came from', async () => {
     const instance = await makeInstance();
     const { res, error } = await call(rescheduleInstance, {

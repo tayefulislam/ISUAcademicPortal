@@ -63,7 +63,10 @@ export const TEMPLATES = {
   EXAM_REMINDER: {
     title: () => "Exam Reminder",
     message: (v) => `Your ${v.title} exam starts soon`,
-    url: (v) => `/student/exams/${v.quizId}`,
+    // A quiz-backed exam links to its own screen; a scheduled exam/CT has no quiz
+    // behind it (`runExamReminders` passes no quizId), so it falls back to the
+    // calendar rather than rendering "/student/exams/undefined".
+    url: (v) => (v.quizId ? `/student/exams/${v.quizId}` : '/routine'),
   },
   // Class routine reminders. `when` is the Dhaka-formatted window ("10:00 AM"),
   // formatted by the sender so every channel shows the institution's clock
