@@ -21,6 +21,7 @@ export const PERMISSION_MODULES = [
   { key: 'emails', label: 'Email Center', description: 'Send broadcast emails.' },
   { key: 'enrollments', label: 'Course Enrollment Management', description: 'Review/approve/reject additional-course enrollment requests and manage enrollments.' },
   { key: 'notifications', label: 'Notification Management', description: 'Send notifications to users/courses/departments and view delivery stats.' },
+  { key: 'documents', label: 'Document Generator', description: 'Manage cover-page/document templates — create, upload a design, map fields, version and publish them.' },
   // Class routine & academic calendar. Split per action rather than one
   // "routine" key so a CR can be given "add exams" without also being able to
   // rewrite the official timetable. Student/Faculty/CR reach these routes

@@ -113,6 +113,15 @@ export const FEATURE_FLAGS = [
     label: 'Class Routine & Academic Calendar',
     description: 'When ON, the class routine, exam calendar and their reminders are available. The mobile app can receive class reminders as push notifications; the web app shows the same schedule in-app.',
   },
+  {
+    key: 'documentGeneratorEnabled',
+    label: 'Document Generator',
+    description: 'When ON, students can generate cover pages and other documents from the published templates, and the module appears in the menu. When OFF, it is hidden for everyone.',
+    // Safe-by-default: a generated cover page is a convenience with no side
+    // effects, so it ships usable rather than requiring an admin to switch it on
+    // (same choice as the routine/calendar system above).
+    default: true,
+  },
 ];
 
 // Numeric business-rule limits for the Course Enrollment system — separate

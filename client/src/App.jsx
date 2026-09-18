@@ -43,6 +43,9 @@ import PublicExamLanding from './pages/public/PublicExamLanding.jsx';
 import PublicExamAttempt from './pages/public/PublicExamAttempt.jsx';
 import PublicExamResult from './pages/public/PublicExamResult.jsx';
 import FeedbackForm from './pages/FeedbackForm.jsx';
+import Documents from './pages/Documents.jsx';
+import DocumentGenerate from './pages/DocumentGenerate.jsx';
+import DocumentDetail from './pages/DocumentDetail.jsx';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy.jsx';
 import Terms from './pages/legal/Terms.jsx';
 import Help from './pages/legal/Help.jsx';
@@ -54,6 +57,9 @@ import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 import AdminFiles from './pages/admin/AdminFiles.jsx';
 import AdminUpload from './pages/admin/AdminUpload.jsx';
 import AdminStudentApprovals from './pages/admin/AdminStudentApprovals.jsx';
+import DocumentTemplates from './pages/admin/DocumentTemplates.jsx';
+import DocumentTemplateForm from './pages/admin/DocumentTemplateForm.jsx';
+import DocumentTemplateEditor from './pages/admin/DocumentTemplateEditor.jsx';
 import { facultyApi } from './api/endpoints.js';
 
 import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard.jsx';
@@ -213,6 +219,33 @@ export default function App() {
             }
           />
           <Route path="/notices" element={<Notices />} />
+          {/* Document Generator — cover pages and other generated PDFs. The
+              templates a student may use are filtered server-side, and the
+              official values are filled from their own record server-side. */}
+          <Route
+            path="/documents"
+            element={
+              <ProtectedRoute>
+                <Documents />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/documents/new"
+            element={
+              <ProtectedRoute>
+                <DocumentGenerate />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/documents/:id"
+            element={
+              <ProtectedRoute>
+                <DocumentDetail />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/assignments"
             element={
@@ -296,6 +329,10 @@ export default function App() {
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
           <Route path="routine" element={<RoutineManager />} />
+          <Route path="document-templates" element={<DocumentTemplates />} />
+          <Route path="document-templates/new" element={<DocumentTemplateForm />} />
+          <Route path="document-templates/:id/edit" element={<DocumentTemplateForm />} />
+          <Route path="document-templates/:id" element={<DocumentTemplateEditor />} />
           <Route path="manual" element={<Manual role="admin" />} />
         </Route>
 

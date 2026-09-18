@@ -524,3 +524,63 @@ export const calendarApi = {
   updateEvent: (id, data) => api.patch(`/calendar/events/${id}`, data).then((r) => r.data),
   removeEvent: (id) => api.delete(`/calendar/events/${id}`).then((r) => r.data),
 };
+
+// ----- Document Generator (cover pages and other generated PDFs) -----
+//
+// Two surfaces share one module: what a student generates their own documents
+// from, and the admin's template management. Note that nothing here ever sends
+// an official value (a name, an ID, a batch) — those are resolved server-side
+// from the signed-in user's own records (see the server's fieldResolver.js).
+export const documentCategoryApi = {
+  list: () => api.get('/document-categories').then((r) => r.data),
+  create: (data) => api.post('/document-categories', data).then((r) => r.data),
+};
+
+export const documentTemplateApi = {
+  // The server returns only the templates this user is eligible for, so an
+  // unrelated department's design is never even sent to the browser.
+  list: (params) => api.get('/document-templates', { params }).then((r) => r.data),
+  get: (id) => api.get(`/document-templates/${id}`).then((r) => r.data),
+  // The official values for the locked section — server-derived, and independent
+  // of the (possibly still incomplete) editable form.
+  autofill: (id, courseId) =>
+    api.get(`/document-templates/${id}/autofill`, { params: { courseId: courseId || undefined } }).then((r) => r.data),
+};
+
+export const documentApi = {
+  preview: (data) => api.post('/documents/preview', data).then((r) => r.data),
+  generate: (data) => api.post('/documents/generate', data).then((r) => r.data),
+  job: (jobId) => api.get(`/documents/jobs/${jobId}`).then((r) => r.data),
+  list: (params) => api.get('/documents', { params }).then((r) => r.data),
+  get: (id) => api.get(`/documents/${id}`).then((r) => r.data),
+  // Returns a short-lived signed URL; it is never stored client-side beyond the
+  // moment of the download.
+  download: (id) => api.get(`/documents/${id}/download`).then((r) => r.data),
+  remove: (id) => api.delete(`/documents/${id}`).then((r) => r.data),
+};
+
+export const adminDocumentApi = {
+  // The field vocabulary (types, sources, formats) the editor builds its
+  // dropdowns from — served so the client can never drift from the server.
+  meta: () => api.get('/admin/document-templates/meta').then((r) => r.data),
+  templates: (params) => api.get('/admin/document-templates', { params }).then((r) => r.data),
+  template: (id) => api.get(`/admin/document-templates/${id}`).then((r) => r.data),
+  create: (formData) =>
+    api.post('/admin/document-templates', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  update: (id, data) => api.put(`/admin/document-templates/${id}`, data).then((r) => r.data),
+  setStatus: (id, status) => api.patch(`/admin/document-templates/${id}/status`, { status }).then((r) => r.data),
+  duplicate: (id, name) => api.post(`/admin/document-templates/${id}/duplicate`, { name }).then((r) => r.data),
+  remove: (id) => api.delete(`/admin/document-templates/${id}`).then((r) => r.data),
+  // A new version is the ONLY way a design changes — an existing version is
+  // never edited, because a generated document pins one.
+  createVersion: (id, formData) =>
+    api.post(`/admin/document-templates/${id}/versions`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  version: (id, version) => api.get(`/admin/document-templates/${id}/versions/${version}`).then((r) => r.data),
+  uploadSource: (id, version, formData) =>
+    api.post(`/admin/document-templates/${id}/versions/${version}/source`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  // The reference design is fetched as a blob (it is a private object behind an
+  // authenticated proxy, never a public URL) — the same pattern as the Student
+  // ID photo — and turned into a temporary object URL for the editor background.
+  sourceUrl: (id, version) =>
+    api.get(`/admin/document-templates/${id}/versions/${version}/source`, { responseType: 'blob' }).then((r) => URL.createObjectURL(r.data)),
+};

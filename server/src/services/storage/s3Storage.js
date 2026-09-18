@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
 import { env } from '../../config/env.js';
 import { getSafeExtension } from '../../utils/fileTypes.js';
@@ -106,4 +107,51 @@ export async function deleteDocumentS3(storageRef) {
     // best-effort — an orphaned object is not worth failing the metadata
     // deletion over
   }
+}
+
+/**
+ * Stores a buffer under a caller-chosen key rather than a randomized one.
+ *
+ * <p>Generated documents have a deterministic key
+ * (`generated-documents/{yyyy}/{MM}/{userId}/{jobId}.pdf`) so the job row and the
+ * stored object can never disagree about where the file lives; a randomized name
+ * would mean the key had to be read back before it could be recorded.
+ *
+ * @returns {Promise<{storageRef:string}>}
+ */
+export async function putObjectS3(key, buffer, mimeType) {
+  const s3 = getClient();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType || 'application/pdf',
+    })
+  );
+  return { storageRef: key };
+}
+
+/**
+ * A short-lived signed GET URL for one private object.
+ *
+ * <p>The bucket is never public, so this is the only way a generated document is
+ * ever downloaded: minted on demand, after the caller's ownership has been
+ * checked, with a deliberately short lifetime and never persisted anywhere.
+ */
+export async function getSignedDownloadUrlS3(key, expiresInSeconds = 300, downloadName = '') {
+  if (!key) {
+    throw new Error('getSignedDownloadUrlS3 requires an object key');
+  }
+  const s3 = getClient();
+  const command = new GetObjectCommand({
+    Bucket: env.s3.bucket,
+    Key: key,
+    // Force a download with the document's own name, and strip anything that
+    // could break out of the header value.
+    ...(downloadName
+      ? { ResponseContentDisposition: `attachment; filename="${String(downloadName).replace(/["\\\r\n]/g, '')}"` }
+      : {}),
+  });
+  return getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
 }

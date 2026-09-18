@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import path from 'path';
 import { env } from './config/env.js';
+import { describeEmailProvider } from './services/email/emailService.js';
+import { describeRedis } from './services/queue/redis.js';
 import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
@@ -135,9 +137,36 @@ async function start() {
     );
   }
 
+  // Mail is optional and degrades to console logging when unconfigured, so the
+  // effective transport is announced once at boot - otherwise "emails aren't
+  // sending" is invisible from outside the process.
+  console.log(`[email] provider=${describeEmailProvider()}`);
+
   app.listen(env.port, () => {
     console.log(`[server] listening on port ${env.port} (${env.nodeEnv})`);
   });
+
+  // The Document Generator's worker. Started AFTER the listener and never
+  // awaited: Redis being down must not stop the API from serving, it must only
+  // mean documents stay queued until Redis returns. It runs in this process by
+  // default (PDF_WORKER_IN_PROCESS) so a single-service deploy needs no second
+  // process; set that false and run `npm run worker` instead.
+  if (env.documents.workerEnabled && env.documents.workerInProcess) {
+    import('./services/queue/documentQueue.js')
+      .then(async ({ ensureCleanupSchedule }) => {
+        const { startDocumentWorker } = await import('./workers/documentWorker.js');
+        startDocumentWorker();
+        console.log(`[documents] worker started (redis=${describeRedis()})`);
+        // Registered by id, so re-asserting it on every boot is idempotent.
+        ensureCleanupSchedule().catch((err) =>
+          console.error('[documents] could not schedule the expiry sweep:', err.message)
+        );
+      })
+      .catch((err) => {
+        logger.error(err, { source: 'app:documentWorker' });
+        console.error('[documents] worker did not start — documents will queue until it does');
+      });
+  }
 }
 
 start();

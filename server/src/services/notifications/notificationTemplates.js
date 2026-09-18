@@ -165,6 +165,12 @@ export const TEMPLATES = {
         : "Your Student ID was rejected. Please resubmit.",
     url: () => "/pending-approval",
   },
+  DOCUMENT_READY: {
+    title: () => "Document Ready",
+    message: (v) => `Your ${v.templateName || "document"} is ready to download.`,
+    // The document's own screen, which mints a signed download URL on demand.
+    url: (v) => `/documents/${v.documentId}`,
+  },
   SYSTEM: {
     title: (v) => v.title || "System Notification",
     message: (v) => v.message || "",
