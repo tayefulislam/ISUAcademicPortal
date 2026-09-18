@@ -3,6 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { getSettings } from '../models/Settings.js';
 import { runDueReminders, runExamReminders } from '../services/reminderService.js';
 
 // The cron target. This stack has no scheduler and no queue, so reminders are
@@ -45,6 +46,25 @@ export const runReminders = asyncHandler(async (req, res) => {
       meta: { ip: req.ip },
     });
     throw new ApiError(401, 'Authentication required', null, 'UNAUTHORIZED');
+  }
+
+  // The routineSystemEnabled flag governs reminders too — its description says
+  // so, and leaving this out would keep pushing "class starts in 10 minutes"
+  // after an administrator had switched the whole system off.
+  //
+  // Answered as a 200 with a marker rather than an error: a cron running every
+  // minute that starts returning 4xx would page someone. Checked AFTER the
+  // secret so an unauthenticated caller learns nothing about configuration.
+  const settings = await getSettings();
+  if (!settings.routineSystemEnabled) {
+    return res.json({
+      success: true,
+      data: {
+        skipped: 'ROUTINE_DISABLED',
+        reason: 'The class routine system is switched off',
+        ranAt: new Date().toISOString(),
+      },
+    });
   }
 
   const [classReminders, examReminders] = await Promise.all([
