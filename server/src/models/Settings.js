@@ -108,6 +108,11 @@ export const FEATURE_FLAGS = [
     description: 'When ON, users can sign in with their Student ID / Roll No (in addition to email). When OFF, a Student ID is never accepted at login, even if one is on file.',
     default: true,
   },
+  {
+    key: 'routineSystemEnabled',
+    label: 'Class Routine & Academic Calendar',
+    description: 'When ON, the class routine, exam calendar and their reminders are available. The mobile app can receive class reminders as push notifications; the web app shows the same schedule in-app.',
+  },
 ];
 
 // Numeric business-rule limits for the Course Enrollment system — separate
@@ -192,7 +197,22 @@ export const LIST_SETTINGS = [
     description: 'A student whose verified email ends in any of these domains is approved automatically — no Student ID submission needed. Each stored without the leading "@". Matched exactly (no automatic subdomain matching) and case-insensitively.',
     itemPattern: DOMAIN_PATTERN,
   },
+  {
+    key: 'academicGroups',
+    label: 'Academic Groups',
+    description: 'The class groups a batch can be split into (e.g. BOTH, A1, A2). "BOTH" means the whole batch and must always be present. Add a value here to make it selectable on routine/exam entries and assignable to students — nothing is hard-coded, so A3/B1/B2 work without a code change.',
+    itemPattern: /^[A-Z0-9]{1,10}$/,
+  },
 ];
+
+// The academic groups every deployment starts with. A student whose group is
+// BOTH (the default) is matched by BOTH entries and by entries for any group,
+// which is what makes an unsplit batch behave exactly as it does today.
+export const DEFAULT_ACADEMIC_GROUPS = ['BOTH', 'A1', 'A2'];
+
+// The group value that means "the whole batch" — matched by every student
+// regardless of their own group.
+export const GROUP_BOTH = 'BOTH';
 
 export function normalizeDomain(raw) {
   return String(raw || '').trim().toLowerCase().replace(/^@/, '');
@@ -242,11 +262,20 @@ export async function getSettings() {
   // deployments (neither field ever set) fall back to the same 'isu.ac.bd'
   // default this app always had. Runs at most once per deployment: after
   // the first save, officialEmailDomains is non-empty and this is skipped.
+  //
+  // academicGroups is seeded the same way so the list is never empty — an
+  // empty list would make every group value invalid, including "BOTH".
+  let dirty = false;
   if (!settings.officialEmailDomains?.length) {
     const legacy = normalizeDomain(settings.studentAutoApprovalDomain);
     settings.officialEmailDomains = [legacy || 'isu.ac.bd'];
-    await settings.save();
+    dirty = true;
   }
+  if (!settings.academicGroups?.length) {
+    settings.academicGroups = [...DEFAULT_ACADEMIC_GROUPS];
+    dirty = true;
+  }
+  if (dirty) await settings.save();
 
   return settings;
 }

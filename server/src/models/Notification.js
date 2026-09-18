@@ -17,6 +17,16 @@ export const NOTIFICATION_TYPES = [
   'EXAM_REMINDER',
   'EXAM_RESULT',
 
+  // Class routine. Each reminder offset is its own type, not just its own
+  // message: the idempotency index is {recipient,type,entityType,entityId}, so
+  // the type is the only thing that keeps "starts in 30 minutes" and "starts
+  // now" for the SAME occurrence from collapsing into one row.
+  'CLASS_REMINDER',
+  'CLASS_STARTING',
+  'CLASS_CANCELLED',
+  'CLASS_RESCHEDULED',
+  'CLASS_ROOM_CHANGED',
+
   'NOTICE_CREATED',
   'NOTICE_UPDATED',
 

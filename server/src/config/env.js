@@ -91,4 +91,12 @@ export const env = {
     serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT || '',
     serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
   },
+
+  // Shared secret for the class-reminder cron target
+  // (POST /api/internal/reminders/run). Reminders need to fire on a clock, and
+  // this stack has no scheduler — so an external cron calls that endpoint every
+  // minute. The caller is a machine, not a user, so there is no JWT to check;
+  // the endpoint refuses to run at all while this is unset rather than being
+  // left open.
+  reminderCronSecret: process.env.REMINDER_CRON_SECRET || '',
 };
