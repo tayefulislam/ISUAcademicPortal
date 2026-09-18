@@ -8,6 +8,7 @@
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
     "seed": "node src/utils/seed.js",
+    "dedupe:notifications": "node scripts/dedupeNotifications.js",
     "generate:question-template": "node src/utils/generateQuestionImportTemplate.js",
     "test": "node --test src/**/*.test.js"
   },

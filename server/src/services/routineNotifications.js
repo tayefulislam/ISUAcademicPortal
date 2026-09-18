@@ -47,11 +47,14 @@ export async function notifyOccurrence(entry, type, { actorId = null, entityType
     semesters: entry.semester ? [entry.semester] : [],
     groups: entry.group ? [entry.group] : [],
   });
-  if (!recipients.length) return { created: 0 };
+  if (!recipients.length) return { created: 0, pushed: 0 };
 
   const resolvedEntityType = entityType || (entry.eventType ? 'AcademicEvent' : 'ScheduleInstance');
 
-  const { created } = await emit({
+  // `pushed` is forwarded as well as `created`: the caller's summary reports
+  // both, and that is how a repeated cron tick is visible as doing nothing
+  // (0 created, 0 pushed) rather than looking identical to a working one.
+  return emit({
     type,
     actorId,
     entityType: resolvedEntityType,
@@ -61,6 +64,4 @@ export async function notifyOccurrence(entry, type, { actorId = null, entityType
     vars: eventVars(entry, extraVars),
     recipients,
   });
-
-  return { created };
 }
