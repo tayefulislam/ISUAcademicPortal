@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3, CalendarClock, CalendarDays } from 'lucide-react';
+import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3, CalendarClock, CalendarDays, FileText } from 'lucide-react';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
 import SmartEventWidget from '../components/routine/SmartEventWidget.jsx';
@@ -28,6 +28,7 @@ export default function Dashboard() {
   });
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
   const messagingEnabled = settings?.data?.messagingSystemEnabled !== false;
+  const documentsEnabled = settings?.data?.documentGeneratorEnabled !== false;
   // The routine system is opt-in, so this must be an explicit `=== true` rather
   // than the "absent means on" rule the other flags use.
   const routineEnabled = settings?.data?.routineSystemEnabled === true;
@@ -76,6 +77,7 @@ export default function Dashboard() {
 
       <div className="flex flex-wrap gap-2 mb-8">
         <QuickLink to="/profile" icon={User} label="Profile" />
+        {documentsEnabled && <QuickLink to="/documents" icon={FileText} label="Documents" />}
         <QuickLink to="/my-bookmarks" icon={Bookmark} label="Bookmarks" />
         {routineEnabled && <QuickLink to="/routine" icon={CalendarClock} label="Calendar" />}
         {user?.role === 'student' && <QuickLink to="/my-courses" icon={Layers3} label="My Courses" />}

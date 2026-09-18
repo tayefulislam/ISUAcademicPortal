@@ -103,6 +103,12 @@ async function seed() {
     console.log('[seed] admin already exists, skipped');
   }
 
+  // Document Generator: its categories and the first cover-page template. Kept
+  // in its own module (and idempotent) so it can also be re-run alone after an
+  // admin has deleted the template.
+  const { seedDocumentTemplates } = await import('./seedDocumentTemplates.js');
+  await seedDocumentTemplates();
+
   console.log('[seed] done');
   await mongoose.disconnect();
 }

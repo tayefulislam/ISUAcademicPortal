@@ -30,6 +30,7 @@ Web Push (VAPID) + installable PWA · Google Analytics 4.
 14. [Security Notes](#14-security-notes)
 15. [Known Limitations](#15-known-limitations--next-steps)
 16. [Deployment](#16-deployment)
+17. [Document Generator](#17-document-generator)
 
 ---
 
@@ -653,3 +654,40 @@ setup and test procedure: [`docs/FCM_PUSH_SETUP.md`](docs/FCM_PUSH_SETUP.md).
 - [ ] `ISUAcademicPortal/app/google-services.json` added (Firebase Console → Add app → Android, package `com.bluespacetech.isuacademicportal`).
 - [ ] `FIREBASE_SERVICE_ACCOUNT` (or `FIREBASE_SERVICE_ACCOUNT_PATH`) set on the backend.
 - [ ] App rebuilt and installed after adding `google-services.json`.
+
+### 16.7 Document Generator
+
+Students generate cover pages and other academic PDFs from admin-authored
+templates. It needs **Redis** (BullMQ) and **Chromium** on the server, in addition
+to everything above. Full reference: [`docs/DOCUMENT_GENERATOR.md`](docs/DOCUMENT_GENERATOR.md).
+
+- [ ] `REDIS_URL` set (Railway/Render Redis add-on, Upstash, or local Docker).
+- [ ] `npx playwright install --with-deps chromium` in the server build step.
+- [ ] Worker: `PDF_WORKER_IN_PROCESS=true` (one service) or a second service running `npm --prefix server run worker` with `PDF_WORKER_IN_PROCESS=false`.
+- [ ] S3 lifecycle rule expiring `generated-documents/` after 1 day.
+- [ ] `npm --prefix server run seed` once — creates the categories and the first template (optionally attach the reference design via `DOCUMENT_SEED_SOURCE_PATH`).
+- [ ] `documents` permission granted to any custom admin-tier role that manages templates (Super Admin always can).
+
+## 17. Document Generator
+
+Cover-page/document generation, integrated into the existing portal — no separate
+app, and no parallel auth, storage or notification system.
+
+- **Templates are data.** Admins upload a reference cover (PDF/PNG/JPG), map its
+  fields to portal data or to student input, position them on an A4 canvas and
+  publish. New categories, department- and course-specific templates and new
+  versions need no code change.
+- **Nothing official is editable.** Student name, Student ID, batch, group,
+  department, course code/name and teacher are resolved **server-side** from the
+  authenticated user's own records; the client can never submit them.
+- **Preview is HTML, not a PDF.** The same renderer produces both, so what is
+  reviewed cannot diverge from what is generated.
+- **Generation is asynchronous.** `POST /api/documents/generate` creates the job
+  and returns its id immediately; a BullMQ worker renders it with headless
+  Chromium, stores the PDF privately in S3 and notifies the user through the
+  existing notification/FCM system.
+- **Downloads are short-lived signed URLs**, minted per request after an ownership
+  check. Generated files expire after 24 hours (S3 lifecycle + `expiresAt`).
+
+Full reference — data model, endpoints, environment variables, worker/Redis, S3,
+security and testing: [`docs/DOCUMENT_GENERATOR.md`](docs/DOCUMENT_GENERATOR.md).

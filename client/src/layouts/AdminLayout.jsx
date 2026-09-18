@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark, CalendarDays, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark, CalendarDays, CalendarClock, FileText } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -14,6 +14,9 @@ const links = [
   { to: '/admin/quizzes', label: 'Quizzes', icon: GraduationCap, permission: 'quizzes' },
   { to: '/admin/messages', label: 'Messages', icon: MessageCircle, flag: 'messagingSystemEnabled', permission: 'messages' },
   { to: '/admin/emails', label: 'Email Center', icon: Mail, flag: 'emailSystemEnabled', permission: 'emails' },
+  // Cover-page/document templates. Its own permission, so a role can be given
+  // "Document Generator" without also getting files/quizzes/enrollments.
+  { to: '/admin/document-templates', label: 'Document Templates', icon: FileText, flag: 'documentGeneratorEnabled', permission: 'documents' },
   { to: '/admin/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled', permission: 'enrollments' },
   // Gated by the routine_create permission rather than the usual per-module
   // permission, so a CR can be given "build the timetable" without also being

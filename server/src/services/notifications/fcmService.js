@@ -29,6 +29,8 @@ const DATA_KEYS = [
   'attemptId',
   'noticeId',
   'conversationId',
+  // Document Generator: the Android router opens the generated document's screen.
+  'documentId',
   // Class routine / academic calendar. The Android NotificationRouter reads
   // these to open the routine screen and to focus the right occurrence.
   'routineId',

@@ -110,6 +110,43 @@ export const env = {
     notifyFacultyOnStudentUpload: process.env.NOTIFY_FACULTY_ON_STUDENT_UPLOAD === 'true',
   },
 
+  // Redis — the BullMQ queue that backs asynchronous PDF generation. Needed by
+  // the worker process AND by the API process (every /documents/generate call
+  // enqueues a job), so it is required by both, not just the worker.
+  redisUrl: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
+
+  // The institution's name, available to a template through the
+  // `university.name` source. Deliberately unset by default rather than
+  // hardcoded — a template that wants it can also carry it as a STATIC field.
+  universityName: process.env.UNIVERSITY_NAME || '',
+
+  // Document Generator (cover pages and other generated PDFs).
+  documents: {
+    // Master switch for running the BullMQ worker in this process.
+    workerEnabled: process.env.PDF_WORKER_ENABLED !== 'false',
+    // With a single-service deployment the worker runs in the API process; a
+    // dedicated worker (npm run worker) sets this false so only that process
+    // consumes the queue.
+    workerInProcess: process.env.PDF_WORKER_IN_PROCESS !== 'false',
+    workerConcurrency: Number(process.env.PDF_WORKER_CONCURRENCY) || 2,
+    // Optional path to a system Chromium, for hosts that provide their own
+    // instead of Playwright's downloaded build.
+    chromiumPath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '',
+    // How long a generated PDF lives before it is considered EXPIRED. The S3
+    // lifecycle rule is set to match (see docs/DEPLOYMENT_ARCHITECTURE.md).
+    expiryHours: Number(process.env.DOCUMENT_EXPIRY_HOURS) || 24,
+    // Hard ceiling on a rendered PDF, so a runaway template cannot fill the disk.
+    maxPdfMb: Number(process.env.DOCUMENT_MAX_PDF_MB) || 10,
+    // Per-user queue guards: one account must not be able to saturate the queue.
+    maxActiveJobs: Number(process.env.DOCUMENT_MAX_ACTIVE_JOBS) || 5,
+    maxJobsPerDay: Number(process.env.DOCUMENT_MAX_JOBS_PER_DAY) || 20,
+    // A download URL is minted fresh on each request and expires quickly — it is
+    // never stored, so this is the only exposure window.
+    signedUrlTtlSeconds: Number(process.env.DOCUMENT_SIGNED_URL_TTL_SECONDS) || 300,
+    // Requests per 15 minutes per user on POST /documents/generate.
+    generateRateLimit: Number(process.env.DOCUMENT_GENERATE_RATE_LIMIT) || 10,
+  },
+
   // Shared secret for the class-reminder cron target
   // (POST /api/internal/reminders/run). Reminders need to fire on a clock, and
   // this stack has no scheduler — so an external cron calls that endpoint every

@@ -12,7 +12,14 @@ import {
   deletePrivateLocal,
 } from './localStorage.js';
 import { uploadImageToImgbb, deleteImageFromImgbb } from './imgbbStorage.js';
-import { uploadDocumentS3, deleteDocumentS3, uploadPrivateS3, getPrivateObjectS3 } from './s3Storage.js';
+import {
+  uploadDocumentS3,
+  deleteDocumentS3,
+  uploadPrivateS3,
+  getPrivateObjectS3,
+  putObjectS3,
+  getSignedDownloadUrlS3,
+} from './s3Storage.js';
 import { deleteFromUploadcare } from './uploadcareStorage.js';
 
 const PRIVATE_IMAGE_TARGET_BYTES = 300 * 1024;
@@ -244,4 +251,120 @@ export async function getStudentIdImageStream(studentIdImage) {
     return { stream: Readable.fromWeb(res.body), contentType: res.headers.get('content-type') || 'image/jpeg' };
   }
   throw new ApiError(404, 'No ID photo on file');
+}
+
+// ---------------------------------------------------------------------------
+// Generated documents (Document Generator).
+//
+// A generated PDF is always private: stored under a deterministic key, never
+// given a public URL, and read back only through a short-lived signed URL
+// minted after the caller's ownership has been checked. Only the *key* is ever
+// persisted — a URL never is, so it can never leak from a database dump.
+// ---------------------------------------------------------------------------
+
+/**
+ * Stores a generated PDF. For S3 the requested key is honoured exactly
+ * (`generated-documents/{yyyy}/{MM}/{userId}/{jobId}.pdf`); for the local
+ * development provider the file lands under `private-uploads/` (never served
+ * statically) with a randomized name, and the returned `storageRef` is what the
+ * caller must persist either way.
+ *
+ * @param {string} key
+ * @param {Buffer} buffer
+ * @param {string} [mimeType]
+ * @returns {Promise<{storageRef:string}>}
+ */
+export async function storeGeneratedDocument(key, buffer, mimeType = 'application/pdf') {
+  if (env.fileStorageProvider === 's3') {
+    return putObjectS3(key, buffer, mimeType);
+  }
+  const subDir = key.replace(/\/[^/]+$/, '');
+  const name = key.slice(subDir.length + 1) || 'document.pdf';
+  return uploadPrivateLocal(buffer, name, subDir);
+}
+
+/**
+ * A short-lived URL for one generated document.
+ *
+ * <p>S3 (production): a presigned URL valid for `ttlSeconds`. Local
+ * (development): a relative path to the authenticated streaming route, since a
+ * local file has no signature — the client fetches it with its own token.
+ *
+ * @returns {Promise<{url:string, provider:string}>}
+ */
+export async function getGeneratedDocumentUrl(key, { ttlSeconds = 300, downloadName = '', documentId = '' } = {}) {
+  if (env.fileStorageProvider === 's3') {
+    return { url: await getSignedDownloadUrlS3(key, ttlSeconds, downloadName), provider: 's3' };
+  }
+  return { url: `/api/documents/${documentId}/content`, provider: 'local' };
+}
+
+/** Best-effort delete of a generated document (the S3 lifecycle expires it anyway). */
+export async function deleteGeneratedDocument(key) {
+  if (!key) return;
+  if (env.fileStorageProvider === 's3') {
+    await deleteDocumentS3(key);
+    return;
+  }
+  try {
+    await deletePrivateLocal(key);
+  } catch {
+    // best-effort, as above
+  }
+}
+
+/**
+ * Streams a generated document back for an already-authorized caller — used by
+ * the local-provider path and by the PDF preview route.
+ *
+ * @returns {Promise<{stream: NodeJS.ReadableStream, contentType: string}>}
+ */
+export async function getGeneratedDocumentStream(key, mimeType) {
+  if (env.fileStorageProvider === 's3') {
+    const { stream } = await getPrivateObjectS3(key);
+    return { stream, contentType: mimeType || 'application/pdf' };
+  }
+  const target = await getPrivateLocalPath(key);
+  const { createReadStream } = await import('fs');
+  await fs.access(target);
+  return { stream: createReadStream(target), contentType: mimeType || 'application/pdf' };
+}
+
+// ---------------------------------------------------------------------------
+// Template reference files (the design an admin uploaded) — same private
+// convention as generated documents: key only, never a public URL, read back
+// through an authenticated proxy so the editor can show it as a background.
+// ---------------------------------------------------------------------------
+
+export async function storeTemplateSource(key, buffer, mimeType) {
+  if (env.fileStorageProvider === 's3') {
+    return putObjectS3(key, buffer, mimeType || 'application/octet-stream');
+  }
+  const subDir = key.replace(/\/[^/]+$/, '');
+  const name = key.slice(subDir.length + 1) || 'source';
+  return uploadPrivateLocal(buffer, name, subDir);
+}
+
+export async function getTemplateSourceStream(key, mimeType) {
+  if (env.fileStorageProvider === 's3') {
+    const { stream } = await getPrivateObjectS3(key);
+    return { stream, contentType: mimeType || 'application/octet-stream' };
+  }
+  const target = await getPrivateLocalPath(key);
+  const { createReadStream } = await import('fs');
+  await fs.access(target);
+  return { stream: createReadStream(target), contentType: mimeType || 'application/octet-stream' };
+}
+
+export async function deleteTemplateSource(key) {
+  if (!key) return;
+  if (env.fileStorageProvider === 's3') {
+    await deleteDocumentS3(key);
+    return;
+  }
+  try {
+    await deletePrivateLocal(key);
+  } catch {
+    // best-effort, as above
+  }
 }

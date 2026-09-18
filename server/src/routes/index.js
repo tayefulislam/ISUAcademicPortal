@@ -36,6 +36,10 @@ import eventRoutes from './eventRoutes.js';
 import examRoutes from './examRoutes.js';
 import eventsRoutes from './eventsRoutes.js';
 import reminderRoutes from './reminderRoutes.js';
+import documentRoutes from './documentRoutes.js';
+import documentTemplateRoutes from './documentTemplateRoutes.js';
+import documentCategoryRoutes from './documentCategoryRoutes.js';
+import adminDocumentRoutes from './adminDocumentRoutes.js';
 
 const router = Router();
 
@@ -53,6 +57,13 @@ router.use('/categories', categoryRoutes);
 router.use('/chapters', chapterRoutes);
 router.use('/topics', topicRoutes);
 router.use('/files', fileRoutes);
+// Document Generator. The /admin/... router is mounted BEFORE the generic /admin
+// router so its path is matched first and never swallowed by it.
+router.use('/admin/document-templates', adminDocumentRoutes);
+router.use('/document-categories', documentCategoryRoutes);
+router.use('/document-templates', documentTemplateRoutes);
+router.use('/documents', documentRoutes);
+
 router.use('/admin', adminRoutes);
 router.use('/super-admin', superAdminRoutes);
 router.use('/search', searchRoutes);

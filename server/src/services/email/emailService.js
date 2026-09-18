@@ -28,3 +28,23 @@ export async function sendEmail({ to, subject, html, text }) {
   }
   return sendViaConsole({ to, subject, html, text });
 }
+
+/**
+ * One-line description of the effective transport, for the boot log. Mail is
+ * optional and degrades to console logging when unconfigured, so without this a
+ * deployment can look like it is "sending" email that never leaves the process.
+ */
+export function describeEmailProvider() {
+  const provider = env.email.provider;
+  if (provider === 'smtp') {
+    return isSmtpConfigured()
+      ? 'smtp (configured)'
+      : 'smtp (NOT configured - missing SMTP_HOST/SMTP_USER/SMTP_PASS - emails will only be logged)';
+  }
+  if (provider === 'resend') {
+    return isResendConfigured()
+      ? 'resend (configured)'
+      : 'resend (NOT configured - missing RESEND_API_KEY - emails will only be logged)';
+  }
+  return provider + ' (emails are logged, not sent)';
+}

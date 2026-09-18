@@ -46,6 +46,11 @@ export const NOTIFICATION_TYPES = [
   'STUDENT_ID_APPROVED',
   'STUDENT_ID_REJECTED',
 
+  // A generated document (cover page etc.) finished rendering and is ready to
+  // download. Carries the document id, never a URL — the client asks for a fresh
+  // signed URL after authorization.
+  'DOCUMENT_READY',
+
   'SYSTEM',
 ];
 
