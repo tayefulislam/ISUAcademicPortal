@@ -7,7 +7,10 @@ import {
   getMonthRoutine,
   getCurrentNext,
   getInstance,
+  listInstances,
   listTemplates,
+  getGroups,
+  getFacultyForCourse,
   createRoutine,
   updateTemplate,
   deleteTemplate,
@@ -29,6 +32,11 @@ router.get('/today', getTodayRoutine);
 router.get('/week', getWeekRoutine);
 router.get('/month', getMonthRoutine);
 
+// Lookups the routine form needs: the configured group values, and which
+// faculty member a course belongs to (so it can be preselected).
+router.get('/groups', getGroups);
+router.get('/faculty', getFacultyForCourse);
+
 // Managing the recurring rules. Faculty reach these through allowRoles;
 // an admin-tier role (Admin, CR) needs the matching routine_* permission.
 const canView = requirePermission('routine_view', { allowRoles: ['faculty'] });
@@ -44,6 +52,7 @@ router.post('/recurring', canCreate, createRoutine);
 router.patch('/templates/:id', canUpdate, updateTemplate);
 router.delete('/templates/:id', canDelete, deleteTemplate);
 
+router.get('/instances', canView, listInstances);
 router.get('/instances/:id', getInstance);
 router.patch('/instances/:id', canUpdate, updateInstance);
 router.post('/instances/:id/cancel', canUpdate, cancelInstance);

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, FileText, ClipboardList, GraduationCap, Trophy, Megaphone, MessageCircle, Trash2 } from 'lucide-react';
+import { Bell, FileText, ClipboardList, GraduationCap, Trophy, Megaphone, MessageCircle, Trash2, Clock, CalendarClock, CalendarX, MapPin } from 'lucide-react';
 import { useNotificationActions } from '../../hooks/useNotifications.js';
 
 const ICONS = {
@@ -14,6 +14,14 @@ const ICONS = {
   EXAM_UPDATED: GraduationCap,
   EXAM_REMINDER: GraduationCap,
   EXAM_RESULT: Trophy,
+  // Class routine — each reminder offset is its own type on the server, so the
+  // icon has to distinguish "starting soon" from "cancelled" without relying on
+  // colour alone.
+  CLASS_REMINDER: Clock,
+  CLASS_STARTING: Clock,
+  CLASS_CANCELLED: CalendarX,
+  CLASS_RESCHEDULED: CalendarClock,
+  CLASS_ROOM_CHANGED: MapPin,
   NOTICE_CREATED: Megaphone,
   NOTICE_UPDATED: Megaphone,
   GRADE_PUBLISHED: Trophy,

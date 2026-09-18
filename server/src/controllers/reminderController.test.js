@@ -111,6 +111,28 @@ describe('reminder authorisation', () => {
     assert.equal(res.body.success, true);
     assert.ok(res.body.data.classReminders, 'the summary reports what each offset matched');
   });
+
+  test('does nothing while the routine system is switched off', async () => {
+    const settings = await getSettings();
+    settings.routineSystemEnabled = false;
+    await settings.save();
+    await makeInstance({ startTime: '10:30' });
+
+    const { res, error } = await callController(fakeReq({ 'x-reminder-secret': env.reminderCronSecret }));
+
+    assert.equal(error, undefined, 'a switched-off system is not a cron error');
+    assert.equal(res.body.data.skipped, 'ROUTINE_DISABLED');
+    assert.equal(await Notification.countDocuments(), 0, 'no reminders while the system is off');
+  });
+
+  test('the secret is checked before the feature flag', async () => {
+    const settings = await getSettings();
+    settings.routineSystemEnabled = false;
+    await settings.save();
+
+    const { error } = await callController(fakeReq({ 'x-reminder-secret': 'wrong' }));
+    assert.equal(error?.statusCode, 401, 'an unauthenticated caller learns nothing about configuration');
+  });
 });
 
 describe('reminder offsets', () => {

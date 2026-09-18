@@ -14,6 +14,7 @@ import RoutineTemplate from '../models/RoutineTemplate.js';
 import {
   getMyRoutine,
   getCurrentNext,
+  listInstances,
   cancelInstance,
   rescheduleInstance,
 } from './routineController.js';
@@ -169,6 +170,44 @@ describe('GET /events/my/current-next', () => {
     assert.ok(res.body.data.serverTime, 'clients count down from the server clock');
     assert.equal(res.body.data.hasAnySchedule, true);
     assert.ok('current' in res.body.data && 'next' in res.body.data);
+  });
+});
+
+describe('GET /routine/instances — the manager timetable', () => {
+  test('returns one Dhaka day, narrowed by the audience axes', async () => {
+    const admin = await User.create({
+      name: 'Admin', email: 'admin@test.local', password: 'password123', role: 'admin',
+    });
+    await makeInstance({ startTime: '10:00', endTime: '11:30' });
+    await makeInstance({ date: '2026-09-21', startTime: '10:00', endTime: '11:30' });
+    await makeInstance({ batch: batch15._id, startTime: '12:00', endTime: '13:30' });
+
+    const { res, error } = await call(listInstances, {
+      user: admin,
+      query: { date: '2026-09-20', batch: String(batch14._id) },
+    });
+
+    assert.equal(error, undefined);
+    assert.equal(res.body.data.length, 1, 'one date, one batch');
+    assert.equal(res.body.data[0].date, '2026-09-20');
+  });
+
+  test('a faculty member sees only their assigned courses', async () => {
+    const scoped = await User.create({
+      name: 'Scoped', email: 'scoped@test.local', password: 'password123',
+      role: 'faculty', assignedCourses: [cse101._id],
+    });
+    const elsewhere = await User.create({
+      name: 'Elsewhere', email: 'elsewhere@test.local', password: 'password123',
+      role: 'faculty', assignedCourses: [eee101._id],
+    });
+    await makeInstance();
+
+    const mine = await call(listInstances, { user: scoped, query: { date: '2026-09-20' } });
+    assert.equal(mine.res.body.data.length, 1);
+
+    const theirs = await call(listInstances, { user: elsewhere, query: { date: '2026-09-20' } });
+    assert.equal(theirs.res.body.data.length, 0, 'another course\'s timetable is not theirs to manage');
   });
 });
 
