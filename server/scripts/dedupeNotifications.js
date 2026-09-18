@@ -2,8 +2,8 @@
 //
 // WHY THIS EXISTS
 //   Notification carries a unique index on {recipient, type, entityType,
-//   entityId} — that is what makes a repeated event a no-op. A unique index
-//   cannot be built while duplicates already exist, and a failed build is
+//   entityId, slot} — that is what makes a repeated event a no-op. A unique
+//   index cannot be built while duplicates already exist, and a failed build is
 //   silent: the app keeps running, the index is simply absent, and every retry
 //   then writes another copy. The visible symptom is a reminder arriving every
 //   minute for as long as its window is open (the reminder engine scans a
@@ -56,6 +56,7 @@ async function main() {
           type: '$type',
           entityType: '$entityType',
           entityId: '$entityId',
+          slot: '$slot',
         },
         count: { $sum: 1 },
         keep: { $first: '$_id' },
@@ -83,7 +84,7 @@ async function main() {
     console.log(`[dedupe] deleted:          ${removed}`);
     if (byKey.length) {
       console.log('[dedupe] affected keys (first 5):');
-      byKey.slice(0, 5).forEach((k) => console.log(`         ${k.type} ${k.entityType} ${k.entityId} -> ${k.recipient}`));
+      byKey.slice(0, 5).forEach((k) => console.log(`         ${k.type}${k.slot ? ` [${k.slot}]` : ''} ${k.entityType} ${k.entityId} -> ${k.recipient}`));
     }
   }
 

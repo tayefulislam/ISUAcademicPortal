@@ -36,11 +36,16 @@ function pushEnabledFor(user) {
  * @param {string|ObjectId} [event.course]
  * @param {string|ObjectId} [event.department]
  * @param {object} [event.vars] - template variables (see notificationTemplates.js)
+ * @param {string} [event.slot] - a further discriminator within one
+ *   (recipient, type, entity). Only reminders use it: the offset plus the
+ *   occurrence's effective start instant, so two offsets for the same class are
+ *   two notifications and a moved class produces a new one instead of colliding
+ *   with the reminder that already fired. Empty for everything else.
  * @param {Array<string|ObjectId>} event.recipients - resolved recipient ids
  *   (use recipientResolver.js to build this — never take a raw list from
  *   client input except for the gated admin "send to specific user" case).
  */
-export async function emit({ type, actorId = null, entityType = '', entityId = null, course = null, department = null, vars = {}, recipients }) {
+export async function emit({ type, actorId = null, entityType = '', entityId = null, slot = '', course = null, department = null, vars = {}, recipients }) {
   const requested = [...new Set((recipients || []).map(String))].filter((id) => id !== String(actorId));
   if (!requested.length) return { created: 0 };
 
@@ -58,7 +63,7 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
   const { title, message, url } = renderTemplate(type, vars);
   const effectiveEntityId = entityId || new mongoose.Types.ObjectId();
 
-  // The unique index {recipient,type,entityType,entityId} is what makes this
+  // The unique index {recipient,type,entityType,entityId,slot} is what makes this
   // atomic, but it is NOT sufficient on its own: an index that failed to build
   // (a deployment whose collection predates it, or one that could not be built
   // because duplicates already existed) silently stops deduping, and every
@@ -69,6 +74,7 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     type,
     entityType,
     entityId: effectiveEntityId,
+    slot,
   })
     .select('recipient')
     .lean();
@@ -86,6 +92,7 @@ export async function emit({ type, actorId = null, entityType = '', entityId = n
     message,
     entityType,
     entityId: effectiveEntityId,
+    slot,
     course,
     department,
     url,
