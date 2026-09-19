@@ -36,7 +36,8 @@ export default function DocumentTemplateForm() {
 
   const { data: categoryData } = useQuery({ queryKey: ['document-categories'], queryFn: documentCategoryApi.list });
   const { data: deptData } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
-  const { data: courseData } = useQuery({ queryKey: ['courses'], queryFn: () => courseApi.list({}) });
+  // Picker: the whole catalogue is needed, then filtered client-side.
+  const { data: courseData } = useQuery({ queryKey: ['courses'], queryFn: () => courseApi.list({ limit: 500 }) });
   const { data: existing } = useQuery({
     queryKey: ['admin-document-template', id],
     queryFn: () => adminDocumentApi.template(id),

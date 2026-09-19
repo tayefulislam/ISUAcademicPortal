@@ -64,7 +64,11 @@ export default function RoutineManager() {
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
   const { data: courses } = useQuery({
     queryKey: ['courses', scope.department],
-    queryFn: () => courseApi.list(scope.department ? { department: scope.department } : {}),
+    // The course picker filters this list client-side, so a course beyond the
+    // server's page would be unfindable no matter what is typed into it.
+    queryFn: () => courseApi.list(scope.department
+      ? { department: scope.department, limit: 500 }
+      : { limit: 500 }),
   });
   const { data: groupsData } = useQuery({ queryKey: ['routine', 'groups'], queryFn: routineApi.groups });
 

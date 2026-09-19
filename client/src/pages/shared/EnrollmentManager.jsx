@@ -51,7 +51,8 @@ export default function EnrollmentManager() {
     queryKey: ['enrollments', params],
     queryFn: () => courseEnrollmentApi.list(params),
   });
-  const { data: courseData } = useQuery({ queryKey: ['courses-lite'], queryFn: () => courseApi.list() });
+  // Picker: the whole catalogue is needed, then filtered client-side.
+  const { data: courseData } = useQuery({ queryKey: ['courses-lite'], queryFn: () => courseApi.list({ limit: 500 }) });
   const { data: batchData } = useQuery({ queryKey: ['batches-lite'], queryFn: () => batchApi.list() });
   const { data: semesterData } = useQuery({ queryKey: ['semesters-lite'], queryFn: semesterApi.list });
 
