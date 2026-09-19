@@ -7,16 +7,19 @@ import {
   Eye,
   Image as ImageIcon,
   Minus,
+  Redo2,
   Save,
   Send,
   Trash2,
   Type,
+  Undo2,
   Upload,
   Variable,
   Zap,
 } from 'lucide-react';
 import { adminDocumentApi, documentApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import useHistory from '../../hooks/useHistory.js';
 import TemplateCanvas, { pageSizeMm } from '../../components/documents/TemplateCanvas.jsx';
 import FieldMappingPanel from '../../components/documents/FieldMappingPanel.jsx';
 
@@ -33,14 +36,54 @@ function nextZ(fields) {
   return fields.length ? Math.max(...fields.map((f) => Number(f.zIndex) || 0)) + 1 : 0;
 }
 
+const round1 = (value) => Math.round(value * 10) / 10;
+
+/**
+ * Builds an element for the point it was dropped on.
+ *
+ * @param {{type:string, asset?:string, x?:number, y?:number, index:number, z:number}} spec
+ */
+function makeElement({ type, asset, x = 20, y = 20, index, z }) {
+  const base = {
+    key: `el_${Date.now().toString(36)}_${index}`,
+    x: round1(x),
+    y: round1(y),
+    zIndex: z,
+    align: 'left',
+    color: '#111111',
+    validation: {},
+    formatting: {},
+  };
+
+  if (type === 'IMAGE') {
+    const chosen = asset || '';
+    return {
+      ...base,
+      type: 'IMAGE',
+      label: chosen ? chosen.replace(/\.[^.]+$/, '') : 'Image',
+      asset: chosen,
+      width: 34,
+      height: 34,
+    };
+  }
+  if (type === 'LINE') {
+    return { ...base, type: 'LINE', label: 'Rule', width: 170, height: 0.5 };
+  }
+  if (type === 'AUTO') {
+    return { ...base, type: 'AUTO', label: 'Dynamic field', source: 'student.name', width: 120, height: 8, fontSize: 12 };
+  }
+  return { ...base, type: 'STATIC', label: 'Text', staticValue: 'Text', width: 120, height: 8, fontSize: 12 };
+}
+
 /**
  * The visual template editor.
  *
  * <p>Everything about a design lives in the database and is assembled here:
- * elements are dragged in from the palette, positioned in millimetres on an A4
- * canvas, aligned, stacked (z-order), and given their source and styling. Saving
- * always appends a NEW version — the version a document was generated from is
- * never rewritten.
+ * elements are dragged in from the palette, moved and RESIZED on an A4 canvas,
+ * aligned, stacked (z-order) and given their source and styling. The whole
+ * session is undoable — Ctrl+Z / Ctrl+Shift+Z (or the toolbar buttons) — and
+ * saving always appends a NEW version, because the version a document was
+ * generated from is never rewritten.
  */
 export default function DocumentTemplateEditor() {
   const { id } = useParams();
@@ -49,7 +92,8 @@ export default function DocumentTemplateEditor() {
   const qc = useQueryClient();
 
   const [versionNumber, setVersionNumber] = useState(null);
-  const [fields, setFields] = useState([]);
+  const history = useHistory([]);
+  const fields = history.state;
   const [selectedKey, setSelectedKey] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
   const [busy, setBusy] = useState('');
@@ -85,7 +129,7 @@ export default function DocumentTemplateEditor() {
     staleTime: Infinity,
   });
   const assets = useMemo(
-    () => assetList.map((a) => ({ ...a, url: assetUrls?.[a.name] || '' })),
+    () => assetList.map((a) => ({ ...a, name: a.name, url: assetUrls?.[a.name] || '' })),
     [assetList, assetUrls]
   );
 
@@ -98,20 +142,21 @@ export default function DocumentTemplateEditor() {
   });
   const version = versionData?.data;
 
+  // Load the design into the editor whenever a different version is opened, and
+  // start that version's history fresh.
   useEffect(() => {
     if (version) {
-      setFields(version.fields || []);
+      history.reset(version.fields || []);
       setSelectedKey('');
       setPreviewHtml('');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
   const pageSize = version?.pageSize || template?.pageSize || 'A4';
   const orientation = version?.orientation || template?.orientation || 'portrait';
   const page = pageSizeMm(pageSize, orientation);
 
-  // The reference design is a private object, so it is fetched through the
-  // authenticated API as a blob and used as a temporary background image.
   const { data: backgroundUrl } = useQuery({
     queryKey: ['admin-document-source', id, activeVersion, version?.sourceFile?.s3Key],
     queryFn: () => adminDocumentApi.sourceUrl(id, activeVersion),
@@ -122,69 +167,93 @@ export default function DocumentTemplateEditor() {
 
   const selectedField = useMemo(() => fields.find((f) => f.key === selectedKey), [fields, selectedKey]);
 
-  const updateField = (next) => setFields((prev) => prev.map((f) => (f.key === next.key ? next : f)));
+  // A property edit: coalesced by field, so typing into one box is a single
+  // undo step rather than one per keystroke.
+  const updateField = (next) => history.commit(fields.map((f) => (f.key === next.key ? next : f)), next.key);
+
   const removeField = (key) => {
-    setFields((prev) => prev.filter((f) => f.key !== (key || selectedKey)));
+    history.commit(fields.filter((f) => f.key !== (key || selectedKey)));
     setSelectedKey('');
   };
 
-  /** Adds an element at the point it was dropped, with sensible starting values. */
   const addFromPalette = ({ type, asset, x = 20, y = 20 }) => {
-    const base = {
-      key: `el_${Date.now().toString(36)}_${fields.length}`,
-      x: Math.round(x * 10) / 10,
-      y: Math.round(y * 10) / 10,
-      zIndex: nextZ(fields),
-      align: 'left',
-      color: '#111111',
-      validation: {},
-      formatting: {},
-    };
-
-    let field;
-    if (type === 'IMAGE') {
-      const chosen = asset || assetList[0]?.name || '';
-      field = {
-        ...base,
-        type: 'IMAGE',
-        label: chosen ? chosen.replace(/\.[^.]+$/, '') : 'Image',
-        asset: chosen,
-        width: 34,
-        height: 34,
-      };
-    } else if (type === 'LINE') {
-      field = { ...base, type: 'LINE', label: 'Rule', width: 170, height: 0.5 };
-    } else if (type === 'AUTO') {
-      field = { ...base, type: 'AUTO', label: 'Dynamic field', source: 'student.name', width: 120, height: 8, fontSize: 12 };
-    } else {
-      field = { ...base, type: 'STATIC', label: 'Text', staticValue: 'Text', width: 120, height: 8, fontSize: 12 };
-    }
-
-    setFields((prev) => [...prev, field]);
-    setSelectedKey(field.key);
+    const element = makeElement({ type, asset, x, y, index: fields.length, z: nextZ(fields) });
+    history.commit([...fields, element]);
+    setSelectedKey(element.key);
   };
 
-  const bringToFront = () => setFields((prev) => {
-    const max = Math.max(0, ...prev.map((f) => Number(f.zIndex) || 0));
-    return prev.map((f) => (f.key === selectedKey ? { ...f, zIndex: max + 1 } : f));
-  });
+  const bringToFront = () => {
+    const max = Math.max(0, ...fields.map((f) => Number(f.zIndex) || 0));
+    history.commit(fields.map((f) => (f.key === selectedKey ? { ...f, zIndex: max + 1 } : f)));
+  };
 
-  const sendToBack = () => setFields((prev) => {
-    const min = Math.min(0, ...prev.map((f) => Number(f.zIndex) || 0));
-    return prev.map((f) => (f.key === selectedKey ? { ...f, zIndex: min - 1 } : f));
-  });
+  const sendToBack = () => {
+    const min = Math.min(0, ...fields.map((f) => Number(f.zIndex) || 0));
+    history.commit(fields.map((f) => (f.key === selectedKey ? { ...f, zIndex: min - 1 } : f)));
+  };
 
-  const handleAlign = (mode) => setFields((prev) => prev.map((f) => {
+  const handleAlign = (mode) => history.commit(fields.map((f) => {
     if (f.key !== selectedKey) return f;
     const width = Number(f.width) || 0;
     const height = Number(f.height) || 0;
-    const round = (n) => Math.round(n * 10) / 10;
     if (mode === 'left') return { ...f, x: 0 };
-    if (mode === 'right') return { ...f, x: Math.max(0, round(page.w - width)) };
-    if (mode === 'center') return { ...f, x: Math.max(0, round((page.w - width) / 2)) };
-    if (mode === 'middle') return { ...f, y: Math.max(0, round((page.h - height) / 2)) };
+    if (mode === 'right') return { ...f, x: Math.max(0, round1(page.w - width)) };
+    if (mode === 'center') return { ...f, x: Math.max(0, round1((page.w - width) / 2)) };
+    if (mode === 'middle') return { ...f, y: Math.max(0, round1((page.h - height) / 2)) };
     return f;
   }));
+
+  const nudgeSelected = (dx, dy) => {
+    if (!selectedKey) return;
+    history.commit(
+      fields.map((f) => (f.key === selectedKey
+        ? { ...f, x: Math.max(0, round1((Number(f.x) || 0) + dx)), y: Math.max(0, round1((Number(f.y) || 0) + dy)) }
+        : f)),
+      `nudge:${selectedKey}`
+    );
+  };
+
+  // Keyboard: undo/redo anywhere, arrow keys to nudge the selected element.
+  // Deliberately inert while a text field has focus, so typing (and the
+  // browser's own undo inside an input) is never hijacked.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const tag = (target?.tagName || '').toLowerCase();
+      const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+      const mod = event.ctrlKey || event.metaKey;
+
+      if (mod && event.key.toLowerCase() === 'z') {
+        if (typing && !event.shiftKey) return; // let the input undo its own text
+        event.preventDefault();
+        if (event.shiftKey) history.redo();
+        else history.undo();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        history.redo();
+        return;
+      }
+      if (typing || !selectedKey) return;
+
+      const step = event.shiftKey ? 10 : 1;
+      const moves = {
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+      };
+      const move = moves[event.key];
+      if (!move) return;
+      event.preventDefault();
+      nudgeSelected(move[0], move[1]);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey, fields, history]);
 
   // Placeholder values so a preview renders before the student's real answers
   // exist — the editor previews the LAYOUT, not a real document.
@@ -214,10 +283,10 @@ export default function DocumentTemplateEditor() {
   const saveVersion = async () => {
     setBusy('save');
     try {
-      const fd = new FormData();
-      fd.append('fields', JSON.stringify(fields));
-      if (sourceFile) fd.append('source', sourceFile);
-      const res = await adminDocumentApi.createVersion(id, fd);
+      const payload = new FormData();
+      payload.append('fields', JSON.stringify(fields));
+      if (sourceFile) payload.append('source', sourceFile);
+      const res = await adminDocumentApi.createVersion(id, payload);
       toast(`Saved as v${res.data.version}`, 'success');
       setSourceFile(null);
       setVersionNumber(res.data.version);
@@ -267,6 +336,28 @@ export default function DocumentTemplateEditor() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Undo / redo */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <button
+              type="button"
+              onClick={history.undo}
+              disabled={!history.canUndo}
+              title="Undo (Ctrl+Z)"
+              className="h-10 px-2.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={history.redo}
+              disabled={!history.canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+              className="h-10 px-2.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white border-l border-slate-200"
+            >
+              <Redo2 size={16} />
+            </button>
+          </div>
+
           <select
             value={activeVersion || ''}
             onChange={(e) => setVersionNumber(Number(e.target.value))}
@@ -326,8 +417,6 @@ export default function DocumentTemplateEditor() {
             ))}
           </div>
 
-          {/* Each image in the library is its own drag source, so a specific logo
-              can be dropped straight onto the page. */}
           {assets.length > 0 && (
             <>
               <h3 className="text-[11px] font-semibold text-slate-500 mt-4 mb-2">Images</h3>
@@ -357,7 +446,8 @@ export default function DocumentTemplateEditor() {
         <div>
           <div className="flex items-center justify-between mb-3 gap-3">
             <p className="text-xs text-slate-500">
-              Drag to move (it snaps to the page centre), or drag an element in from the left. Millimetres — the units the PDF uses.
+              Drag to move · drag a <strong>grip</strong> to resize · <kbd className="px-1 border rounded">Ctrl</kbd> for
+              0.1 mm steps · <kbd className="px-1 border rounded">Shift</kbd> to keep the shape · arrows nudge
             </p>
             <label className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500 cursor-pointer hover:bg-slate-50 shrink-0">
               <Upload size={13} />
@@ -380,7 +470,9 @@ export default function DocumentTemplateEditor() {
               backgroundUrl={backgroundUrl || ''}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
-              onChange={setFields}
+              onChange={history.update}
+              onChangeStart={history.begin}
+              onChangeEnd={history.end}
               onDropNew={addFromPalette}
             />
           </div>

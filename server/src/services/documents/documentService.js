@@ -113,10 +113,50 @@ export async function assertCourseAccess(user, courseId) {
 }
 
 /**
+ * The faculty a course's cover may name — everyone the app already considers
+ * faculty for that course (department/course assignment), which is what the
+ * student picks from.
+ *
+ * <p>A course routinely has more than one (a theory teacher and a lab teacher,
+ * or several sections), so this is a LIST, not a single answer. Picking the
+ * first was arbitrary — the teacher is the student's choice.
+ */
+export async function facultyOptionsForCourse(course) {
+  if (!course) return [];
+  const ids = await resolveFacultyForCourse(course);
+  if (!ids || !ids.length) return [];
+  const users = await User.find({ _id: { $in: ids } }).select('name email').sort({ name: 1 });
+  return users
+    .filter((user) => (user.name || '').trim())
+    .map((user) => ({ _id: String(user._id), name: user.name, email: user.email || '' }));
+}
+
+/**
+ * Resolves which faculty the document names: an explicit choice, validated
+ * against the course's own list; otherwise the first, so a single-teacher course
+ * needs no interaction. A choice that is not on the list is refused — the client
+ * can pick a teacher, but it can never invent one.
+ */
+export function pickFaculty(options, facultyId) {
+  if (!options.length) {
+    if (facultyId) throw new ApiError(422, 'That course has no assigned teacher');
+    return null;
+  }
+  if (!facultyId) return options[0];
+  const match = options.find((option) => option._id === String(facultyId));
+  if (!match) throw new ApiError(422, 'Choose a teacher from the selected course’s list');
+  return match;
+}
+
+/**
  * The flat `source -> value` map an AUTO field resolves against, plus the ids
  * behind those values for the job's audit snapshot.
+ *
+ * @param {object} user
+ * @param {object|null} course
+ * @param {{facultyId?: string|null}} [options] the teacher the student chose
  */
-export async function buildContext(user, course) {
+export async function buildContext(user, course, { facultyId = null } = {}) {
   const context = {};
   const ids = {
     userId: String(user._id),
@@ -143,6 +183,9 @@ export async function buildContext(user, course) {
     context['department.name'] = context['student.department'];
   }
 
+  let facultyOptions = [];
+  let chosenFacultyId = '';
+
   if (course) {
     context['course.code'] = course.courseId || '';
     context['course.name'] = course.name || '';
@@ -151,28 +194,28 @@ export async function buildContext(user, course) {
       context['course.department'] = courseDepartment ? (courseDepartment.name || courseDepartment.code || '') : '';
       if (!context['department.name']) context['department.name'] = context['course.department'];
     }
-    // The teacher shown on the cover is whoever the app already considers the
-    // faculty for that course.
-    const facultyIds = await resolveFacultyForCourse(course);
-    if (facultyIds && facultyIds.length) {
-      const faculty = await User.findById(facultyIds[0]).select('name email');
-      if (faculty) {
-        context['faculty.name'] = faculty.name || '';
-        context['faculty.email'] = faculty.email || '';
-      }
-      ids.facultyId = String(facultyIds[0]);
+
+    // The teacher printed on the cover is the one the student chose, checked
+    // against the faculty the course actually has.
+    facultyOptions = await facultyOptionsForCourse(course);
+    const chosen = pickFaculty(facultyOptions, facultyId);
+    if (chosen) {
+      context['faculty.name'] = chosen.name || '';
+      context['faculty.email'] = chosen.email || '';
+      chosenFacultyId = chosen._id;
+      ids.facultyId = chosen._id;
     }
   }
 
   context['university.name'] = env.universityName || '';
-  return { context, ids };
+  return { context, ids, facultyOptions, chosenFacultyId };
 }
 
 /** HTML for the live preview — the same title/version/values the worker renders. */
-export async function renderPreview({ user, templateId, courseId, inputData }) {
+export async function renderPreview({ user, templateId, courseId, inputData, facultyId = null }) {
   const { template, version } = await loadUsableTemplate(user, templateId);
   const course = await assertCourseAccess(user, courseId);
-  const { context } = await buildContext(user, course);
+  const { context } = await buildContext(user, course, { facultyId });
   const { values } = buildRenderData({ fields: version.fields, context, inputData });
   // The logo (and any other image element) is embedded from the server's own
   // img/ folder, so the preview shows exactly what the PDF will.
@@ -184,7 +227,7 @@ export async function renderPreview({ user, templateId, courseId, inputData }) {
  * Creates the job row and returns it. Validation happens first, so a bad field
  * never leaves a job behind. Enqueuing is the caller's next step.
  */
-export async function createJob({ user, templateId, courseId, inputData }) {
+export async function createJob({ user, templateId, courseId, inputData, facultyId = null }) {
   const { template, version } = await loadUsableTemplate(user, templateId);
   const course = await assertCourseAccess(user, courseId);
 
@@ -207,7 +250,7 @@ export async function createJob({ user, templateId, courseId, inputData }) {
   // Resolve (and therefore validate) the values now, so a validation error is a
   // synchronous 422 rather than a job that fails in the worker. Only the
   // editable inputs are persisted — official values are never accepted.
-  const { context, ids } = await buildContext(user, course);
+  const { context, ids, chosenFacultyId } = await buildContext(user, course, { facultyId });
   const { resolved } = buildRenderData({ fields: version.fields, context, inputData });
 
   return DocumentJob.create({
@@ -217,6 +260,9 @@ export async function createJob({ user, templateId, courseId, inputData }) {
     templateName: template.name,
     category: template.category,
     courseId: course ? course._id : null,
+    // Pinned, so a retry (or a later regeneration from this row) prints the same
+    // teacher the student chose rather than silently falling back to the first.
+    facultyId: chosenFacultyId || null,
     inputData: sanitizeInputData(inputData),
     resolved: { fields: resolved, ids },
     status: 'QUEUED',
@@ -274,7 +320,7 @@ export async function processJob(jobId, { renderPdf, storeDocument } = {}) {
 
     const course = job.courseId ? await Course.findById(job.courseId) : null;
 
-    const { context, ids } = await buildContext(user, course);
+    const { context, ids } = await buildContext(user, course, { facultyId: job.facultyId });
     const { values, resolved } = buildRenderData({
       fields: version.fields,
       context,
@@ -350,6 +396,7 @@ export function serializeJob(job) {
     templateVersion: job.templateVersion,
     category: job.category,
     courseId: job.courseId,
+    facultyId: job.facultyId,
     status: job.status,
     fileName: job.fileName,
     sizeBytes: job.sizeBytes,
@@ -361,6 +408,9 @@ export function serializeJob(job) {
     downloadable: job.status === 'COMPLETED' && Boolean(job.s3Key)
       && (!job.expiresAt || job.expiresAt.getTime() > Date.now()),
     inputData: job.inputData,
+    // What was actually printed, so the document screen can show it (including
+    // the teacher that was chosen).
+    resolved: job.resolved,
   };
 }
 
@@ -369,6 +419,8 @@ export default {
   loadUsableTemplate,
   assertCourseAccess,
   buildContext,
+  facultyOptionsForCourse,
+  pickFaculty,
   renderPreview,
   createJob,
   processJob,

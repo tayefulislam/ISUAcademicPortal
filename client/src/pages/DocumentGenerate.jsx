@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Lock, Loader2, PencilLine, Send } from 'lucide-react';
@@ -19,6 +19,7 @@ export default function DocumentGenerate() {
   const [category, setCategory] = useState('');
   const [templateId, setTemplateId] = useState(searchParams.get('template') || '');
   const [courseId, setCourseId] = useState('');
+  const [facultyId, setFacultyId] = useState('');
   const [inputData, setInputData] = useState({});
   const [previewHtml, setPreviewHtml] = useState('');
   const [busy, setBusy] = useState('');
@@ -53,12 +54,31 @@ export default function DocumentGenerate() {
     queryFn: () => documentTemplateApi.autofill(templateId, courseId),
     enabled: Boolean(templateId),
   });
-  const lockedValues = autofillData?.data?.values || {};
+  const autofill = autofillData?.data;
+  const lockedValues = autofill?.values || {};
 
-  const lockedFields = fields.filter((f) => !f.editable);
+  // The teacher is the ONE official value the student chooses, from the course's
+  // own faculty — so it is a picker, not a locked line. Everything else official
+  // stays read-only, and the choice is re-validated server-side on preview and
+  // generate (a name can never be invented).
+  const facultyOptions = autofill?.faculty || [];
+  const isFacultyField = (field) => String(field.source || '').startsWith('faculty.');
+  const facultyFields = fields.filter(isFacultyField);
+  const lockedFields = fields.filter((f) => !f.editable && !isFacultyField(f));
   const editableFields = fields.filter((f) => f.editable);
 
-  const buildPayload = () => ({ templateId, courseId: courseId || null, inputData });
+  // Default to the course's first teacher; a different course means a different
+  // list, so the choice is reset with it.
+  useEffect(() => {
+    setFacultyId(autofill?.selectedFacultyId || '');
+  }, [autofill?.selectedFacultyId, courseId, templateId]);
+
+  const buildPayload = () => ({
+    templateId,
+    courseId: courseId || null,
+    facultyId: facultyId || null,
+    inputData,
+  });
 
   const preview = async () => {
     setBusy('preview');
@@ -159,7 +179,36 @@ export default function DocumentGenerate() {
         </section>
       )}
 
-      {/* 4. Fields — locked vs editable, deliberately side by side */}
+      {/* 4. Teacher — the one official value the student chooses. */}
+      {templateId && facultyFields.length > 0 && (
+        <section className="mb-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-2">
+            4. {facultyFields[0]?.label || 'Teacher'}
+          </h2>
+          {facultyOptions.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No teacher is assigned to this course yet — the cover will leave that line blank.
+            </p>
+          ) : (
+            <div className="max-w-md">
+              <select
+                value={facultyId}
+                onChange={(e) => { setFacultyId(e.target.value); setPreviewHtml(''); }}
+                className="w-full h-11 rounded-lg border border-slate-300 px-3 text-sm bg-white text-slate-800"
+              >
+                {facultyOptions.map((option) => (
+                  <option key={option._id} value={option._id}>{option.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                Every teacher assigned to this course — the one you pick is printed on the cover.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 5. Fields — locked vs editable, deliberately side by side */}
       {templateId && (
         <section className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">

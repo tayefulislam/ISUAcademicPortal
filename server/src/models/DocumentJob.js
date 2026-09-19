@@ -17,6 +17,10 @@ const documentJobSchema = new mongoose.Schema(
     templateName: { type: String, default: '' },
     category: { type: String, required: true },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', default: null },
+    // The teacher the student chose for this document, pinned so a retry prints
+    // the same name. Validated against the course's own faculty when the job was
+    // created; never taken on trust from the client.
+    facultyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
     // Only the editable values, sanitized. Official academic values are never
     // accepted from the client — they are resolved server-side (fieldResolver).
