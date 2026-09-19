@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { resizeBox } from '../../utils/resizeBox.js';
 
 // Millimetres → pixels. A4 is 210×297 mm, so at this scale the canvas is about
 // 500×710 px — small enough to see the whole page beside the panels on a laptop,
@@ -21,10 +22,28 @@ export function pageSizePx(pageSize = 'A4', orientation = 'portrait') {
 /** How close (in mm) an edge must be to the page centre before it snaps. */
 const SNAP_MM = 2;
 
+/** The resize grips: four corners and four edges. */
+const HANDLES = [
+  { dir: 'nw', cursor: 'nwse-resize' },
+  { dir: 'n', cursor: 'ns-resize' },
+  { dir: 'ne', cursor: 'nesw-resize' },
+  { dir: 'w', cursor: 'ew-resize' },
+  { dir: 'e', cursor: 'ew-resize' },
+  { dir: 'sw', cursor: 'nesw-resize' },
+  { dir: 's', cursor: 'ns-resize' },
+  { dir: 'se', cursor: 'nwse-resize' },
+];
+
+// A rule has no height of its own, so only its length can be dragged; its
+// thickness stays a property in the panel.
+const LINE_HANDLES = ['w', 'e'];
+
 function num(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+const roundTo = (value, step) => Math.round(value / step) * step;
 
 /**
  * The A4 canvas the admin composes the design on.
@@ -35,9 +54,10 @@ function num(value, fallback) {
  * touch alike) and never mutates the DOM: it reports a new position and the
  * parent re-renders, so state stays the single source of truth.
  *
- * <p>Elements can also be dragged IN from the palette: the drop position becomes
- * the new element's coordinates, which is what makes "drag a logo onto the page"
- * work.
+ * <p>Elements can be dragged IN from the palette, MOVED, and — once selected —
+ * RESIZED by any of the eight grips. Holding <b>Ctrl</b> while resizing works in
+ * 0.1 mm steps instead of 0.5 mm (fine adjustment), and holding <b>Shift</b> on a
+ * corner keeps the element's shape.
  */
 export default function TemplateCanvas({
   pageSize = 'A4',
@@ -48,55 +68,84 @@ export default function TemplateCanvas({
   selectedKey = '',
   onSelect,
   onChange,
+  onChangeStart,
+  onChangeEnd,
   onDropNew,
 }) {
-  const { w: pageWidthMm } = pageSizeMm(pageSize, orientation);
+  const { w: pageWidthMm, h: pageHeightMm } = pageSizeMm(pageSize, orientation);
   const { width, height } = pageSizePx(pageSize, orientation);
 
   const [drag, setDrag] = useState(null);
+  const [resize, setResize] = useState(null);
   const [dropActive, setDropActive] = useState(false);
   const [guideX, setGuideX] = useState(null);
   const canvasRef = useRef(null);
 
+  const beginChange = useCallback(() => onChangeStart?.(), [onChangeStart]);
+
+  // ----- Moving -----
   const handlePointerMove = useCallback(
     (event) => {
-      if (!drag || !canvasRef.current) return;
+      if (!canvasRef.current) return;
+
+      if (resize) {
+        const { dir, startClientX, startClientY, box, line } = resize;
+        const dx = (event.clientX - startClientX) / PX_PER_MM;
+        const dy = (event.clientY - startClientY) / PX_PER_MM;
+
+        // The geometry lives in a pure module so its edge cases (the pinned
+        // edge, the minimum size, the aspect lock, the fine step) are tested.
+        const next = resizeBox(box, dir, dx, dy, {
+          line,
+          keepShape: event.shiftKey,
+          fine: event.ctrlKey || event.metaKey,
+          pageWidth: pageWidthMm,
+          pageHeight: pageHeightMm,
+        });
+
+        onChange(fields.map((f) => (f.key === resize.key ? { ...f, ...next } : f)));
+        return;
+      }
+
+      if (!drag) return;
       const rect = canvasRef.current.getBoundingClientRect();
 
       let xMm = (event.clientX - rect.left) / PX_PER_MM - drag.offsetX;
       let yMm = (event.clientY - rect.top) / PX_PER_MM - drag.offsetY;
 
-      // Snap to the page's vertical centre — the single most common alignment on
-      // a cover, and the one that is hardest to hit by hand. The guide line is
-      // shown only while it is actually snapping, so it never lies.
+      // Snap to the page's vertical centre — the most common alignment on a
+      // cover, and the hardest to hit by hand. Ctrl bypasses it for a free move.
       const centre = (pageWidthMm - drag.widthMm) / 2;
-      if (Math.abs(xMm - centre) <= SNAP_MM) {
+      if (!event.ctrlKey && !event.metaKey && Math.abs(xMm - centre) <= SNAP_MM) {
         xMm = centre;
         setGuideX(pageWidthMm / 2);
       } else {
         setGuideX(null);
       }
 
+      const step = event.ctrlKey || event.metaKey ? 0.1 : 0.5;
       onChange(
         fields.map((f) =>
           f.key === drag.key
             ? {
                 ...f,
-                x: Math.max(0, Math.round(xMm * 10) / 10),
-                y: Math.max(0, Math.round(yMm * 10) / 10),
+                x: Math.max(0, roundTo(xMm, step)),
+                y: Math.max(0, roundTo(yMm, step)),
               }
             : f
         )
       );
     },
-    [drag, fields, onChange, pageWidthMm]
+    [drag, resize, fields, onChange, pageWidthMm, pageHeightMm]
   );
 
   useEffect(() => {
-    if (!drag) return undefined;
+    if (!drag && !resize) return undefined;
     const stop = () => {
       setDrag(null);
+      setResize(null);
       setGuideX(null);
+      onChangeEnd?.();
     };
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', stop);
@@ -104,7 +153,7 @@ export default function TemplateCanvas({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', stop);
     };
-  }, [drag, handlePointerMove]);
+  }, [drag, resize, handlePointerMove, onChangeEnd]);
 
   const handleDrop = (event) => {
     event.preventDefault();
@@ -121,14 +170,45 @@ export default function TemplateCanvas({
     }
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const xMm = Math.max(0, Math.round(((event.clientX - rect.left) / PX_PER_MM) * 10) / 10);
-    const yMm = Math.max(0, Math.round(((event.clientY - rect.top) / PX_PER_MM) * 10) / 10);
+    const xMm = Math.max(0, roundTo((event.clientX - rect.left) / PX_PER_MM, 0.5));
+    const yMm = Math.max(0, roundTo((event.clientY - rect.top) / PX_PER_MM, 0.5));
     onDropNew({ ...payload, x: xMm, y: yMm });
   };
 
   // Painted in the same z order as the renderer, so "bring to front" behaves
   // identically on screen and in the PDF.
   const ordered = [...fields].sort((a, b) => num(a?.zIndex, 0) - num(b?.zIndex, 0));
+  const selected = fields.find((f) => f.key === selectedKey);
+
+  const selectedBox = selected
+    ? {
+        x: num(selected.x, 0) * PX_PER_MM,
+        y: num(selected.y, 0) * PX_PER_MM,
+        w: num(selected.width, 100) * PX_PER_MM,
+        h: selected.type === 'LINE' ? 0 : num(selected.height, 8) * PX_PER_MM,
+      }
+    : null;
+
+  const startResize = (event, dir) => {
+    if (!selected || !selectedBox) return;
+    event.stopPropagation();
+    event.preventDefault();
+    onSelect?.(selected.key);
+    beginChange();
+    setResize({
+      key: selected.key,
+      dir,
+      line: selected.type === 'LINE',
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      box: {
+        x: num(selected.x, 0),
+        y: num(selected.y, 0),
+        width: num(selected.width, 100),
+        height: num(selected.height, 8),
+      },
+    });
+  };
 
   return (
     <div className="relative mx-auto" style={{ width, height }}>
@@ -154,7 +234,7 @@ export default function TemplateCanvas({
         onDrop={handleDrop}
       >
         {ordered.map((field) => {
-          const selected = field.key === selectedKey;
+          const isSelected = field.key === selectedKey;
           const box = {
             left: num(field.x, 0) * PX_PER_MM,
             top: num(field.y, 0) * PX_PER_MM,
@@ -162,24 +242,27 @@ export default function TemplateCanvas({
             zIndex: num(field.zIndex, 0),
           };
 
-          const select = (e) => {
+          const startMove = (e) => {
             e.stopPropagation();
             onSelect?.(field.key);
+            beginChange();
+            const rect = e.currentTarget.getBoundingClientRect();
+            setDrag({
+              key: field.key,
+              widthMm: num(field.width, 100),
+              offsetX: (e.clientX - rect.left) / PX_PER_MM,
+              offsetY: (e.clientY - rect.top) / PX_PER_MM,
+            });
           };
 
-          // A rule: its height IS its thickness.
           if (field.type === 'LINE') {
             return (
               <div
                 key={field.key}
                 role="button"
                 tabIndex={0}
-                onPointerDown={(e) => {
-                  select(e);
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setDrag({ key: field.key, widthMm: num(field.width, 100), offsetX: (e.clientX - rect.left) / PX_PER_MM, offsetY: 0 });
-                }}
-                className={`absolute cursor-move ${selected ? 'outline outline-2 outline-brand-500' : ''}`}
+                onPointerDown={startMove}
+                className={`absolute cursor-move ${isSelected ? 'outline outline-2 outline-brand-500' : ''}`}
                 style={{
                   ...box,
                   height: 0,
@@ -190,7 +273,6 @@ export default function TemplateCanvas({
             );
           }
 
-          // An image element — the university logo, or anything else in img/.
           if (field.type === 'IMAGE') {
             const url = field.asset ? assets[field.asset] : '';
             return (
@@ -198,13 +280,9 @@ export default function TemplateCanvas({
                 key={field.key}
                 role="button"
                 tabIndex={0}
-                onPointerDown={(e) => {
-                  select(e);
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setDrag({ key: field.key, widthMm: num(field.width, 40), offsetX: (e.clientX - rect.left) / PX_PER_MM, offsetY: (e.clientY - rect.top) / PX_PER_MM });
-                }}
+                onPointerDown={startMove}
                 className={`absolute cursor-move grid place-items-center overflow-hidden ${
-                  selected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
+                  isSelected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
                 }`}
                 style={{ ...box, height: num(field.height, 25) * PX_PER_MM }}
                 title={`${field.label} (image${field.asset ? `: ${field.asset}` : ''})`}
@@ -230,16 +308,12 @@ export default function TemplateCanvas({
               key={field.key}
               role="button"
               tabIndex={0}
-              onPointerDown={(e) => {
-                select(e);
-                const rect = e.currentTarget.getBoundingClientRect();
-                setDrag({ key: field.key, widthMm: num(field.width, 100), offsetX: (e.clientX - rect.left) / PX_PER_MM, offsetY: (e.clientY - rect.top) / PX_PER_MM });
-              }}
+              onPointerDown={startMove}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onSelect?.(field.key);
               }}
               className={`absolute cursor-move overflow-hidden whitespace-pre-wrap leading-tight ${
-                selected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
+                isSelected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
               }`}
               style={{
                 ...box,
@@ -263,6 +337,54 @@ export default function TemplateCanvas({
             className="absolute top-0 bottom-0 border-l border-dashed border-brand-500 pointer-events-none"
             style={{ left: guideX * PX_PER_MM }}
           />
+        )}
+
+        {/* Resize grips for the selected element. */}
+        {selected && selectedBox && (
+          <>
+            {(selected.type === 'LINE' ? LINE_HANDLES : HANDLES.map((h) => h.dir)).map((dir) => {
+              const cursor = HANDLES.find((h) => h.dir === dir)?.cursor || 'nwse-resize';
+              const points = {
+                nw: [selectedBox.x, selectedBox.y],
+                n: [selectedBox.x + selectedBox.w / 2, selectedBox.y],
+                ne: [selectedBox.x + selectedBox.w, selectedBox.y],
+                w: [selectedBox.x, selectedBox.y + selectedBox.h / 2],
+                e: [selectedBox.x + selectedBox.w, selectedBox.y + selectedBox.h / 2],
+                sw: [selectedBox.x, selectedBox.y + selectedBox.h],
+                s: [selectedBox.x + selectedBox.w / 2, selectedBox.y + selectedBox.h],
+                se: [selectedBox.x + selectedBox.w, selectedBox.y + selectedBox.h],
+              }[dir];
+
+              return (
+                <div
+                  key={dir}
+                  role="button"
+                  tabIndex={-1}
+                  aria-label={`Resize ${dir}`}
+                  onPointerDown={(e) => startResize(e, dir)}
+                  className="absolute w-[9px] h-[9px] bg-white border border-brand-600 rounded-[2px] z-50"
+                  style={{
+                    left: points[0],
+                    top: points[1],
+                    transform: 'translate(-50%, -50%)',
+                    cursor,
+                  }}
+                />
+              );
+            })}
+
+            {/* The live size, so a drag is measurable without leaving the canvas. */}
+            {(drag || resize) && (
+              <div
+                className="absolute z-50 -translate-x-1/2 px-1.5 py-0.5 rounded bg-slate-800 text-white text-[10px] whitespace-nowrap pointer-events-none"
+                style={{ left: selectedBox.x + selectedBox.w / 2, top: Math.max(0, selectedBox.y - 18) }}
+              >
+                {Math.round(num(selected.width, 0) * 10) / 10} × {selected.type === 'LINE'
+                  ? Math.round(num(selected.height, 0) * 100) / 100
+                  : Math.round(num(selected.height, 0) * 10) / 10} mm
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

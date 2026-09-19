@@ -86,38 +86,62 @@ export const getTemplate = asyncHandler(async (req, res) => {
 export const autofill = asyncHandler(async (req, res) => {
   const { template, version } = await loadUsableTemplate(req.user, req.params.id);
   const course = await assertCourseAccess(req.user, req.query.courseId || null);
-  const { context, ids } = await buildContext(req.user, course);
+  const { context, ids, facultyOptions, chosenFacultyId } = await buildContext(req.user, course, {
+    facultyId: req.query.facultyId || null,
+  });
 
-  const lockedFields = version.fields.filter((field) => field.type === 'AUTO' || field.type === 'STATIC');
+  // `faculty.name` is resolved here like any other official value, but it is the
+  // ONE of them the student gets to choose between — the course's own faculty.
+  // The list is offered so the client can render a picker; the choice is
+  // validated again on preview/generate, so a name can never be invented.
+  const lockedFields = version.fields.filter(
+    (field) => (field.type === 'AUTO' || field.type === 'STATIC')
+      && !String(field.source || '').startsWith('faculty.')
+  );
   const { values } = buildRenderData({ fields: lockedFields, context, inputData: {} });
+  const { values: facultyValues } = buildRenderData({
+    fields: version.fields.filter((field) => String(field.source || '').startsWith('faculty.')),
+    context,
+    inputData: {},
+  });
 
   res.json({
     success: true,
     data: {
-      values,
+      values: { ...values, ...facultyValues },
       ids,
       templateName: template.name,
+      // [{ _id, name }] — empty when the course has no faculty assigned.
+      faculty: facultyOptions.map((option) => ({ _id: option._id, name: option.name })),
+      selectedFacultyId: chosenFacultyId || '',
     },
   });
 });
 
 export const preview = asyncHandler(async (req, res) => {
-  const { templateId, courseId, inputData } = req.body || {};
+  const { templateId, courseId, inputData, facultyId } = req.body || {};
   if (!templateId) throw new ApiError(422, 'templateId is required');
   const html = await renderPreview({
     user: req.user,
     templateId,
     courseId: courseId || null,
     inputData,
+    facultyId: facultyId || null,
   });
   res.json({ success: true, data: { html } });
 });
 
 export const generate = asyncHandler(async (req, res) => {
-  const { templateId, courseId, inputData } = req.body || {};
+  const { templateId, courseId, inputData, facultyId } = req.body || {};
   if (!templateId) throw new ApiError(422, 'templateId is required');
 
-  const job = await createJob({ user: req.user, templateId, courseId: courseId || null, inputData });
+  const job = await createJob({
+    user: req.user,
+    templateId,
+    courseId: courseId || null,
+    inputData,
+    facultyId: facultyId || null,
+  });
 
   // The row exists before the queue is touched, so a worker can never pick up an
   // id that was not yet written. If Redis is briefly unavailable the row is

@@ -514,11 +514,11 @@ instructions is a content edit, not a new page.
 
 ```bash
 npm --prefix server test
+npm --prefix client test   # the Document Generator's resize geometry (pure, no browser)
 ```
 
 Node's built-in test runner (`node:test`) — no new test-framework
-dependency. Two suites:
-
+dependency. Server suites:
 - **`textSearch.test.js`** — pure unit tests for the fuzzy search engine
   (edit distance, adaptive thresholds, ranking, every typo example from its
   spec, regression coverage for two real bugs caught during development).
@@ -685,6 +685,9 @@ app, and no parallel auth, storage or notification system.
 - **Nothing official is editable.** Student name, Student ID, batch, group,
   department, course code/name and teacher are resolved **server-side** from the
   authenticated user's own records; the client can never submit them.
+- **The teacher is chosen, not guessed.** Because a course often has more than
+  one, the student picks from that course's own faculty (validated server-side —
+  a name cannot be invented); with a single teacher it is pre-selected.
 - **Preview is HTML, not a PDF.** The same renderer produces both, so what is
   reviewed cannot diverge from what is generated.
 - **Generation is asynchronous.** `POST /api/documents/generate` creates the job
