@@ -151,27 +151,57 @@ async function start() {
   // mean documents stay queued until Redis returns. It runs in this process by
   // default (PDF_WORKER_IN_PROCESS) so a single-service deploy needs no second
   // process; set that false and run `npm run worker` instead.
-  if (env.documents.workerEnabled && env.documents.workerInProcess) {
+  if (env.documents.workerEnabled) {
     import('./services/queue/documentQueue.js')
       .then(async ({ ensureCleanupSchedule, ensureApplicationSchedules }) => {
-        const { startDocumentWorker } = await import('./workers/documentWorker.js');
-        startDocumentWorker();
-        console.log(`[documents] worker started (redis=${describeRedis()})`);
-        // Registered by id, so re-asserting it on every boot is idempotent.
+        // Registering a repeatable job needs only the producer, never a worker
+        // — so both sweeps are scheduled here even in the two-service topology
+        // where another process consumes them. (This used to sit inside the
+        // worker-in-process branch, which meant a dedicated-worker deployment
+        // had no export cleanup registered at all.)
         ensureCleanupSchedule().catch((err) =>
           console.error('[documents] could not schedule the expiry sweep:', err.message)
         );
-        // The Write Application sweeps — monthly credit recharge and the hourly
-        // export cleanup — ride this same worker.
+        // The Write Application sweeps — the daily credit recharge and the
+        // export cleanup — ride this same queue and worker.
         ensureApplicationSchedules().catch((err) =>
           console.error('[applications] could not schedule the credit/export sweeps:', err.message)
         );
+
+        if (env.documents.workerInProcess) {
+          const { startDocumentWorker } = await import('./workers/documentWorker.js');
+          startDocumentWorker();
+          console.log(`[documents] worker started (redis=${describeRedis()})`);
+        }
+
+        runStartupSweeps();
       })
       .catch((err) => {
         logger.error(err, { source: 'app:documentWorker' });
         console.error('[documents] worker did not start — documents will queue until it does');
       });
   }
+}
+
+/**
+ * Removes anything that expired while the process was down, instead of waiting
+ * for the next scheduled tick — a restart after a long outage should not leave
+ * temporary files in the bucket for another quarter of an hour. Both sweeps are
+ * idempotent and guarded, so running this in more than one process is harmless.
+ */
+function runStartupSweeps() {
+  import('./services/applications/exportService.js')
+    .then(({ cleanupExpiredExports }) => cleanupExpiredExports())
+    .then((result) => {
+      if (result && result.cleaned) {
+        console.log(`[applications] startup sweep removed ${result.cleaned} expired export(s)`);
+      }
+    })
+    .catch((err) => console.error('[applications] startup export sweep failed:', err.message));
+
+  import('./services/applications/creditService.js')
+    .then(({ rechargeDueAccounts }) => rechargeDueAccounts())
+    .catch((err) => console.error('[applications] startup credit recharge failed:', err.message));
 }
 
 start();

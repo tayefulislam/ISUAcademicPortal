@@ -16,6 +16,11 @@ import {
   createFaculty,
   updateFaculty,
 } from '../controllers/superAdminController.js';
+import {
+  listDeletionRequests,
+  approveDeletionRequest,
+  rejectDeletionRequest,
+} from '../controllers/accountDeletionController.js';
 import { listFeedback, updateFeedbackStatus, deleteFeedback, exportFeedback } from '../controllers/feedbackController.js';
 import { listLogs, getLog, deleteLog, clearLogs } from '../controllers/logController.js';
 import { authenticate, requireSuperAdminTier } from '../middleware/auth.js';
@@ -41,6 +46,11 @@ router.delete('/files/:id', deleteAnyFile);
 
 router.get('/settings', getSystemSettings);
 router.patch('/settings', updateSystemSettings);
+
+// ----- Account deletion requests (Google Play's account-deletion requirement) -----
+router.get('/account-deletions', listDeletionRequests);
+router.post('/account-deletions/:id/approve', approveDeletionRequest);
+router.post('/account-deletions/:id/reject', rejectDeletionRequest);
 
 router.get('/faculty', listFaculty);
 router.post('/faculty', createFaculty);

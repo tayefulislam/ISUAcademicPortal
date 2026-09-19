@@ -3,7 +3,7 @@ import File from '../models/File.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { deleteStoredFile, deleteStudentIdImage, deletePrivateImage } from '../services/storage/storageService.js';
-import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS, STRING_SETTINGS, TEXT_SETTINGS, LIST_SETTINGS, normalizeDomain } from '../models/Settings.js';
+import { getSettings, updateSettings, FEATURE_FLAGS, NUMERIC_SETTINGS, STRING_SETTINGS, TEXT_SETTINGS, LIST_SETTINGS, SETTING_GROUPS, normalizeDomain } from '../models/Settings.js';
 import { roleExists } from '../models/Role.js';
 import { rankFileCandidates } from '../services/fuzzyFileSearch.js';
 import { sanitizeQuery } from '../utils/textSearch.js';
@@ -45,6 +45,7 @@ export const getSystemSettings = asyncHandler(async (req, res) => {
     stringSettings: STRING_SETTINGS,
     textSettings: TEXT_SETTINGS,
     listSettings: LIST_SETTINGS,
+    settingGroups: SETTING_GROUPS,
   });
 });
 

@@ -16,7 +16,10 @@ export const DOCUMENT_CLEANUP_SCHEDULE_ID = 'document-cleanup-hourly';
 export const AI_CREDIT_RECHARGE_JOB = 'ai-credit-recharge';
 export const AI_CREDIT_RECHARGE_SCHEDULE_ID = 'ai-credit-recharge-daily';
 export const APPLICATION_EXPORT_CLEANUP_JOB = 'application-export-cleanup';
-export const APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID = 'application-export-cleanup-hourly';
+export const APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID = 'application-export-cleanup';
+
+// Every repeatable job here is fire-and-forget: keep no history for it.
+const REPEAT_JOB_OPTS = { removeOnComplete: true, removeOnFail: true, attempts: 1 };
 
 let queue = null;
 
@@ -93,33 +96,38 @@ export async function ensureCleanupSchedule() {
 }
 
 /**
- * Registers the Write Application sweeps on the same queue. Same idempotency
- * contract as {@link ensureCleanupSchedule}: BullMQ upserts by job id, so this is
- * safe to call on every boot.
+ * Registers the Write Application sweeps on the same queue. Each is keyed by a
+ * stable scheduler id, so calling this on every boot is an upsert — changing a
+ * pattern here replaces the existing schedule instead of adding a second one.
  */
 export async function ensureApplicationSchedules() {
   const queue = getDocumentQueue();
-  await queue.add(
-    AI_CREDIT_RECHARGE_JOB,
-    {},
-    {
-      repeat: { pattern: '0 3 * * *' },
-      jobId: AI_CREDIT_RECHARGE_SCHEDULE_ID,
-      removeOnComplete: true,
-      removeOnFail: true,
-      attempts: 1,
-    }
+
+  // A stable scheduler id makes this an upsert: BullMQ replaces the schedule
+  // (pattern included) in place rather than stacking another copy.
+  await queue.upsertJobScheduler(
+    AI_CREDIT_RECHARGE_SCHEDULE_ID,
+    { pattern: '0 3 * * *' },
+    { name: AI_CREDIT_RECHARGE_JOB, opts: REPEAT_JOB_OPTS }
   );
-  await queue.add(
-    APPLICATION_EXPORT_CLEANUP_JOB,
-    {},
-    {
-      repeat: { pattern: '0 * * * *' },
-      jobId: APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID,
-      removeOnComplete: true,
-      removeOnFail: true,
-      attempts: 1,
+
+  // Any scheduler left behind by an earlier cadence would keep running
+  // alongside the new one, so drop everything for this job that is not the id
+  // we are about to register.
+  const schedulers = await queue.getJobSchedulers().catch(() => []);
+  for (const scheduler of schedulers) {
+    if (scheduler.name === APPLICATION_EXPORT_CLEANUP_JOB && scheduler.id !== APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID) {
+      // eslint-disable-next-line no-await-in-loop
+      await queue.removeJobScheduler(scheduler.id).catch(() => {});
     }
+  }
+
+  // Every 15 minutes, not hourly: an expired PDF/DOCX should leave the bucket
+  // close to its expiry rather than up to an hour later.
+  await queue.upsertJobScheduler(
+    APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID,
+    { pattern: '*/15 * * * *' },
+    { name: APPLICATION_EXPORT_CLEANUP_JOB, opts: REPEAT_JOB_OPTS }
   );
   return true;
 }

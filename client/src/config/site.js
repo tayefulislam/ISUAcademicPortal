@@ -1,18 +1,16 @@
 // Central configuration for the public-facing Legal & Support pages.
 //
-// ── EDIT THIS FILE BEFORE RELEASE ───────────────────────────────────────────
-// The project does NOT currently configure a public support/contact address
-// anywhere (the only mail-related values in the project are the server-side
-// EMAIL_FROM "no-reply" sender and the VAPID mailto: subject). Every value
-// below is therefore a clearly-marked PLACEHOLDER that the university/admin
-// must replace with real information. Nothing here is invented: a value left
-// as a placeholder renders as a visible "[…]" marker on the page rather than
-// a fake address, and `isPlaceholder()` is used by the UI to show an honest
-// "not configured yet" note instead of pretending the details are real.
-//
-// You can override these at build time with Vite env vars (see .env.example):
-//   VITE_SITE_URL, VITE_SUPPORT_EMAIL, VITE_PRIVACY_EMAIL,
+// ── CONTACT DETAILS ─────────────────────────────────────────────────────────
+// The public contact addresses are set below as defaults, so the Legal &
+// Support pages — including the privacy policy Google Play requires — are
+// complete without any build configuration. A Vite env var (see .env.example)
+// still overrides each one, for a deployment that needs different values:
+//   VITE_SITE_URL, VITE_SUPPORT_EMAIL, VITE_PRIVACY_EMAIL, VITE_LEGAL_EMAIL,
 //   VITE_UNIVERSITY_NAME, VITE_SITE_CONTACT_PHONE, VITE_SITE_CONTACT_ADDRESS
+//
+// Anything deliberately left unset (the postal address and phone number, which
+// the university has not supplied) still renders as a visible "[…]" marker and
+// an honest "not configured yet" note, rather than an invented address.
 // ────────────────────────────────────────────────────────────────────────────
 
 const env = import.meta.env;
@@ -36,15 +34,18 @@ export const siteConfig = {
   appName: 'ISU Academic Portal',
   shortName: 'ISU Portal',
 
-  // The university's own name/legal entity — replace with the official form.
-  universityName: placeholder('University name', env.VITE_UNIVERSITY_NAME),
+  // How the portal names itself on the legal pages.
+  universityName: placeholder('University name', env.VITE_UNIVERSITY_NAME || 'ISU Academic Portal'),
 
   // Public contact addresses. Support/help requests and privacy requests have
-  // separate inboxes in most institutions; both fall back to the same
-  // placeholder until configured.
-  supportEmail: placeholder('Support email address', env.VITE_SUPPORT_EMAIL),
-  privacyEmail: placeholder('Privacy contact email address', env.VITE_PRIVACY_EMAIL),
-  legalEmail: placeholder('Legal/terms contact email address', env.VITE_LEGAL_EMAIL || env.VITE_SUPPORT_EMAIL),
+  // separate inboxes: portal support on the one hand, and the contact a data
+  // request (including account deletion) should go to on the other.
+  supportEmail: placeholder('Support email address', env.VITE_SUPPORT_EMAIL || 'hello@tayeful.com'),
+  privacyEmail: placeholder('Privacy contact email address', env.VITE_PRIVACY_EMAIL || 'isu@tayeful.com'),
+  legalEmail: placeholder(
+    'Legal/terms contact email address',
+    env.VITE_LEGAL_EMAIL || env.VITE_SUPPORT_EMAIL || 'hello@tayeful.com'
+  ),
 
   // Only shown if set — deliberately empty by default rather than invented.
   contactPhone: placeholder('Support phone number', env.VITE_SITE_CONTACT_PHONE),
@@ -71,7 +72,7 @@ export const siteConfig = {
 // The site's own public origin, used for canonical URLs. Falls back to the
 // live browser origin (correct in production) and finally to a placeholder.
 export function getSiteOrigin() {
-  const configured = (env.VITE_SITE_URL || '').trim().replace(/\/$/, '');
+  const configured = (env.VITE_SITE_URL || 'https://isu-academic-portal.vercel.app').trim().replace(/\/$/, '');
   if (configured) return configured;
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
   return 'https://your-portal-domain.edu';
