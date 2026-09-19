@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import {
   departmentApi, batchApi, semesterApi, courseApi, routineApi, calendarApi,
 } from '../../api/endpoints.js';
-import { CLASS_TYPE_LABELS, MODE_LABELS, typeLabel, eventTitle, dhakaDate } from '../../components/routine/eventMeta.js';
+import { CLASS_TYPE_LABELS, MODE_LABELS, typeLabel, eventTitle, dhakaDate, clock } from '../../components/routine/eventMeta.js';
 
 // The Routine Manager (spec §43): pick a scope, see that scope's timetable for
 // one date, and manage it — add a recurring class, cancel or move a single
@@ -209,7 +209,7 @@ export default function RoutineManager() {
                 <div className="min-w-0">
                   <p className="font-medium text-slate-800">{routine.course?.courseId || routine.course?.name || 'Course'}</p>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {weekdayNames(routine.days)} · {routine.startTime}–{routine.endTime}
+                    {weekdayNames(routine.days)} · {clock(routine.startTime)} – {clock(routine.endTime)}
                     {' · '}{routine.roomNumber || 'No room'}
                     {' · '}{routine.startDate} → {routine.endDate}
                     {routine.faculty?.name ? ` · ${routine.faculty.name}` : ''}
@@ -276,7 +276,7 @@ export default function RoutineManager() {
                 return (
                   <tr key={row._id} className={cancelled ? 'opacity-60' : ''}>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                      <span>{row.startTime}–{row.endTime}</span>
+                      <span>{clock(row.startTime)} – {clock(row.endTime)}</span>
                       {/* A date that was changed for itself, rather than
                           cancelled, is still a class — the badge is what says it
                           will survive the next routine edit. */}

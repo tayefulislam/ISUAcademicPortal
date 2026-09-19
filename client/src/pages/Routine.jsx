@@ -5,7 +5,7 @@ import { routineApi } from '../api/endpoints.js';
 import EmptyState from '../components/EmptyState.jsx';
 import SmartEventWidget from '../components/routine/SmartEventWidget.jsx';
 import {
-  eventIcon, eventTitle, eventSubtitle, typeLabel, timeRange, locationLine, hasOnline,
+  eventIcon, eventTitle, eventSubtitle, typeLabel, timeRange, locationLine, hasOnline, clock,
   eventState, dayLabel, dhakaDate,
 } from '../components/routine/eventMeta.js';
 import { dhakaInputToIso } from '../utils/format.js';
@@ -367,7 +367,7 @@ function MonthGrid({ anchor, events }) {
                       }`}
                       title={`${eventTitle(e)} · ${timeRange(e)}`}
                     >
-                      {e.startTime} {eventTitle(e)}
+                      {clock(e.startTime)} {eventTitle(e)}
                     </p>
                   ))}
                   {(byDate.get(date) || []).length > 3 && (
