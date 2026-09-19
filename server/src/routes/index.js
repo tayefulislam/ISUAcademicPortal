@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getAppInfo } from '../controllers/appInfoController.js';
 import authRoutes from './authRoutes.js';
 import userRoutes from './userRoutes.js';
 import profileRoutes from './profileRoutes.js';
@@ -58,6 +59,11 @@ import {
 const router = Router();
 
 router.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
+
+// App-facing metadata for the Android client: the contributor list and the
+// current release. Public on purpose — the credits screen is reachable before
+// signing in, and nothing here is private.
+router.get('/app-info', getAppInfo);
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
