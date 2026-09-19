@@ -1,0 +1,192 @@
+[{
+  "_id": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "code": "CSE",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-05T22:26:13.608Z"
+  },
+  "description": "",
+  "name": "Computer Science & Engineering",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:44.988Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6a9d2c2c8637588a5ed1a42b"
+  },
+  "name": "BA (Hon’s) in English",
+  "code": "BAE",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:02:36.720Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:42:46.646Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "name": "Bachelor of Laws",
+  "code": "LAW",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T10:38:26.326Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:34:02.583Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9ac4ea2cd165970c4b3a"
+  },
+  "name": "Business Administration",
+  "code": "BBA",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:33:56.875Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:46.950Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9ae7ea2cd165970c4b43"
+  },
+  "name": "Textile Engineering",
+  "code": "TE",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:34:31.636Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:34:31.636Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9af9ea2cd165970c4b47"
+  },
+  "name": "Bachelor of Apparel Merchandising and Management",
+  "code": "AAM",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:34:49.626Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:34:49.626Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9b1eea2cd165970c4b4e"
+  },
+  "name": "Master of Business Administration",
+  "code": "MBA",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:35:26.800Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:35:26.800Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9b41ea2cd165970c4b55"
+  },
+  "name": "Master of Public Health",
+  "code": "MPH",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:36:01.396Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:36:01.396Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa9b8cea2cd165970c4b5b"
+  },
+  "name": "Artificial Intelligence and Data Science",
+  "code": "ADS",
+  "description": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T13:37:16.725Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T13:37:16.725Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aadc74e0e026eecb99f4c11"
+  },
+  "code": "EEE",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:46.803Z"
+  },
+  "description": "",
+  "name": "Electrical & Electronic Engineering",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:46.803Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6aadc74f0e026eecb99f4c12"
+  },
+  "code": "ENG",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:47.087Z"
+  },
+  "description": "",
+  "name": "English",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:47.087Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6aadc74f0e026eecb99f4c13"
+  },
+  "code": "CE",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:47.224Z"
+  },
+  "description": "",
+  "name": "Civil Engineering",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:47.224Z"
+  }
+}]

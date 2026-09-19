@@ -65,10 +65,16 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
       patch[key] = num;
     } else if (stringSettingsByKey.has(key)) {
       const setting = stringSettingsByKey.get(key);
-      if (!setting.options.includes(value)) {
-        throw new ApiError(400, `${key} must be one of: ${setting.options.join(', ')}`);
+      const cleaned = String(value ?? '').trim();
+      // A fixed enum (`options`) or a free string validated by `pattern`.
+      if (setting.options) {
+        if (!setting.options.includes(cleaned)) {
+          throw new ApiError(400, `${key} must be one of: ${setting.options.join(', ')}`);
+        }
+      } else if (setting.pattern && !setting.pattern.test(cleaned)) {
+        throw new ApiError(400, `${key} is not a valid value`);
       }
-      patch[key] = value;
+      patch[key] = cleaned;
     } else if (textSettingsByKey.has(key)) {
       const setting = textSettingsByKey.get(key);
       // Accepts "isu.ac.bd" or "@isu.ac.bd" (stripped) so pasting the

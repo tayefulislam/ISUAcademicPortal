@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -18,6 +18,10 @@ const links = [
   // `documents` permission implicitly (the permission check always passes for
   // them), so this is their way in without switching to the Admin panel.
   { to: '/super-admin/document-templates', label: 'Document Templates', icon: FileText, flag: 'documentGeneratorEnabled', permission: 'documents' },
+  // Write Application — the types, recipients and the AI credit ledger.
+  { to: '/super-admin/application-types', label: 'Application Types', icon: PenSquare, flag: 'applicationWriterEnabled', permission: 'applications' },
+  { to: '/super-admin/application-recipients', label: 'Application Recipients', icon: UserCheck, flag: 'applicationWriterEnabled', permission: 'applications' },
+  { to: '/super-admin/ai-credits', label: 'AI Credits', icon: Sparkles, flag: 'applicationWriterEnabled', permission: 'applications' },
   { to: '/super-admin/notifications', label: 'Notifications', icon: Bell, permission: 'notifications' },
   { to: '/super-admin/error-logs', label: 'Error Logs', icon: AlertTriangle },
   { to: '/super-admin/system', label: 'System Management', icon: Settings },

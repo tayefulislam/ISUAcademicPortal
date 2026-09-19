@@ -437,6 +437,86 @@ export const superAdminApi = {
   clearLogs: (level) => api.delete('/super-admin/logs', { params: level ? { level } : undefined }).then((r) => r.data),
 };
 
+// ----- Write Application -----
+// The applicant's own AI-written letters, and the official recipients/types the
+// server owns. Credits are read and spent server-side; nothing here computes a
+// balance.
+export const applicationApi = {
+  types: () => api.get('/application-types').then((r) => r.data),
+  recipients: () => api.get('/application-recipients').then((r) => r.data),
+  recipientPreview: (recipientId) =>
+    api.get('/application-recipients/resolve', { params: { recipientId } }).then((r) => r.data),
+  profilePreview: (recipientId) =>
+    api.get('/applications/profile-preview', { params: { recipientId } }).then((r) => r.data),
+  aiStatus: () => api.get('/applications/ai-status').then((r) => r.data),
+
+  generate: (data) => api.post('/applications/generate', data).then((r) => r.data),
+  aiEdit: (data) => api.post('/applications/ai/edit', data).then((r) => r.data),
+  suggestions: (data) => api.post('/applications/suggestions', data).then((r) => r.data),
+
+  list: (params) => api.get('/applications', { params }).then((r) => r.data),
+  get: (id) => api.get(`/applications/${id}`).then((r) => r.data),
+  create: (data) => api.post('/applications', data).then((r) => r.data),
+  update: (id, data) => api.put(`/applications/${id}`, data).then((r) => r.data),
+  remove: (id) => api.delete(`/applications/${id}`).then((r) => r.data),
+  duplicate: (id) => api.post(`/applications/${id}/duplicate`).then((r) => r.data),
+  archive: (id) => api.post(`/applications/${id}/archive`).then((r) => r.data),
+  saveVersion: (id, data) => api.post(`/applications/${id}/versions`, data).then((r) => r.data),
+  versions: (id) => api.get(`/applications/${id}/versions`).then((r) => r.data),
+
+  generatePdf: (id) => api.post(`/applications/${id}/generate-pdf`).then((r) => r.data),
+  generateDocx: (id) => api.post(`/applications/${id}/generate-docx`).then((r) => r.data),
+  exports: (id) => api.get(`/applications/${id}/exports`).then((r) => r.data),
+  downloadUrl: (exportId) => api.get(`/application-exports/${exportId}/download`).then((r) => r.data),
+  // Fetches the fresh link and either opens it (S3 presigned URL) or downloads
+  // the bytes through the authenticated route (local storage), which a plain
+  // window.open cannot authenticate.
+  downloadExport: async (exportId) => {
+    const res = await api.get(`/application-exports/${exportId}/download`);
+    const info = res.data?.data || {};
+    if (info.provider === 's3' && info.url) {
+      window.open(info.url, '_blank', 'noopener');
+      return;
+    }
+    const blob = await api.get(`/application-exports/${exportId}/content`, { responseType: 'blob' });
+    const url = URL.createObjectURL(blob.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = info.fileName || 'application';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+};
+
+// ----- AI credits -----
+export const aiCreditApi = {
+  summary: () => api.get('/ai-credits').then((r) => r.data),
+  history: (limit) => api.get('/ai-credits/history', { params: { limit } }).then((r) => r.data),
+};
+
+// ----- Write Application (admin) -----
+export const applicationAdminApi = {
+  listTypes: () => api.get('/admin/application-types').then((r) => r.data),
+  createType: (data) => api.post('/admin/application-types', data).then((r) => r.data),
+  updateType: (id, data) => api.put(`/admin/application-types/${id}`, data).then((r) => r.data),
+  deleteType: (id) => api.delete(`/admin/application-types/${id}`).then((r) => r.data),
+
+  listRecipients: () => api.get('/admin/application-recipients').then((r) => r.data),
+  createRecipient: (data) => api.post('/admin/application-recipients', data).then((r) => r.data),
+  updateRecipient: (id, data) => api.put(`/admin/application-recipients/${id}`, data).then((r) => r.data),
+  deleteRecipient: (id) => api.delete(`/admin/application-recipients/${id}`).then((r) => r.data),
+
+  listDepartments: () => api.get('/admin/application-departments').then((r) => r.data),
+  setDepartmentHead: (id, head) => api.put(`/admin/application-departments/${id}/head`, { head }).then((r) => r.data),
+
+  listCredits: (params) => api.get('/admin/ai-credits', { params }).then((r) => r.data),
+  creditHistory: (userId, limit) =>
+    api.get(`/admin/ai-credits/${userId}/history`, { params: { limit } }).then((r) => r.data),
+  adjustCredits: (userId, data) => api.post(`/admin/ai-credits/${userId}/adjust`, data).then((r) => r.data),
+};
+
 // ----- Roles & Permissions (admin-tier roles like Admin, CR, ...) -----
 export const roleApi = {
   list: () => api.get('/roles').then((r) => r.data),

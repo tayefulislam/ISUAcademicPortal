@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { authApi } from '../api/endpoints.js';
+import { requiredStep, ACCESS } from '../utils/accessGate.js';
 
 export default function VerifyOtp() {
   const location = useLocation();
@@ -20,14 +21,24 @@ export default function VerifyOtp() {
     try {
       const { data } = await authApi.verifyOtp({ email, code });
       applySession(data.token, data.user);
+      // The gate decides the landing screen here too, so verifying an email can
+      // never drop the account somewhere it may not be yet.
+      const step = requiredStep(data.user);
       if (data.autoApproved) {
         toast('Email verified successfully. Your student account has been automatically approved.', 'success');
-        navigate('/dashboard');
-      } else if (data.requiresStudentId) {
+      } else if (step === ACCESS.APPROVAL) {
         toast('Email verified. Please submit your Student ID to complete verification.', 'success');
-        navigate('/pending-approval');
       } else {
         toast('Email verified — you are signed in', 'success');
+      }
+
+      if (step === ACCESS.EMAIL_VERIFICATION) {
+        navigate('/verify-otp', { state: { email } });
+      } else if (step === ACCESS.APPROVAL) {
+        navigate('/pending-approval');
+      } else if (step === ACCESS.BLOCKED) {
+        navigate('/403');
+      } else {
         navigate('/dashboard');
       }
     } catch (err) {

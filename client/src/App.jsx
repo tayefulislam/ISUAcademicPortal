@@ -46,6 +46,12 @@ import FeedbackForm from './pages/FeedbackForm.jsx';
 import Documents from './pages/Documents.jsx';
 import DocumentGenerate from './pages/DocumentGenerate.jsx';
 import DocumentDetail from './pages/DocumentDetail.jsx';
+import WriteApplication from './pages/WriteApplication.jsx';
+import MyApplications from './pages/MyApplications.jsx';
+import ApplicationDetail from './pages/ApplicationDetail.jsx';
+import ApplicationTypes from './pages/admin/ApplicationTypes.jsx';
+import ApplicationRecipients from './pages/admin/ApplicationRecipients.jsx';
+import AiCredits from './pages/superadmin/AiCredits.jsx';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy.jsx';
 import Terms from './pages/legal/Terms.jsx';
 import Help from './pages/legal/Help.jsx';
@@ -153,10 +159,13 @@ export default function App() {
           <Route path="/verify-otp" element={<VerifyOtp />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Profile stays reachable mid-verification/approval on purpose: it is
+              where Log out lives, and it is the one screen the "not approved yet"
+              state is allowed to show. */}
           <Route
             path="/profile"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute skipGate>
                 <Profile />
               </ProtectedRoute>
             }
@@ -194,10 +203,12 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* The gate's own destination — not re-gated, or it would redirect to
+              itself in a loop. */}
           <Route
             path="/pending-approval"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute skipGate>
                 <PendingApproval />
               </ProtectedRoute>
             }
@@ -304,6 +315,31 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* Write Application — draft a formal letter with AI, edit it, export. */}
+          <Route
+            path="/write-application"
+            element={
+              <ProtectedRoute>
+                <WriteApplication />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-applications"
+            element={
+              <ProtectedRoute>
+                <MyApplications />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/applications/:id"
+            element={
+              <ProtectedRoute>
+                <ApplicationDetail />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/403" element={<Forbidden403 />} />
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -333,6 +369,8 @@ export default function App() {
           <Route path="document-templates/new" element={<DocumentTemplateForm />} />
           <Route path="document-templates/:id/edit" element={<DocumentTemplateForm />} />
           <Route path="document-templates/:id" element={<DocumentTemplateEditor />} />
+          <Route path="application-types" element={<ApplicationTypes />} />
+          <Route path="application-recipients" element={<ApplicationRecipients />} />
           <Route path="manual" element={<Manual role="admin" />} />
         </Route>
 
@@ -363,6 +401,9 @@ export default function App() {
           <Route path="document-templates/new" element={<DocumentTemplateForm />} />
           <Route path="document-templates/:id/edit" element={<DocumentTemplateForm />} />
           <Route path="document-templates/:id" element={<DocumentTemplateEditor />} />
+          <Route path="application-types" element={<ApplicationTypes />} />
+          <Route path="application-recipients" element={<ApplicationRecipients />} />
+          <Route path="ai-credits" element={<AiCredits />} />
           <Route path="notifications" element={<SuperAdminNotifications />} />
           <Route path="manual" element={<Manual role="super_admin" />} />
         </Route>

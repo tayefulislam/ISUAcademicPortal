@@ -132,8 +132,10 @@ export const env = {
     // Optional path to a system Chromium, for hosts that provide their own
     // instead of Playwright's downloaded build.
     chromiumPath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '',
-    // How long a generated PDF lives before it is considered EXPIRED. The S3
-    // lifecycle rule is set to match (see docs/DEPLOYMENT_ARCHITECTURE.md).
+    // How long a generated PDF lives before the hourly sweep removes it — the
+    // object and the row both. An S3 lifecycle rule on `generated-documents/`
+    // is still worth setting, but only as a backstop for objects whose row was
+    // lost some other way (see docs/DEPLOYMENT_ARCHITECTURE.md).
     expiryHours: Number(process.env.DOCUMENT_EXPIRY_HOURS) || 24,
     // Hard ceiling on a rendered PDF, so a runaway template cannot fill the disk.
     maxPdfMb: Number(process.env.DOCUMENT_MAX_PDF_MB) || 10,
@@ -145,6 +147,47 @@ export const env = {
     signedUrlTtlSeconds: Number(process.env.DOCUMENT_SIGNED_URL_TTL_SECONDS) || 300,
     // Requests per 15 minutes per user on POST /documents/generate.
     generateRateLimit: Number(process.env.DOCUMENT_GENERATE_RATE_LIMIT) || 10,
+  },
+
+  // Write Application — the AI layer and its credit system.
+  //
+  // Only `apiKey` is a secret and stays here (never in a client). Everything an
+  // admin may want to change at runtime — provider, model, credit amounts,
+  // rollover, export lifetime — has a DB-backed override in models/Settings.js;
+  // these are the safe defaults used before/without that configuration.
+  ai: {
+    enabled: process.env.AI_ENABLED !== 'false',
+    // 'deepseek' | 'openai' | 'openrouter' | 'gemini' — see services/ai.
+    provider: process.env.AI_PROVIDER || 'deepseek',
+    model: process.env.AI_MODEL || 'deepseek-chat',
+    apiKey: process.env.AI_API_KEY || '',
+    // Optional override for a compatible gateway; empty = the provider's own URL.
+    baseUrl: process.env.AI_BASE_URL || '',
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS) || 45000,
+    maxTokens: Number(process.env.AI_MAX_TOKENS) || 2000,
+    temperature: Number(process.env.AI_TEMPERATURE) || 0.4,
+
+    // Credits.
+    creditsEnabled: process.env.AI_CREDIT_ENABLED !== 'false',
+    monthlyCredits: Number(process.env.AI_MONTHLY_CREDITS) || 10,
+    generationCost: Number(process.env.AI_APPLICATION_GENERATION_COST) || 1,
+    // An AI edit action (make formal / shorter / …) is an AI call too.
+    editCost: Number(process.env.AI_APPLICATION_EDIT_COST) || 1,
+    // false = the month starts from the full allocation (no accumulation).
+    rollover: process.env.AI_CREDIT_ROLLOVER === 'true',
+    // Day of month the period starts on (1 = calendar month).
+    resetDay: Number(process.env.AI_CREDIT_RESET_DAY) || 1,
+
+    // Generated PDF/DOCX exports are temporary files; the application itself is
+    // not touched by their expiry.
+    exportExpirationHours: Number(process.env.AI_EXPORT_EXPIRATION_HOURS) || 24,
+
+    // Guard rails on the free-text a user may submit.
+    maxSubjectChars: Number(process.env.AI_MAX_SUBJECT_CHARS) || 200,
+    maxDetailsChars: Number(process.env.AI_MAX_DETAILS_CHARS) || 4000,
+    maxAdditionalChars: Number(process.env.AI_MAX_ADDITIONAL_CHARS) || 1000,
+    // AI generations per 15 minutes per user, so one account cannot hammer the provider.
+    generateRateLimit: Number(process.env.AI_GENERATE_RATE_LIMIT) || 12,
   },
 
   // Shared secret for the class-reminder cron target

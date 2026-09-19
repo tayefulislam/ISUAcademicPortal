@@ -1,7 +1,13 @@
 import { Worker } from 'bullmq';
 import { env } from '../config/env.js';
 import { createRedisConnection } from '../services/queue/redis.js';
-import { DOCUMENT_QUEUE_NAME, DOCUMENT_JOB, DOCUMENT_CLEANUP_JOB } from '../services/queue/documentQueue.js';
+import {
+  DOCUMENT_QUEUE_NAME,
+  DOCUMENT_JOB,
+  DOCUMENT_CLEANUP_JOB,
+  AI_CREDIT_RECHARGE_JOB,
+  APPLICATION_EXPORT_CLEANUP_JOB,
+} from '../services/queue/documentQueue.js';
 import DocumentJob from '../models/DocumentJob.js';
 import { processJob, expireStaleJobs, safeErrorMessage } from '../services/documents/documentService.js';
 
@@ -10,6 +16,16 @@ let worker = null;
 async function handle(job) {
   if (job.name === DOCUMENT_CLEANUP_JOB) return expireStaleJobs();
   if (job.name === DOCUMENT_JOB) return processJob(job.data.jobId);
+
+  // Write Application sweeps, on this same worker.
+  if (job.name === AI_CREDIT_RECHARGE_JOB) {
+    const { rechargeDueAccounts } = await import('../services/applications/creditService.js');
+    return rechargeDueAccounts();
+  }
+  if (job.name === APPLICATION_EXPORT_CLEANUP_JOB) {
+    const { cleanupExpiredExports } = await import('../services/applications/exportService.js');
+    return cleanupExpiredExports();
+  }
   return null;
 }
 

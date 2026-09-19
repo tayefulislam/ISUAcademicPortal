@@ -7,6 +7,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { storeTemplateSource, getTemplateSourceStream, deleteTemplateSource } from '../services/storage/storageService.js';
 import { normalizeFields, normalizeStyleConfig } from '../services/documents/normalizeFields.js';
 import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS, FONT_CHOICES, BORDER_STYLES } from '../services/documents/fieldSources.js';
+import { FIELD_BLOCKS } from '../services/documents/documentBlocks.js';
 import { listAssets, readAssetBuffer, assetMimeType, isAssetFileName } from '../services/documents/assets.js';
 import { getSafeExtension } from '../utils/fileTypes.js';
 
@@ -112,6 +113,8 @@ export const getMetadata = asyncHandler(async (req, res) => {
       fieldTypes: FIELD_TYPES,
       sources: FIELD_SOURCES.map((value) => ({ value, label: SOURCE_LABELS[value] || value })),
       fonts: FONT_CHOICES,
+      // The ISU building blocks the editor offers as one-click inserts.
+      blocks: FIELD_BLOCKS,
       pageSizes: ['A4', 'LETTER'],
       orientations: ['portrait', 'landscape'],
       alignments: ['left', 'center', 'right'],

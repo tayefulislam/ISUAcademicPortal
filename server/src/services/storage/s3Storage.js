@@ -110,6 +110,18 @@ export async function deleteDocumentS3(storageRef) {
 }
 
 /**
+ * The same delete, but it THROWS when the object could not be removed. Used by
+ * the application-export sweep, which must leave a record ACTIVE to retry rather
+ * than mark a still-present file as cleaned. Deleting a key that is already gone
+ * still succeeds (S3 DeleteObject is idempotent).
+ */
+export async function deleteObjectS3Strict(storageRef) {
+  if (!storageRef) return;
+  const s3 = getClient();
+  await s3.send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: storageRef }));
+}
+
+/**
  * Stores a buffer under a caller-chosen key rather than a randomized one.
  *
  * <p>Generated documents have a deterministic key

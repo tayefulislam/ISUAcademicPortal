@@ -16,11 +16,14 @@ export default function Profile() {
 
   const { data, isLoading } = useQuery({ queryKey: ['my-profile'], queryFn: profileApi.get });
   const profile = data?.data;
-  // Student, or a CR-like custom admin-tier role (still a student underneath)
-  // — Department/Batch are academic-record fields, not self-editable for
-  // these two roles. Mirrors profileController.js's resolveEditableFields;
-  // the backend is the actual enforcement, this only disables the inputs.
-  const deptBatchLocked = profile?.role === 'student' || (isAdminTier && profile?.role !== 'admin');
+  // Student, or a CR-like custom admin-tier role (still a student underneath).
+  // The institution owns the academic record: Name and Student ID are printed on
+  // official documents and matched against records, and Department/Batch move
+  // someone across cohorts — none of the four is self-editable for these two
+  // roles. Mirrors profileController.js's editableProfileFields; the backend is
+  // the actual enforcement, this only disables the inputs.
+  const identityLocked = profile?.role === 'student' || (isAdminTier && profile?.role !== 'admin');
+  const deptBatchLocked = identityLocked;
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -121,10 +124,18 @@ export default function Profile() {
           <form onSubmit={saveProfile} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Name">
-                <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+                {identityLocked ? (
+                  <input value={profile.name} disabled className="input bg-slate-100 text-slate-500" />
+                ) : (
+                  <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+                )}
               </Field>
               <Field label="Roll No">
-                <input value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} className="input" />
+                {identityLocked ? (
+                  <input value={profile.rollNo || 'Not set'} disabled className="input bg-slate-100 text-slate-500" />
+                ) : (
+                  <input value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} className="input" />
+                )}
               </Field>
               <Field label="Phone">
                 <input
@@ -175,9 +186,10 @@ export default function Profile() {
                 </select>
               </Field>
             </div>
-            {deptBatchLocked && (
+            {identityLocked && (
               <p className="text-xs text-slate-400">
-                Department and Batch are set by the academic office and can't be changed here.
+                Your name and Student ID are part of the academic record, and Department and Batch are set by the
+                academic office — contact them to change any of these.
               </p>
             )}
             <div className="flex gap-2">

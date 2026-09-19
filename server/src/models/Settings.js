@@ -122,6 +122,18 @@ export const FEATURE_FLAGS = [
     // (same choice as the routine/calendar system above).
     default: true,
   },
+  {
+    key: 'applicationWriterEnabled',
+    label: 'Write Application (AI)',
+    description: 'When ON, users can draft formal university applications with AI, edit them, and export PDF/DOCX. When OFF, the whole module is hidden for everyone.',
+    default: true,
+  },
+  {
+    key: 'aiCreditsEnabled',
+    label: 'AI Application Credits',
+    description: 'When ON, each AI application generation (and each AI edit action) costs credits, and the monthly allowance is recharged automatically. When OFF, AI generation is unlimited and no credits are tracked.',
+    default: true,
+  },
 ];
 
 // Numeric business-rule limits for the Course Enrollment system — separate
@@ -145,6 +157,27 @@ export const NUMERIC_SETTINGS = [
     label: 'Max Extra Courses',
     description: 'Maximum open extra-course enrollments a student may have at once. 0 = unlimited.',
   },
+  // Write Application — AI credits and export lifetime. The defaults come from
+  // the environment (AI_MONTHLY_CREDITS etc.) so an existing deployment keeps
+  // its configuration, and an admin can change them here without a redeploy.
+  {
+    key: 'aiMonthlyCredits',
+    label: 'AI Credits per Month',
+    description: 'How many AI application generations each user is given at the start of every monthly period. 0 = no credits (AI generation disabled for everyone).',
+    default: env.ai.monthlyCredits,
+  },
+  {
+    key: 'aiGenerationCost',
+    label: 'AI Generation Cost (credits)',
+    description: 'Credits one AI application generation costs. Default 1.',
+    default: env.ai.generationCost,
+  },
+  {
+    key: 'aiExportExpirationHours',
+    label: 'Export File Lifetime (hours)',
+    description: 'How long a generated PDF/DOCX stays downloadable before it is deleted from storage. Default 24 hours. The saved application is never affected.',
+    default: env.ai.exportExpirationHours,
+  },
 ];
 
 // Admin-editable single-choice settings — same generic-list pattern as
@@ -163,6 +196,22 @@ export const STRING_SETTINGS = [
     description: 'Where newly submitted/resubmitted Student ID photos are uploaded. Changing this does not move or affect already-stored photos.',
     options: ['imgbb', 's3'],
     default: env.studentIdStorageProvider,
+  },
+  // Write Application — which AI provider/model the generator calls. Either an
+  // `options` list (a fixed enum) or a `pattern` (a free string) is accepted.
+  {
+    key: 'aiProvider',
+    label: 'AI Provider',
+    description: 'Which AI service drafts applications. DeepSeek/OpenAI/OpenRouter share one OpenAI-compatible request shape; Gemini uses Google’s. The API key itself lives in the server environment, never here.',
+    options: ['deepseek', 'openai', 'openrouter', 'gemini'],
+    default: env.ai.provider,
+  },
+  {
+    key: 'aiModel',
+    label: 'AI Model',
+    description: 'The model to request from the provider (e.g. deepseek-chat, gpt-4o-mini, gemini-1.5-flash). Free text — the provider name validates it.',
+    pattern: /^[A-Za-z0-9._:/-]{1,80}$/,
+    default: env.ai.model,
   },
 ];
 
@@ -254,7 +303,10 @@ export function normalizeDomain(raw) {
 
 const schemaFields = { key: { type: String, required: true, unique: true, default: 'global' } };
 for (const setting of STRING_SETTINGS) {
-  schemaFields[setting.key] = { type: String, enum: setting.options, default: setting.default };
+  // A fixed option list (`options`) or a free string validated by `pattern`.
+  schemaFields[setting.key] = setting.options
+    ? { type: String, enum: setting.options, default: setting.default }
+    : { type: String, default: setting.default ?? '', trim: true };
 }
 // Legacy single-domain field — no longer read by application logic, kept
 // only as the migration source for officialEmailDomains below.
@@ -275,7 +327,7 @@ for (const flag of FEATURE_FLAGS) {
   schemaFields[flag.key] = { type: Boolean, default: flag.default ?? false };
 }
 for (const setting of NUMERIC_SETTINGS) {
-  schemaFields[setting.key] = { type: Number, default: 0, min: 0 };
+  schemaFields[setting.key] = { type: Number, default: setting.default ?? 0, min: 0 };
 }
 
 const settingsSchema = new mongoose.Schema(schemaFields, { timestamps: true });
@@ -314,6 +366,22 @@ export async function getSettings() {
   if (!settings.facultyDesignations?.length) {
     settings.facultyDesignations = [...DEFAULT_FACULTY_DESIGNATIONS];
     dirty = true;
+  }
+  // Write Application: an existing settings document predates the AI provider/
+  // model and the credit amounts, so seed their environment defaults once rather
+  // than leaving the admin panel blank. A value an admin has already set is left
+  // exactly as it is (including a deliberate 0).
+  for (const setting of STRING_SETTINGS) {
+    if (setting.default && (settings[setting.key] === undefined || settings[setting.key] === null || settings[setting.key] === '')) {
+      settings[setting.key] = setting.default;
+      dirty = true;
+    }
+  }
+  for (const setting of NUMERIC_SETTINGS) {
+    if (settings[setting.key] === undefined || settings[setting.key] === null) {
+      settings[setting.key] = setting.default ?? 0;
+      dirty = true;
+    }
   }
   if (dirty) await settings.save();
 
