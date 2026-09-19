@@ -17,6 +17,9 @@ const links = [
   // Cover-page/document templates. Its own permission, so a role can be given
   // "Document Generator" without also getting files/quizzes/enrollments.
   { to: '/admin/document-templates', label: 'Document Templates', icon: FileText, flag: 'documentGeneratorEnabled', permission: 'documents' },
+  // Write Application — the types and official recipients it uses.
+  { to: '/admin/application-types', label: 'Application Types', icon: PenSquare, flag: 'applicationWriterEnabled', permission: 'applications' },
+  { to: '/admin/application-recipients', label: 'Application Recipients', icon: UserCheck, flag: 'applicationWriterEnabled', permission: 'applications' },
   { to: '/admin/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled', permission: 'enrollments' },
   // Gated by the routine_create permission rather than the usual per-module
   // permission, so a CR can be given "build the timetable" without also being

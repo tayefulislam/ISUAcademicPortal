@@ -199,6 +199,38 @@ export default function DocumentTemplateEditor() {
 
   const selectedField = useMemo(() => fields.find((f) => f.key === selectedKey), [fields, selectedKey]);
 
+  // The ISU building blocks, grouped for the palette. Authored on the server so
+  // adding one is a data change, never a change to this screen.
+  const blocks = meta?.blocks || [];
+  const blockGroups = useMemo(() => {
+    const groups = new Map();
+    for (const block of blocks) {
+      const name = block.group || 'Blocks';
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(block);
+    }
+    return [...groups.entries()];
+  }, [blocks]);
+
+  /** A new element from a block, at the block's own authored coordinates. */
+  const elementFromBlock = (block, index) => {
+    const { key: suggestedKey, ...rest } = block.field || {};
+    void suggestedKey;
+    return {
+      ...makeElement({
+        type: rest.type || 'STATIC',
+        asset: rest.asset,
+        x: rest.x ?? 20,
+        y: rest.y ?? 20,
+        index,
+        z: Number.isFinite(Number(rest.zIndex)) ? Number(rest.zIndex) : index,
+      }),
+      ...rest,
+      // A fresh key: the same block can be inserted more than once.
+      key: `el_${Date.now().toString(36)}_${index}`,
+    };
+  };
+
   // A property edit: coalesced by field, so typing into one box is a single
   // undo step rather than one per keystroke.
   const updateField = (next) => history.commit(fields.map((f) => (f.key === next.key ? next : f)), next.key);
@@ -225,6 +257,21 @@ export default function DocumentTemplateEditor() {
       { ...element, label: 'Page border', x: 0, y: 0, width: page.w, height: page.h, borderWidth: 0.5 },
     ]);
     setSelectedKey(element.key);
+  };
+
+  /** One ISU block, dropped at the coordinates the block itself carries. */
+  const addBlock = (block) => {
+    const element = elementFromBlock(block, fields.length);
+    element.zIndex = nextZ(fields);
+    history.commit([...fields, element]);
+    setSelectedKey(element.key);
+  };
+
+  /** The whole ISU cover at once — the blocks in one pass. */
+  const addAllBlocks = () => {
+    if (!blocks.length) return;
+    const added = blocks.map((block, i) => elementFromBlock(block, fields.length + i));
+    history.commit([...fields, ...added]);
   };
 
   /** A copy of the selected element, offset slightly so it is visibly a new one. */
@@ -553,6 +600,42 @@ export default function DocumentTemplateEditor() {
           >
             <Square size={13} /> A4 page border
           </button>
+
+          {/* ISU building blocks, authored server-side. Each lands where it
+              belongs on the cover, so a few clicks compose a full ISU layout. */}
+          {blocks.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mt-4 mb-1">
+                <h3 className="text-[11px] font-semibold text-slate-500">ISU blocks</h3>
+                <button
+                  type="button"
+                  onClick={addAllBlocks}
+                  className="text-[10px] font-semibold text-brand-600 hover:underline"
+                  title="Insert the whole ISU cover layout"
+                >
+                  Insert all
+                </button>
+              </div>
+              {blockGroups.map(([group, items]) => (
+                <div key={group} className="mb-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">{group}</p>
+                  <div className="space-y-1">
+                    {items.map((block) => (
+                      <button
+                        key={block.id}
+                        type="button"
+                        onClick={() => addBlock(block)}
+                        className="block w-full truncate text-left px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-brand-50 hover:border-brand-300"
+                        title={block.label}
+                      >
+                        {block.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
 
           {assets.length > 0 && (
             <>

@@ -41,6 +41,19 @@ import documentTemplateRoutes from './documentTemplateRoutes.js';
 import documentCategoryRoutes from './documentCategoryRoutes.js';
 import adminDocumentRoutes from './adminDocumentRoutes.js';
 import adminDocumentAssetRoutes from './adminDocumentAssetRoutes.js';
+import {
+  applicationTypeRoutes,
+  applicationRecipientRoutes,
+  applicationRoutes,
+  applicationExportRoutes,
+  aiCreditRoutes,
+} from './applicationRoutes.js';
+import {
+  adminApplicationTypeRoutes,
+  adminApplicationRecipientRoutes,
+  adminApplicationDepartmentRoutes,
+  adminAiCreditRoutes,
+} from './adminApplicationRoutes.js';
 
 const router = Router();
 
@@ -65,6 +78,18 @@ router.use('/admin/document-assets', adminDocumentAssetRoutes);
 router.use('/document-categories', documentCategoryRoutes);
 router.use('/document-templates', documentTemplateRoutes);
 router.use('/documents', documentRoutes);
+
+// Write Application. The /admin/... routers are mounted BEFORE the generic
+// /admin router so their paths are matched first and never swallowed by it.
+router.use('/admin/application-types', adminApplicationTypeRoutes);
+router.use('/admin/application-recipients', adminApplicationRecipientRoutes);
+router.use('/admin/application-departments', adminApplicationDepartmentRoutes);
+router.use('/admin/ai-credits', adminAiCreditRoutes);
+router.use('/application-types', applicationTypeRoutes);
+router.use('/application-recipients', applicationRecipientRoutes);
+router.use('/applications', applicationRoutes);
+router.use('/application-exports', applicationExportRoutes);
+router.use('/ai-credits', aiCreditRoutes);
 
 router.use('/admin', adminRoutes);
 router.use('/super-admin', superAdminRoutes);

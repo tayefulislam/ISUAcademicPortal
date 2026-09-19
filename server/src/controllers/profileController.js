@@ -34,12 +34,26 @@ export const getProfile = asyncHandler(async (req, res) => {
 // semester, and useless as data unless the student can state it. It is validated
 // against the configured list like every other write of this field.
 async function resolveEditableFields(user) {
-  const base = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester', 'group'];
   const isCustomAdminTierRole = user.role !== 'admin' && (await isAdminTierRole(user.role));
-  if (user.role === 'student' || isCustomAdminTierRole) {
-    return base.filter((key) => key !== 'department' && key !== 'batch');
-  }
-  return base;
+  return editableProfileFields(user.role, isCustomAdminTierRole);
+}
+
+/**
+ * The fields each role may change through their OWN profile (pure, so the rule
+ * is tested without a database or a role lookup).
+ *
+ * <p>A student — and a CR, who is a student underneath with extra permissions —
+ * may keep their own contact details and placement, but not the two values the
+ * institution owns: the name and the Student ID. Those are printed on official
+ * documents and matched against records, so they are the academic office's to
+ * change, not the account holder's. Department/batch move someone across
+ * cohorts and are locked for the same reason.
+ */
+export function editableProfileFields(role, isCustomAdminTierRole = false) {
+  const base = ['name', 'rollNo', 'phone', 'department', 'batch', 'semester', 'group'];
+  const studentLike = role === 'student' || isCustomAdminTierRole;
+  if (!studentLike) return base;
+  return base.filter((key) => !['department', 'batch', 'name', 'rollNo'].includes(key));
 }
 
 export const updateProfile = asyncHandler(async (req, res) => {

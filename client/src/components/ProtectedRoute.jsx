@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { requiredStep, ACCESS, ACCESS_PATH } from '../utils/accessGate.js';
 
 // This is a UX convenience only — every role/ownership decision that
 // actually matters is re-checked by the backend on every request. Hiding a
@@ -22,7 +23,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 // letting the unrestricted 'admin' role in wouldn't make sense — 'admin'
 // already has its own unrestricted equivalent (the direct Upload page) and
 // typically has no department/batch of its own to scope by.
-export default function ProtectedRoute({ children, roles, adminOnly = false, adminTier = false, orAdminTier = false, orScopedAdminTier = false }) {
+export default function ProtectedRoute({ children, roles, adminOnly = false, adminTier = false, orAdminTier = false, orScopedAdminTier = false, skipGate = false }) {
   const { user, loading, isAdmin, isAdminTier: isScopedAdminTierRole } = useAuth();
   const location = useLocation();
 
@@ -31,6 +32,24 @@ export default function ProtectedRoute({ children, roles, adminOnly = false, adm
   }
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // The verification/approval gate, applied to EVERY protected route rather than
+  // just the Dashboard — otherwise a pending or unapproved account can open any
+  // other protected screen directly. `skipGate` is set on the two routes that
+  // answer the gate itself (Pending Approval) and on Profile, which a student
+  // mid-approval is deliberately still allowed to use (it is where Log out is).
+  if (!skipGate) {
+    const step = requiredStep(user);
+    if (step === ACCESS.EMAIL_VERIFICATION) {
+      return <Navigate to={ACCESS_PATH[ACCESS.EMAIL_VERIFICATION]} state={{ email: user.email }} replace />;
+    }
+    if (step === ACCESS.APPROVAL) {
+      return <Navigate to={ACCESS_PATH[ACCESS.APPROVAL]} replace />;
+    }
+    if (step === ACCESS.BLOCKED) {
+      return <Navigate to={ACCESS_PATH[ACCESS.BLOCKED]} replace />;
+    }
   }
 
   if (adminTier) {

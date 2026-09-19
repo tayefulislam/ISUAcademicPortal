@@ -1,6 +1,8 @@
 import Department from '../models/Department.js';
 import Course from '../models/Course.js';
 import File from '../models/File.js';
+import RoutineTemplate from '../models/RoutineTemplate.js';
+import ScheduleInstance from '../models/ScheduleInstance.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -38,6 +40,21 @@ export const updateDepartment = asyncHandler(async (req, res) => {
 export const deleteDepartment = asyncHandler(async (req, res) => {
   const inUse = await File.exists({ department: req.params.id });
   if (inUse) throw new ApiError(409, 'Cannot delete a department that still has files');
+
+  // Same reason as a course: routine rules/occurrences reference the department
+  // by id, and deleting it leaves them pointing at nothing — the class then
+  // vanishes from every timetable.
+  const [templates, instances] = await Promise.all([
+    RoutineTemplate.countDocuments({ department: req.params.id }),
+    ScheduleInstance.countDocuments({ department: req.params.id }),
+  ]);
+  const routineCount = templates + instances;
+  if (routineCount > 0) {
+    throw new ApiError(
+      409,
+      `Cannot delete a department that still has ${routineCount} class-routine entr${routineCount === 1 ? 'y' : 'ies'}. Retire them first.`
+    );
+  }
 
   const department = await Department.findByIdAndDelete(req.params.id);
   if (!department) throw new ApiError(404, 'Department not found');

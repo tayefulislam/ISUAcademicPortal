@@ -29,6 +29,7 @@ export default function Dashboard() {
   const { data: settings } = useQuery({ queryKey: ['public-settings'], queryFn: authApi.publicSettings, staleTime: 60_000 });
   const messagingEnabled = settings?.data?.messagingSystemEnabled !== false;
   const documentsEnabled = settings?.data?.documentGeneratorEnabled !== false;
+  const applicationWriterEnabled = settings?.data?.applicationWriterEnabled !== false;
   // The routine system is opt-in, so this must be an explicit `=== true` rather
   // than the "absent means on" rule the other flags use.
   const routineEnabled = settings?.data?.routineSystemEnabled === true;
@@ -78,6 +79,8 @@ export default function Dashboard() {
       <div className="flex flex-wrap gap-2 mb-8">
         <QuickLink to="/profile" icon={User} label="Profile" />
         {documentsEnabled && <QuickLink to="/documents" icon={FileText} label="Documents" />}
+        {applicationWriterEnabled && <QuickLink to="/write-application" icon={FileText} label="Write Application" />}
+        {applicationWriterEnabled && <QuickLink to="/my-applications" icon={FileText} label="My Applications" />}
         <QuickLink to="/my-bookmarks" icon={Bookmark} label="Bookmarks" />
         {routineEnabled && <QuickLink to="/routine" icon={CalendarClock} label="Calendar" />}
         {user?.role === 'student' && <QuickLink to="/my-courses" icon={Layers3} label="My Courses" />}

@@ -153,13 +153,18 @@ async function start() {
   // process; set that false and run `npm run worker` instead.
   if (env.documents.workerEnabled && env.documents.workerInProcess) {
     import('./services/queue/documentQueue.js')
-      .then(async ({ ensureCleanupSchedule }) => {
+      .then(async ({ ensureCleanupSchedule, ensureApplicationSchedules }) => {
         const { startDocumentWorker } = await import('./workers/documentWorker.js');
         startDocumentWorker();
         console.log(`[documents] worker started (redis=${describeRedis()})`);
         // Registered by id, so re-asserting it on every boot is idempotent.
         ensureCleanupSchedule().catch((err) =>
           console.error('[documents] could not schedule the expiry sweep:', err.message)
+        );
+        // The Write Application sweeps — monthly credit recharge and the hourly
+        // export cleanup — ride this same worker.
+        ensureApplicationSchedules().catch((err) =>
+          console.error('[applications] could not schedule the credit/export sweeps:', err.message)
         );
       })
       .catch((err) => {

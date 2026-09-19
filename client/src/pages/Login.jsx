@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { authApi } from '../api/endpoints.js';
+import { requiredStep, ACCESS } from '../utils/accessGate.js';
 
 export default function Login() {
   const [form, setForm] = useState({ identifier: '', password: '' });
@@ -29,12 +30,14 @@ export default function Login() {
     try {
       const user = await login(form);
       toast('Signed in successfully', 'success');
-      // `nextStep` is computed server-side (registrationFlowService.js) —
-      // the single source of truth for where an incompletely-verified
-      // student should land. Anyone already fully set up (or any non-student
-      // role, which never gets a nextStep at all) falls through to wherever
-      // they were headed before being sent to log in, same as before.
-      if (user.nextStep === 'STUDENT_ID_SUBMISSION' || user.nextStep === 'WAITING_FOR_APPROVAL') {
+      // One gate decides where an incompletely set-up account lands — the same
+      // rule ProtectedRoute enforces on every protected route, so signing in can
+      // never drop someone onto a screen they may not use. A fully set-up account
+      // (or any non-student role) goes to wherever they were headed.
+      const step = requiredStep(user);
+      if (step === ACCESS.EMAIL_VERIFICATION) {
+        navigate('/verify-otp', { state: { email: user.email } });
+      } else if (step === ACCESS.APPROVAL) {
         navigate('/pending-approval');
       } else {
         navigate(location.state?.from?.pathname || '/');

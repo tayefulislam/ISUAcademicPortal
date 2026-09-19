@@ -9,12 +9,36 @@ import Role from '../models/Role.js';
 // 'semester'. Mongoose needs the schema registered in this test process
 // (each test file runs in its own worker) or populate throws MissingSchemaError.
 import '../models/Semester.js';
-import { updateProfile } from './profileController.js';
+import { updateProfile, editableProfileFields } from './profileController.js';
 
-// Department/Batch are academic-record fields — a Student or a CR (still a
-// student underneath) must not be able to move themselves to a different
-// department/batch via their own profile form, even by calling the API
-// directly with those fields in the body. Every other role is unaffected.
+// The institution owns the academic record. A Student or a CR (still a student
+// underneath) must not be able to change their NAME or STUDENT ID — the two
+// values official documents print and records are matched on — nor move
+// themselves to a different department/batch, even by calling the API directly
+// with those fields in the body. Contact details and the placement group stay
+// self-service. Every other role is unaffected.
+
+describe('editableProfileFields (the rule, without a database)', () => {
+  test('a student may not change name or Student ID', () => {
+    const fields = editableProfileFields('student');
+    assert.ok(!fields.includes('name'));
+    assert.ok(!fields.includes('rollNo'));
+    assert.ok(fields.includes('phone'));
+    assert.ok(fields.includes('group'));
+  });
+
+  test('a CR is a student underneath, so the same two are locked', () => {
+    const fields = editableProfileFields('cr', true);
+    assert.ok(!fields.includes('name'));
+    assert.ok(!fields.includes('rollNo'));
+  });
+
+  test('staff and admin roles are unrestricted', () => {
+    const fields = editableProfileFields('admin', false);
+    assert.ok(fields.includes('name'));
+    assert.ok(fields.includes('rollNo'));
+  });
+});
 
 function fakeRes() {
   const res = { statusCode: 200 };
@@ -58,39 +82,60 @@ beforeEach(async () => {
   await Role.create({ key: 'cr', name: 'CR', permissions: ['approvals'] });
 });
 
-describe('updateProfile — Department/Batch locked for Student and CR', () => {
-  test('student cannot change department/batch via the API, even though other fields still apply', async () => {
+describe('updateProfile — name / Student ID / Department / Batch locked for Student and CR', () => {
+  test('student cannot change department/batch/name via the API, while phone still applies', async () => {
     const student = await User.create({
-      name: 'S', email: 's@test.local', password: 'password123', role: 'student', department: deptA._id, batch: batchA._id,
+      name: 'S', email: 's@test.local', password: 'password123', role: 'student',
+      department: deptA._id, batch: batchA._id, phone: '01700000000',
     });
     const { res, error } = await call(updateProfile, {
       user: student,
-      body: { name: 'New Name', department: deptB._id.toString(), batch: batchB._id.toString() },
+      body: {
+        name: 'New Name',
+        department: deptB._id.toString(),
+        batch: batchB._id.toString(),
+        phone: '01800000000',
+      },
     });
     assert.equal(error, undefined);
-    assert.equal(res.body.data.name, 'New Name');
+    assert.equal(res.body.data.name, 'S'); // the academic office owns the name
+    assert.equal(res.body.data.phone, '01800000000'); // contact details stay self-service
     assert.equal(String(res.body.data.department._id), deptA._id.toString()); // unchanged
     assert.equal(String(res.body.data.batch._id), batchA._id.toString()); // unchanged
   });
 
-  test('CR (custom admin-tier role) cannot change department/batch via the API either', async () => {
+  test('CR (custom admin-tier role) cannot change name, Student ID or department/batch', async () => {
     const cr = await User.create({
-      name: 'CR Person', email: 'cr@test.local', password: 'password123', role: 'cr', department: deptA._id, batch: batchA._id,
+      name: 'CR Person', email: 'cr@test.local', password: 'password123', role: 'cr',
+      rollNo: '1111111111111111', department: deptA._id, batch: batchA._id,
     });
     const { res, error } = await call(updateProfile, {
       user: cr,
-      body: { department: deptB._id.toString(), batch: batchB._id.toString() },
+      body: {
+        name: 'Renamed',
+        rollNo: '9999999999999999',
+        department: deptB._id.toString(),
+        batch: batchB._id.toString(),
+      },
     });
     assert.equal(error, undefined);
+    assert.equal(res.body.data.name, 'CR Person');
+    assert.equal(res.body.data.rollNo, '1111111111111111');
     assert.equal(String(res.body.data.department._id), deptA._id.toString());
     assert.equal(String(res.body.data.batch._id), batchA._id.toString());
   });
 
-  test('student can still edit rollNo/phone/semester — only department/batch are locked', async () => {
-    const student = await User.create({ name: 'S', email: 's2@test.local', password: 'password123', role: 'student' });
-    const { res, error } = await call(updateProfile, { user: student, body: { rollNo: '1234567890123456' } });
+  test('student cannot change the Student ID; phone and semester stay self-service', async () => {
+    const student = await User.create({
+      name: 'S', email: 's2@test.local', password: 'password123', role: 'student', rollNo: '1111111111111111',
+    });
+    const { res, error } = await call(updateProfile, {
+      user: student,
+      body: { rollNo: '1234567890123456', phone: '01711111111' },
+    });
     assert.equal(error, undefined);
-    assert.equal(res.body.data.rollNo, '1234567890123456');
+    assert.equal(res.body.data.rollNo, '1111111111111111'); // Student ID is locked
+    assert.equal(res.body.data.phone, '01711111111');
   });
 
   test('faculty is unaffected — can still update department/batch (unchanged prior behavior)', async () => {

@@ -19,6 +19,7 @@ import {
   getPrivateObjectS3,
   putObjectS3,
   getSignedDownloadUrlS3,
+  deleteObjectS3Strict,
 } from './s3Storage.js';
 import { deleteFromUploadcare } from './uploadcareStorage.js';
 
@@ -328,6 +329,36 @@ export async function getGeneratedDocumentStream(key, mimeType) {
   const { createReadStream } = await import('fs');
   await fs.access(target);
   return { stream: createReadStream(target), contentType: mimeType || 'application/pdf' };
+}
+
+/**
+ * A download link for an application export (a PDF/DOCX letter). Same private
+ * convention as a generated document: the object is private, the URL is minted
+ * per request, and with the local provider it is the authenticated streaming
+ * route rather than a file path.
+ *
+ * @returns {Promise<{url:string, provider:string}>}
+ */
+export async function getApplicationExportUrl(storageRef, { ttlSeconds = 300, downloadName = '', exportId = '' } = {}) {
+  if (env.fileStorageProvider === 's3') {
+    return { url: await getSignedDownloadUrlS3(storageRef, ttlSeconds, downloadName), provider: 's3' };
+  }
+  return { url: `/api/application-exports/${exportId}/content`, provider: 'local' };
+}
+
+/**
+ * Deletes one private object, throwing if it could not be removed — unlike
+ * {@link deleteGeneratedDocument}, which is deliberately best-effort. The export
+ * sweep needs to know, so a failed delete leaves the record retryable instead of
+ * marking a file that is still there as cleaned.
+ */
+export async function deletePrivateObjectStrict(storageRef) {
+  if (!storageRef) return;
+  if (env.fileStorageProvider === 's3') {
+    await deleteObjectS3Strict(storageRef);
+    return;
+  }
+  await deletePrivateLocal(storageRef);
 }
 
 // ---------------------------------------------------------------------------

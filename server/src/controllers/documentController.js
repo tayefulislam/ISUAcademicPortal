@@ -6,7 +6,11 @@ import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
 import { env } from '../config/env.js';
 import { enqueueDocumentJob } from '../services/queue/documentQueue.js';
-import { getGeneratedDocumentUrl, getGeneratedDocumentStream } from '../services/storage/storageService.js';
+import {
+  getGeneratedDocumentUrl,
+  getGeneratedDocumentStream,
+  deleteGeneratedDocument,
+} from '../services/storage/storageService.js';
 import {
   listEligibleTemplates,
   loadUsableTemplate,
@@ -200,8 +204,11 @@ export const downloadDocument = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'This document is not ready to download yet');
   }
   if (job.expiresAt && job.expiresAt.getTime() <= Date.now()) {
-    job.status = 'EXPIRED';
-    await job.save();
+    // Past its life: remove the object and the row rather than leaving the file
+    // behind, then fail the request. The hourly sweep is the backstop; this is
+    // the case where someone asks for it before the sweep has run.
+    await deleteGeneratedDocument(job.s3Key);
+    await DocumentJob.deleteOne({ _id: job._id });
     throw new ApiError(410, 'This document has expired. Please generate it again.');
   }
 
@@ -230,6 +237,8 @@ export const streamDocument = asyncHandler(async (req, res) => {
   const job = await findOwnJob(req.user, req.params.id);
   if (!job.s3Key) throw new ApiError(404, 'This document has no file');
   if (job.expiresAt && job.expiresAt.getTime() <= Date.now()) {
+    await deleteGeneratedDocument(job.s3Key);
+    await DocumentJob.deleteOne({ _id: job._id });
     throw new ApiError(410, 'This document has expired.');
   }
 
@@ -239,11 +248,20 @@ export const streamDocument = asyncHandler(async (req, res) => {
   stream.pipe(res);
 });
 
+/**
+ * Removes a document for good: the stored object first, then its row.
+ *
+ * <p>Storage first on purpose — the row is the only reference to the object, so
+ * deleting the row first could orphan the file with nothing left to name it.
+ * The storage delete is idempotent and best-effort: a missing object (already
+ * gone, or never produced for a job that failed) is not an error, so the row is
+ * still removed.
+ */
 export const deleteDocument = asyncHandler(async (req, res) => {
   const job = await findOwnJob(req.user, req.params.id);
-  job.status = 'DELETED';
-  await job.save();
-  // The stored object is left for the bucket's lifecycle rule to expire — the
-  // database is not a second, racing authority over its lifetime.
+
+  await deleteGeneratedDocument(job.s3Key);
+  await DocumentJob.deleteOne({ _id: job._id });
+
   res.json({ success: true, message: 'Document deleted' });
 });

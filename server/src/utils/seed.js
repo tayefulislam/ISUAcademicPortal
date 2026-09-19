@@ -109,6 +109,11 @@ async function seed() {
   const { seedDocumentTemplates } = await import('./seedDocumentTemplates.js');
   await seedDocumentTemplates();
 
+  // Write Application: the starting application types and official recipients.
+  // Idempotent and insert-only, so an admin's edits are never overwritten.
+  const { seedApplicationTypes } = await import('./seedApplicationTypes.js');
+  await seedApplicationTypes();
+
   console.log('[seed] done');
   await mongoose.disconnect();
 }

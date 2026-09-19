@@ -1,0 +1,2163 @@
+[{
+  "_id": {
+    "$oid": "6a9d1280b273dd5367f3a3a0"
+  },
+  "name": "Data Structure",
+  "courseId": "CSE06131209",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T07:13:04.318Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-15T19:54:16.017Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d17048637588a5ed19f08"
+  },
+  "name": "Basic Electrical Engineering",
+  "courseId": "EEE07131201",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T07:32:20.262Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-15T19:55:03.459Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2c6b8637588a5ed1a432"
+  },
+  "name": "Old English Literature",
+  "courseId": "ENG02323204",
+  "department": {
+    "$oid": "6a9d2c2c8637588a5ed1a42b"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:03:39.067Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:03:39.067Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a481"
+  },
+  "name": "English-II, Language Composition",
+  "courseId": "ENG02311201",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2ebc8637588a5ed1a4a3"
+  },
+  "name": "Physics-II",
+  "courseId": "PHY05331203",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "Covers three segments: Heat and Thermodynamics, Physical Optics and Modern Physics. Imparts the fundamental concepts and principles of physics. Emphasizes on the application of laws and solving mathematical problems.",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:13:32.458Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:13:32.458Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a484"
+  },
+  "name": "Mathematics-I, Differential and Integral Calculus",
+  "courseId": "MAT05411101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a485"
+  },
+  "name": "Physics-I",
+  "courseId": "PHY05331101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a486"
+  },
+  "name": "Chemistry",
+  "courseId": "CHE05311101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a487"
+  },
+  "name": "Chemistry Lab",
+  "courseId": "CHE05311102",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a488"
+  },
+  "name": "Introduction to Computing",
+  "courseId": "CSE06111101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a489"
+  },
+  "name": "Introduction to Computing Lab",
+  "courseId": "CSE06111102",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1.5,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a491"
+  },
+  "name": "Mathematics-II, Differential Equation and Coordinate Geometry",
+  "courseId": "MAT05411203",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a493"
+  },
+  "name": "Basic Electrical Engineering Lab",
+  "courseId": "EEE07131202",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1.5,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a495"
+  },
+  "name": "Physics Lab",
+  "courseId": "PHY05331204",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a496"
+  },
+  "name": "Discrete Mathematics",
+  "courseId": "CSE06131205",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a498"
+  },
+  "name": "Data Structure Lab",
+  "courseId": "CSE06131210",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a499"
+  },
+  "name": "English-III, Oral & Written Communication",
+  "courseId": "ENG02312102",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a500"
+  },
+  "name": "Engineering Economics",
+  "courseId": "GED03112101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a501"
+  },
+  "name": "Mathematics-III, Linear Algebra and Complex",
+  "courseId": "MAT05412101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a502"
+  },
+  "name": "Algorithms",
+  "courseId": "CSE06132117",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a503"
+  },
+  "name": "Algorithms Lab",
+  "courseId": "CSE06132118",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a504"
+  },
+  "name": "Digital Logic Design",
+  "courseId": "CSE07142111",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a505"
+  },
+  "name": "Digital Logic Design Lab",
+  "courseId": "CSE07142112",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a506"
+  },
+  "name": "Statistics and Probability",
+  "courseId": "STA05422101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a507"
+  },
+  "name": "Financial and Managerial Accounting",
+  "courseId": "GED04112205",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a508"
+  },
+  "name": "Mathematics IV, Fourier and Vector Analysis",
+  "courseId": "MAT05412203",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a509"
+  },
+  "name": "Electronic Devices and Circuits and Pulse Techniques",
+  "courseId": "EEE07142203",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a510"
+  },
+  "name": "Electronic Devices and Circuits and Pulse Techniques Lab",
+  "courseId": "EEE07142204",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1.5,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a511"
+  },
+  "name": "Bengali",
+  "courseId": "BEN02312201",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a512"
+  },
+  "name": "Object Oriented Programming",
+  "courseId": "CSE06132207",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a513"
+  },
+  "name": "Object Oriented Programming Lab",
+  "courseId": "CSE06132208",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1.5,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a514"
+  },
+  "name": "Professional Communication and Technical Writing",
+  "courseId": "ENG02313101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a515"
+  },
+  "name": "Bangladesh Studies (History of Independence)",
+  "courseId": "GED03143101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a516"
+  },
+  "name": "Web Programming",
+  "courseId": "CSE06123101",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a517"
+  },
+  "name": "Web Programming Lab",
+  "courseId": "CSE06123102",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1.5,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a518"
+  },
+  "name": "Computer Architecture",
+  "courseId": "CSE06133119",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a519"
+  },
+  "name": "Introduction to Database Systems",
+  "courseId": "CSE06123121",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a520"
+  },
+  "name": "Introduction to Database Systems Lab",
+  "courseId": "CSE06123122",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a521"
+  },
+  "name": "Introduction to Python",
+  "courseId": "CSE06133103",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a522"
+  },
+  "name": "Professional Ethics and Environment Protection Ethics",
+  "courseId": "GED02233203",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a523"
+  },
+  "name": "Microprocessor and Microcontroller",
+  "courseId": "CSE06133223",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a524"
+  },
+  "name": "Microprocessor and Microcontroller Lab",
+  "courseId": "CSE06133224",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a525"
+  },
+  "name": "Operating System",
+  "courseId": "CSE06133227",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a526"
+  },
+  "name": "Operating System Lab",
+  "courseId": "CSE06133228",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a527"
+  },
+  "name": "Information System Design",
+  "courseId": "CSE06133229",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a528"
+  },
+  "name": "Information System Design Lab",
+  "courseId": "CSE06133230",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a529"
+  },
+  "name": "Introduction to Robotics and IoT",
+  "courseId": "CSE06133233",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 2,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a530"
+  },
+  "name": "Data Communication",
+  "courseId": "CSE06123231",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a531"
+  },
+  "name": "Project and Thesis",
+  "courseId": "CSE400",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a532"
+  },
+  "name": "Technology Entrepreneurship",
+  "courseId": "GED04134105",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a533"
+  },
+  "name": "Computer and Cyber Security",
+  "courseId": "CSE06124132",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a534"
+  },
+  "name": "Computer Networks",
+  "courseId": "CSE06124131",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a536"
+  },
+  "name": "Software Engineering",
+  "courseId": "CSE06134135",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a537"
+  },
+  "name": "Software Engineering Lab",
+  "courseId": "CSE06134136",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a9d2e168637588a5ed1a538"
+  },
+  "name": "Artificial Intelligence",
+  "courseId": "CSE06134181",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aa9a2c4ea2cd165970c3f85"
+  },
+  "name": "English-I, Remedial English",
+  "courseId": "ENG02311100",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-15T19:55:48.798Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-15T19:55:48.798Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa7247ea2cd165970c435e"
+  },
+  "name": "Jurisprudence",
+  "courseId": "LAW04211101",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T10:41:11.533Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T10:41:11.533Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa72a0ea2cd165970c436a"
+  },
+  "name": "Development of Legal System in Bangladesh",
+  "courseId": "GED02221102",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-16T10:42:40.598Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-16T10:42:40.598Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4353"
+  },
+  "name": "Bangla Language and Literature",
+  "courseId": "BNG02321103",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4354"
+  },
+  "name": "English Language and Applied Grammar",
+  "courseId": "ENG02311104",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4355"
+  },
+  "name": "Government and Politics",
+  "courseId": "GED03121105",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4356"
+  },
+  "name": "Law of Contract",
+  "courseId": "LAW04211201",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4357"
+  },
+  "name": "Muslim Law",
+  "courseId": "LAW04211202",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4358"
+  },
+  "name": "Hindu and Christian Personal Laws",
+  "courseId": "LAW04211203",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4359"
+  },
+  "name": "Law of Torts and Consumer Protection",
+  "courseId": "LAW04211204",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4360"
+  },
+  "name": "Principles of Equity and Trust",
+  "courseId": "LAW04211205",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4361"
+  },
+  "name": "Viva Voce -I",
+  "courseId": "LAW04211206",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "2nd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4362"
+  },
+  "name": "Constitutional Law of Bangladesh",
+  "courseId": "LAW04212101",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4363"
+  },
+  "name": "Constitutional Law of UK and USA",
+  "courseId": "LAW04212102",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4364"
+  },
+  "name": "Criminology",
+  "courseId": "GED03192103",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4365"
+  },
+  "name": "Islamic Law of Inheritance",
+  "courseId": "LAW04212104",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4366"
+  },
+  "name": "History of Emergence of Bangladesh",
+  "courseId": "GED02222105",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "3rd Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4367"
+  },
+  "name": "Labour Laws",
+  "courseId": "LAW04212201",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4368"
+  },
+  "name": "Law of Transfer of Property and Registration",
+  "courseId": "LAW04212202",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4369"
+  },
+  "name": "Modern Taxation in Bangladesh",
+  "courseId": "GED04112203",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4370"
+  },
+  "name": "Business Law",
+  "courseId": "LAW04212204",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4371"
+  },
+  "name": "Land Laws of Bangladesh",
+  "courseId": "LAW04212205",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4372"
+  },
+  "name": "Viva Voce -II",
+  "courseId": "LAW04212206",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "4th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4373"
+  },
+  "name": "Law of Specific Relief, Limitation and PDR",
+  "courseId": "LAW04213101",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4374"
+  },
+  "name": "Introduction to Digital Technologies",
+  "courseId": "ICTs06113102",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4375"
+  },
+  "name": "Interpretation of Statutes and General Clauses Act",
+  "courseId": "LAW04213103",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4376"
+  },
+  "name": "Law of Crimes-I",
+  "courseId": "LAW04213104",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4377"
+  },
+  "name": "Media, Information and Communication Technology in Bangladesh",
+  "courseId": "ICTs06193105",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "5th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4378"
+  },
+  "name": "Application of ADR in Bangladesh",
+  "courseId": "GED99993201",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4379"
+  },
+  "name": "Law of Crimes-II",
+  "courseId": "LAW04213202",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4380"
+  },
+  "name": "Law of Criminal Procedure-I",
+  "courseId": "LAW04213203",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4381"
+  },
+  "name": "Law of Civil Procedure-I",
+  "courseId": "LAW04213204",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4382"
+  },
+  "name": "Company and Banking Law",
+  "courseId": "LAW04213205",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4383"
+  },
+  "name": "Viva Voce- III",
+  "courseId": "LAW04213206",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "6th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4384"
+  },
+  "name": "Administrative Law",
+  "courseId": "LAW04214101",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4385"
+  },
+  "name": "Law of Criminal Procedure-II",
+  "courseId": "LAW04214102",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4386"
+  },
+  "name": "Law of Civil Procedure-II",
+  "courseId": "LAW04214103",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4387"
+  },
+  "name": "Law of Evidence",
+  "courseId": "LAW04214104",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4388"
+  },
+  "name": "Medical Jurisprudence",
+  "courseId": "GED09194105",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "7th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4389"
+  },
+  "name": "Public International Law",
+  "courseId": "LAW04214201",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "8th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4390"
+  },
+  "name": "Civil and Criminal Justice System in Bangladesh (Civil Courts Act, CRO and Conveyancing and Drafting)",
+  "courseId": "LAW04214202",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "8th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4391"
+  },
+  "name": "Advocacy Workshop (Civil, Criminal and Professional Ethics)",
+  "courseId": "LAW04214203",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "8th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4392"
+  },
+  "name": "Legal Research and Monograph",
+  "courseId": "LAW04214204",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 4,
+  "semester": "8th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aaa71a2ea2cd165970c4393"
+  },
+  "name": "Viva Voce - IV",
+  "courseId": "LAW04214205",
+  "department": {
+    "$oid": "6aaa71a2ea2cd165970c4350"
+  },
+  "description": "",
+  "credit": 1,
+  "semester": "8th Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-06T09:10:46.011Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aadbd3ccbff6ec1f8c2b48c"
+  },
+  "name": "Structured Programming Language",
+  "courseId": "CSE06131103",
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "credit": 3,
+  "semester": "1st Semester",
+  "status": "active",
+  "createdAt": {
+    "$date": "2026-09-18T22:37:48.078Z"
+  },
+  "updatedAt": {
+    "$date": "2026-09-18T22:37:48.078Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6aadc74f0e026eecb99f4c14"
+  },
+  "courseId": "CSE-203",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:47.362Z"
+  },
+  "credit": 3,
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "name": "Discrete Mathematics",
+  "semester": "3rd Semester",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:47.362Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6aadc74f0e026eecb99f4c15"
+  },
+  "courseId": "PHY-101",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:47.503Z"
+  },
+  "credit": 3,
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "name": "Physics I",
+  "semester": "1st Semester",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:47.503Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6aadc74f0e026eecb99f4c16"
+  },
+  "courseId": "ENG-101",
+  "__v": 0,
+  "createdAt": {
+    "$date": "2026-09-18T23:20:47.640Z"
+  },
+  "credit": 2,
+  "department": {
+    "$oid": "6a9c9761d8c39c8fd411e9e7"
+  },
+  "description": "",
+  "name": "English I",
+  "semester": "1st Semester",
+  "status": "active",
+  "updatedAt": {
+    "$date": "2026-09-18T23:20:47.640Z"
+  }
+}]

@@ -182,11 +182,18 @@ export async function buildContext(user, course, { facultyId = null } = {}) {
     user.semester ? Semester.findById(user.semester).select('name code') : null,
     user.department ? Department.findById(user.department).select('name code') : null,
   ]);
-  if (batch) context['student.batch'] = batch.name || batch.code || '';
-  if (semester) context['student.semester'] = semester.name || semester.code || '';
+  if (batch) {
+    context['student.batch'] = batch.name || batch.code || '';
+    context['batch.code'] = batch.code || '';
+  }
+  if (semester) {
+    context['student.semester'] = semester.name || semester.code || '';
+    context['semester.code'] = semester.code || '';
+  }
   if (department) {
     context['student.department'] = department.name || department.code || '';
     context['department.name'] = context['student.department'];
+    context['department.code'] = department.code || '';
   }
 
   let facultyOptions = [];
@@ -195,6 +202,8 @@ export async function buildContext(user, course, { facultyId = null } = {}) {
   if (course) {
     context['course.code'] = course.courseId || '';
     context['course.name'] = course.name || '';
+    context['course.credit'] = course.credit == null ? '' : String(course.credit);
+    context['course.semester'] = course.semester || '';
     if (course.department) {
       const courseDepartment = await Department.findById(course.department).select('name code');
       context['course.department'] = courseDepartment ? (courseDepartment.name || courseDepartment.code || '') : '';
@@ -260,6 +269,11 @@ export async function createJob({ user, templateId, courseId, inputData, faculty
   const { context, ids, chosenFacultyId } = await buildContext(user, course, { facultyId });
   const { resolved } = buildRenderData({ fields: version.fields, context, inputData });
 
+  // Persist only what the student was allowed to type. A forged key for an
+  // official field (student name / student ID) is not merely ignored when the
+  // document renders — it is never stored either.
+  const editableKeys = new Set(version.fields.filter((f) => f.editable).map((f) => f.key));
+
   return DocumentJob.create({
     user: user._id,
     template: template._id,
@@ -270,18 +284,23 @@ export async function createJob({ user, templateId, courseId, inputData, faculty
     // Pinned, so a retry (or a later regeneration from this row) prints the same
     // teacher the student chose rather than silently falling back to the first.
     facultyId: chosenFacultyId || null,
-    inputData: sanitizeInputData(inputData),
+    inputData: sanitizeInputData(inputData, editableKeys),
     resolved: { fields: resolved, ids },
     status: 'QUEUED',
   });
 }
 
-/** Keeps only the declared editable keys, as trimmed strings. */
-function sanitizeInputData(inputData) {
+/**
+ * Keeps the declared editable keys, as strings. `allowed`, when supplied, is the
+ * set of keys the template actually marks editable — anything else (an official
+ * field's key, say) is dropped rather than stored.
+ */
+function sanitizeInputData(inputData, allowed = null) {
   if (!inputData || typeof inputData !== 'object') return {};
   const clean = {};
   for (const [key, value] of Object.entries(inputData)) {
     if (typeof key !== 'string' || key.startsWith('$') || key.includes('.')) continue;
+    if (allowed && !allowed.has(key)) continue;
     if (value === undefined || value === null) continue;
     clean[key] = String(value).slice(0, 2000);
   }
@@ -297,13 +316,47 @@ export function documentKey(job) {
 }
 
 /**
+ * The download name of a generated document:
+ * `Course Name - Course ID - Student Name - Student ID - <random>.pdf`.
+ *
+ * <p>The random suffix keeps two documents for the same course and student from
+ * overwriting each other in the browser's download folder. Anything the
+ * filesystem or a `Content-Disposition` header cannot carry is folded to a
+ * hyphen, so a name can never break the download.
+ */
+export function documentFileName(user, course) {
+  const parts = [
+    course?.name,
+    course?.courseId,
+    user?.name,
+    user?.rollNo,
+    // 6 digits, so two files in the same second still differ.
+    Math.floor(100000 + Math.random() * 900000),
+  ]
+    .map((part) => (part === undefined || part === null ? '' : String(part).trim()))
+    .filter(Boolean);
+
+  const base = parts
+    .join(' - ')
+    // Reserved for the filesystem / header, plus control characters.
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return `${base || 'document'}.pdf`;
+}
+
+/**
  * The worker's whole job: load, resolve, render, upload, complete, notify.
  * Idempotent — a job already in a terminal state is left alone, so a retried
  * message cannot produce a second document.
  */
 export async function processJob(jobId, { renderPdf, storeDocument } = {}) {
   const job = await DocumentJob.findById(jobId);
-  if (!job) throw new Error(`Document job ${jobId} not found`);
+  // The row can be gone because the user deleted the document (or it expired and
+  // the sweep removed it) while the job was still queued. There is nothing to
+  // render, and nothing to report as an error either.
+  if (!job) return null;
   if (['COMPLETED', 'DELETED', 'EXPIRED'].includes(job.status)) return job;
 
   job.status = 'PROCESSING';
@@ -348,7 +401,8 @@ export async function processJob(jobId, { renderPdf, storeDocument } = {}) {
     const { storageRef } = await store(documentKey(job), pdf);
 
     job.s3Key = storageRef;
-    job.fileName = `${template.slug}-v${job.templateVersion}.pdf`;
+    // Course + student in the name, so the downloaded file is self-describing.
+    job.fileName = documentFileName(user, course);
     job.sizeBytes = pdf.length;
     job.resolved = { fields: resolved, ids };
     job.status = 'COMPLETED';
@@ -380,18 +434,81 @@ export async function processJob(jobId, { renderPdf, storeDocument } = {}) {
 }
 
 /**
- * The hourly sweep: a document past its expiry is EXPIRED, whatever else has or
- * has not happened to its object. Returns how many rows changed.
+ * Removes one document for good: its stored object first, then its row.
+ *
+ * <p>Extracted so the ordering, and the "there is no object" case, are testable
+ * without a database. Storage first because the row is the only thing that names
+ * the object — removing the row first could orphan the file.
+ *
+ * @param {{_id:any, s3Key?:string}} job
+ * @param {{removeStored:(key:string)=>Promise<void>, removeRow:(id:any)=>Promise<void>}} deps
  */
-export async function expireStaleJobs() {
-  const result = await DocumentJob.updateMany(
-    {
-      status: { $in: ['QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'] },
-      expiresAt: { $ne: null, $lte: new Date() },
-    },
-    { $set: { status: 'EXPIRED' } }
-  );
-  return { expired: result.modifiedCount ?? 0 };
+export async function removeDocumentStorageThenRow(job, { removeStored, removeRow }) {
+  if (job.s3Key) {
+    await removeStored(job.s3Key);
+  }
+  await removeRow(job._id);
+}
+
+/**
+ * The hourly sweep: a document past its expiry is removed outright — the stored
+ * object first, then the row — so neither the file nor a stale row is left
+ * behind. Returns how many documents were removed.
+ *
+ * @param {{deleteStored?:(key:string)=>Promise<void>}} [deps] injectable for
+ *   tests; production uses the storage service (imported lazily, like the PDF
+ *   engine, so the API process does not pull the storage SDK in unless it sweeps).
+ */
+export async function expireStaleJobs({ deleteStored = null } = {}) {
+  const stale = await DocumentJob.find({
+    status: { $in: ['QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'] },
+    expiresAt: { $ne: null, $lte: new Date() },
+  }).select('_id s3Key');
+
+  if (stale.length === 0) return { expired: 0 };
+
+  const removeStored = deleteStored
+    || (await import('../storage/storageService.js')).deleteGeneratedDocument;
+
+  let expired = 0;
+  for (const job of stale) {
+    // eslint-disable-next-line no-await-in-loop
+    await removeDocumentStorageThenRow(job, {
+      removeStored,
+      removeRow: (id) => DocumentJob.deleteOne({ _id: id }),
+    });
+    expired += 1;
+  }
+  return { expired };
+}
+
+/**
+ * One-off cleanup for rows left over from before deletion became permanent: a
+ * document that was soft-deleted (`DELETED`) or merely flagged (`EXPIRED`) still
+ * has its object and row. Removes both, object first, exactly as the live paths
+ * do. Safe to re-run — it matches nothing once they are gone.
+ *
+ * @param {{deleteStored?:(key:string)=>Promise<void>}} [deps]
+ */
+export async function purgeRemovedDocuments({ deleteStored = null } = {}) {
+  const legacy = await DocumentJob.find({ status: { $in: ['DELETED', 'EXPIRED'] } })
+    .select('_id s3Key');
+
+  if (legacy.length === 0) return { purged: 0 };
+
+  const removeStored = deleteStored
+    || (await import('../storage/storageService.js')).deleteGeneratedDocument;
+
+  let purged = 0;
+  for (const job of legacy) {
+    // eslint-disable-next-line no-await-in-loop
+    await removeDocumentStorageThenRow(job, {
+      removeStored,
+      removeRow: (id) => DocumentJob.deleteOne({ _id: id }),
+    });
+    purged += 1;
+  }
+  return { purged };
 }
 
 /** The client-facing shape of a job — never the object key, never a URL. */
@@ -432,7 +549,10 @@ export default {
   createJob,
   processJob,
   expireStaleJobs,
+  purgeRemovedDocuments,
+  removeDocumentStorageThenRow,
   serializeJob,
   documentKey,
+  documentFileName,
   safeErrorMessage,
 };

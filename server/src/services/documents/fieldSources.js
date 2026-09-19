@@ -29,10 +29,15 @@ export const FIELD_SOURCES = [
   'course.code',
   'course.name',
   'course.department',
+  'course.credit',
+  'course.semester',
   'faculty.name',
   'faculty.designation',
   'faculty.email',
   'department.name',
+  'department.code',
+  'batch.code',
+  'semester.code',
   'university.name',
 ];
 
@@ -47,10 +52,15 @@ export const SOURCE_LABELS = {
   'course.code': 'Course Code',
   'course.name': 'Course Name',
   'course.department': 'Course Department',
+  'course.credit': 'Course Credit',
+  'course.semester': 'Course Semester',
   'faculty.name': "Teacher's Name",
   'faculty.designation': "Teacher's Designation",
   'faculty.email': "Teacher's Email",
   'department.name': 'Department',
+  'department.code': 'Department Code',
+  'batch.code': 'Batch Code',
+  'semester.code': 'Semester Code',
   'university.name': 'University Name',
 };
 

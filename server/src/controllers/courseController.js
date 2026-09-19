@@ -3,6 +3,8 @@ import Course from '../models/Course.js';
 import CourseEnrollment from '../models/CourseEnrollment.js';
 import File from '../models/File.js';
 import Semester from '../models/Semester.js';
+import RoutineTemplate from '../models/RoutineTemplate.js';
+import ScheduleInstance from '../models/ScheduleInstance.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
@@ -175,7 +177,28 @@ export const deleteCourse = asyncHandler(async (req, res) => {
   const inUse = await File.exists({ course: req.params.id });
   if (inUse) throw new ApiError(409, 'Cannot delete a course that still has files');
 
+  // A class-routine rule (and each of its dated occurrences) holds this course by
+  // id. Deleting the course underneath them would leave rows pointing at nothing:
+  // the rule loses its course name, and the class disappears from every timetable
+  // because the audience filter can no longer match it. Retire the routine first.
+  const routineCount = await countRoutineReferences({ course: req.params.id });
+  if (routineCount > 0) {
+    throw new ApiError(
+      409,
+      `Cannot delete a course that still has ${routineCount} class-routine entr${routineCount === 1 ? 'y' : 'ies'}. Retire them first.`
+    );
+  }
+
   const course = await Course.findByIdAndDelete(req.params.id);
   if (!course) throw new ApiError(404, 'Course not found');
   res.json({ success: true, message: 'Course deleted' });
 });
+
+/** How many routine rules + occurrences still reference a course or department. */
+async function countRoutineReferences(query) {
+  const [templates, instances] = await Promise.all([
+    RoutineTemplate.countDocuments(query),
+    ScheduleInstance.countDocuments(query),
+  ]);
+  return templates + instances;
+}

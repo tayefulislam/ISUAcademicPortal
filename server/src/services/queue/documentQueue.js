@@ -9,6 +9,15 @@ export const DOCUMENT_JOB = 'generate';
 export const DOCUMENT_CLEANUP_JOB = 'cleanup-expired';
 export const DOCUMENT_CLEANUP_SCHEDULE_ID = 'document-cleanup-hourly';
 
+// Write Application rides the SAME queue and worker — one scheduler, one worker
+// process, no second job system. A daily safety pass recharges monthly AI
+// credits (the per-account compare-and-set makes it idempotent), and an hourly
+// sweep deletes expired PDF/DOCX exports from object storage.
+export const AI_CREDIT_RECHARGE_JOB = 'ai-credit-recharge';
+export const AI_CREDIT_RECHARGE_SCHEDULE_ID = 'ai-credit-recharge-daily';
+export const APPLICATION_EXPORT_CLEANUP_JOB = 'application-export-cleanup';
+export const APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID = 'application-export-cleanup-hourly';
+
 let queue = null;
 
 /**
@@ -83,6 +92,38 @@ export async function ensureCleanupSchedule() {
   );
 }
 
+/**
+ * Registers the Write Application sweeps on the same queue. Same idempotency
+ * contract as {@link ensureCleanupSchedule}: BullMQ upserts by job id, so this is
+ * safe to call on every boot.
+ */
+export async function ensureApplicationSchedules() {
+  const queue = getDocumentQueue();
+  await queue.add(
+    AI_CREDIT_RECHARGE_JOB,
+    {},
+    {
+      repeat: { pattern: '0 3 * * *' },
+      jobId: AI_CREDIT_RECHARGE_SCHEDULE_ID,
+      removeOnComplete: true,
+      removeOnFail: true,
+      attempts: 1,
+    }
+  );
+  await queue.add(
+    APPLICATION_EXPORT_CLEANUP_JOB,
+    {},
+    {
+      repeat: { pattern: '0 * * * *' },
+      jobId: APPLICATION_EXPORT_CLEANUP_SCHEDULE_ID,
+      removeOnComplete: true,
+      removeOnFail: true,
+      attempts: 1,
+    }
+  );
+  return true;
+}
+
 export async function closeDocumentQueue() {
   if (queue) {
     await queue.close();
@@ -94,8 +135,11 @@ export default {
   DOCUMENT_QUEUE_NAME,
   DOCUMENT_JOB,
   DOCUMENT_CLEANUP_JOB,
+  AI_CREDIT_RECHARGE_JOB,
+  APPLICATION_EXPORT_CLEANUP_JOB,
   getDocumentQueue,
   enqueueDocumentJob,
   ensureCleanupSchedule,
+  ensureApplicationSchedules,
   closeDocumentQueue,
 };
