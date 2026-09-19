@@ -11,6 +11,7 @@ import { parsePagination } from '../utils/pagination.js';
 import { logger } from '../utils/logger.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveGroup } from '../utils/groups.js';
+import { assertDesignation, cleanDesignation } from '../utils/designations.js';
 
 // 'administrator' has every super_admin capability except visibility/control
 // over super_admin accounts themselves, and only an actual super_admin can
@@ -81,14 +82,18 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
       const setting = listSettingsByKey.get(key);
       if (!Array.isArray(value)) throw new ApiError(400, `${key} must be an array`);
       // Whole-array replace (matches how every other setting type here works
-      // — send the new value, it replaces the old one) — normalized
-      // (lowercased/trimmed, leading "@" stripped so pasting the display
-      // form works) and deduplicated so the admin UI's chip list can't end
-      // up with silent near-duplicates like "isu.ac.bd" and "ISU.AC.BD ".
-      const cleanedItems = value.map((v) => normalizeDomain(v));
+      // — send the new value, it replaces the old one) — normalized and
+      // deduplicated so the admin UI's chip list can't end up with silent
+      // near-duplicates like "isu.ac.bd" and "ISU.AC.BD ".
+      //
+      // A DOMAIN is lowered and has its "@" stripped so pasting the display form
+      // works; a display LABEL (a faculty designation) keeps the spelling the
+      // admin typed, because that is what prints on a document.
+      const clean = setting.preserveCase ? cleanDesignation : normalizeDomain;
+      const cleanedItems = value.map((item) => clean(item));
       for (const item of cleanedItems) {
         if (!setting.itemPattern.test(item)) {
-          throw new ApiError(400, `${key}: "${item}" is not a valid domain, e.g. "isu.ac.bd" (without the @)`);
+          throw new ApiError(400, `${key}: "${item}" is not a valid value${setting.itemHint ? ` — ${setting.itemHint}` : ''}`);
         }
       }
       patch[key] = [...new Set(cleanedItems)];
@@ -446,16 +451,21 @@ export const listFaculty = asyncHandler(async (req, res) => {
 });
 
 export const createFaculty = asyncHandler(async (req, res) => {
-  const { name, email, password, assignedDepartments, assignedCourses } = req.body;
+  const { name, email, password, assignedDepartments, assignedCourses, designation } = req.body;
 
   const existing = await User.findOne({ email: String(email).toLowerCase() });
   if (existing) throw new ApiError(409, 'This email address is already registered. Please use another email or log in to your existing account.');
+
+  // The rank is chosen from the admin-managed list, so it is validated rather
+  // than stored as typed — it prints on the documents this teacher signs.
+  const settings = await getSettings();
 
   const faculty = await User.create({
     name,
     email,
     password,
     role: 'faculty',
+    designation: assertDesignation(designation, settings),
     assignedDepartments: assignedDepartments || [],
     assignedCourses: assignedCourses || [],
   });
@@ -470,6 +480,10 @@ export const updateFaculty = asyncHandler(async (req, res) => {
   const allowed = ['name', 'email', 'assignedDepartments', 'assignedCourses'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) faculty[key] = req.body[key];
+  }
+  if (req.body.designation !== undefined) {
+    const settings = await getSettings();
+    faculty.designation = assertDesignation(req.body.designation, settings);
   }
   await faculty.save();
 

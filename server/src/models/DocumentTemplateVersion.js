@@ -58,11 +58,30 @@ const fieldSchema = new mongoose.Schema(
     align: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
     color: { type: String, default: '#111111' },
 
+    // Word-like text styling.
+    underline: { type: Boolean, default: false },
+    strikethrough: { type: Boolean, default: false },
+    // Multiple of the font size (Word's "line spacing").
+    lineHeight: { type: Number, default: 1.25 },
+    // Points, negative tightens (Word's "character spacing").
+    letterSpacing: { type: Number, default: 0 },
+    // Highlight. Empty means none.
+    backgroundColor: { type: String, default: '' },
+
+    // Borders & shading, available on any element (Word's "borders and shading").
+    borderWidth: { type: Number, default: 0 },
+    borderColor: { type: String, default: '#111111' },
+    borderStyle: { type: String, enum: ['none', 'solid', 'dashed', 'dotted'], default: 'solid' },
+    borderRadius: { type: Number, default: 0 },
+
     // An IMAGE element's file name in the server's `img/` folder (e.g. the
     // university logo). A name, never a path or a URL — see services/documents/assets.js.
     asset: { type: String, default: '' },
     // Draw order within the page; a higher number paints on top.
     zIndex: { type: Number, default: 0 },
+    // A locked element cannot be dragged or resized on the canvas — the same
+    // guard Word's "lock anchor" gives, so a background rule never moves by accident.
+    locked: { type: Boolean, default: false },
   },
   { _id: false }
 );

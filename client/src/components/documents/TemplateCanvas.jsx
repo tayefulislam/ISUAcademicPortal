@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { resizeBox } from '../../utils/resizeBox.js';
 
-// Millimetres → pixels. A4 is 210×297 mm, so at this scale the canvas is about
-// 500×710 px — small enough to see the whole page beside the panels on a laptop,
-// large enough to drag an element accurately.
-const PX_PER_MM = 2.4;
+// Millimetres → pixels at 100% zoom. A4 is 210×297 mm, so the page is about
+// 500×710 px — small enough to sit beside the panels on a laptop, large enough
+// to grab an element accurately. The admin can zoom from the toolbar.
+export const DEFAULT_PX_PER_MM = 2.4;
 
 const PAGE_MM = { A4: { w: 210, h: 297 }, LETTER: { w: 215.9, h: 279.4 } };
 
@@ -14,15 +14,15 @@ export function pageSizeMm(pageSize = 'A4', orientation = 'portrait') {
   return orientation === 'landscape' ? { w: base.h, h: base.w } : { w: base.w, h: base.h };
 }
 
-export function pageSizePx(pageSize = 'A4', orientation = 'portrait') {
+export function pageSizePx(pageSize = 'A4', orientation = 'portrait', pxPerMm = DEFAULT_PX_PER_MM) {
   const { w, h } = pageSizeMm(pageSize, orientation);
-  return { width: Math.round(w * PX_PER_MM), height: Math.round(h * PX_PER_MM) };
+  return { width: Math.round(w * pxPerMm), height: Math.round(h * pxPerMm) };
 }
 
-/** How close (in mm) an edge must be to the page centre before it snaps. */
+/** How close (in mm) an edge must be to a guide before it snaps. */
 const SNAP_MM = 2;
 
-/** The resize grips: four corners and four edges. */
+/** The resize grips: four corners and the four sides. */
 const HANDLES = [
   { dir: 'nw', cursor: 'nwse-resize' },
   { dir: 'n', cursor: 'ns-resize' },
@@ -38,6 +38,9 @@ const HANDLES = [
 // thickness stays a property in the panel.
 const LINE_HANDLES = ['w', 'e'];
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const BORDER_STYLES = ['none', 'solid', 'dashed', 'dotted'];
+
 function num(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -45,23 +48,57 @@ function num(value, fallback) {
 
 const roundTo = (value, step) => Math.round(value / step) * step;
 
+/** The border/background a box draws, shared by every element type. */
+function boxChrome(field) {
+  const width = num(field.borderWidth, 0);
+  const style = BORDER_STYLES.includes(field.borderStyle) ? field.borderStyle : 'solid';
+  const radius = num(field.borderRadius, 0);
+  return {
+    border: width > 0 && style !== 'none'
+      ? `${Math.max(width * DEFAULT_PX_PER_MM, 1)}px ${style} ${HEX.test(field.borderColor || '') ? field.borderColor : '#111111'}`
+      : undefined,
+    borderRadius: radius > 0 ? `${radius * DEFAULT_PX_PER_MM}px` : undefined,
+    backgroundColor: HEX.test(field.backgroundColor || '') ? field.backgroundColor : undefined,
+  };
+}
+
+/** The text styling a text element draws with — the same set the PDF applies. */
+function textStyle(field) {
+  const decorations = [
+    field.underline ? 'underline' : '',
+    field.strikethrough ? 'line-through' : '',
+  ].filter(Boolean).join(' ');
+
+  return {
+    fontSize: `${num(field.fontSize, 12) * 1.1}px`,
+    fontFamily: field.fontFamily || undefined,
+    fontWeight: field.bold ? 700 : 400,
+    fontStyle: field.italic ? 'italic' : 'normal',
+    textDecoration: decorations || undefined,
+    letterSpacing: num(field.letterSpacing, 0) ? `${num(field.letterSpacing, 0) * 0.35}px` : undefined,
+    lineHeight: num(field.lineHeight, 1.25),
+    textAlign: field.align || 'left',
+    color: field.color || '#111111',
+  };
+}
+
 /**
  * The A4 canvas the admin composes the design on.
  *
  * <p>Coordinates are millimetres throughout — the same units the server renders
- * with (templateEngine.js) — so what is placed here is what prints, and the pixel
- * scale is applied only for display. Dragging uses pointer events (mouse and
- * touch alike) and never mutates the DOM: it reports a new position and the
- * parent re-renders, so state stays the single source of truth.
+ * with (templateEngine.js) — so what is placed here is what prints. Everything
+ * drawn (font, weight, decoration, spacing, highlight, border) comes from the
+ * same field properties the PDF uses, so the canvas is a real preview rather
+ * than an approximation.
  *
- * <p>Elements can be dragged IN from the palette, MOVED, and — once selected —
- * RESIZED by any of the eight grips. Holding <b>Ctrl</b> while resizing works in
- * 0.1 mm steps instead of 0.5 mm (fine adjustment), and holding <b>Shift</b> on a
- * corner keeps the element's shape.
+ * <p>Elements can be dragged in from the palette, moved, and — once selected —
+ * resized by any of the eight grips. They also snap to the page's edges and
+ * centre and to one another, with the guide shown only while a snap is active.
  */
 export default function TemplateCanvas({
   pageSize = 'A4',
   orientation = 'portrait',
+  pxPerMm = DEFAULT_PX_PER_MM,
   fields = [],
   assets = {},
   backgroundUrl = '',
@@ -73,70 +110,95 @@ export default function TemplateCanvas({
   onDropNew,
 }) {
   const { w: pageWidthMm, h: pageHeightMm } = pageSizeMm(pageSize, orientation);
-  const { width, height } = pageSizePx(pageSize, orientation);
+  const { width, height } = pageSizePx(pageSize, orientation, pxPerMm);
+  const scale = pxPerMm / DEFAULT_PX_PER_MM;
 
   const [drag, setDrag] = useState(null);
   const [resize, setResize] = useState(null);
   const [dropActive, setDropActive] = useState(false);
-  const [guideX, setGuideX] = useState(null);
+  const [guides, setGuides] = useState({ x: null, y: null });
   const canvasRef = useRef(null);
 
   const beginChange = useCallback(() => onChangeStart?.(), [onChangeStart]);
 
-  // ----- Moving -----
+  /**
+   * The x/y offsets (in mm) that would align the moving box with the page or
+   * another element, plus the guide lines to draw while it is aligned there.
+   */
+  const snapTargets = useCallback((moving, widthMm, heightMm) => {
+    const xs = [0, (pageWidthMm - widthMm) / 2, pageWidthMm - widthMm];
+    const ys = [0, (pageHeightMm - heightMm) / 2, pageHeightMm - heightMm];
+    for (const other of fields) {
+      if (other.key === moving) continue;
+      const ox = num(other.x, 0);
+      const oy = num(other.y, 0);
+      const ow = num(other.width, 0);
+      const oh = other.type === 'LINE' ? 0 : num(other.height, 0);
+      xs.push(ox, ox + ow / 2 - widthMm / 2, ox + ow - widthMm);
+      ys.push(oy, oy + oh / 2 - heightMm / 2, oy + oh - heightMm);
+    }
+    return { xs, ys };
+  }, [fields, pageWidthMm, pageHeightMm]);
+
   const handlePointerMove = useCallback(
     (event) => {
       if (!canvasRef.current) return;
 
+      // ---- Resizing ----
       if (resize) {
         const { dir, startClientX, startClientY, box, line } = resize;
-        const dx = (event.clientX - startClientX) / PX_PER_MM;
-        const dy = (event.clientY - startClientY) / PX_PER_MM;
-
-        // The geometry lives in a pure module so its edge cases (the pinned
-        // edge, the minimum size, the aspect lock, the fine step) are tested.
-        const next = resizeBox(box, dir, dx, dy, {
-          line,
-          keepShape: event.shiftKey,
-          fine: event.ctrlKey || event.metaKey,
-          pageWidth: pageWidthMm,
-          pageHeight: pageHeightMm,
-        });
-
+        const next = resizeBox(
+          box,
+          dir,
+          (event.clientX - startClientX) / pxPerMm,
+          (event.clientY - startClientY) / pxPerMm,
+          {
+            line,
+            keepShape: event.shiftKey,
+            fine: event.ctrlKey || event.metaKey,
+            pageWidth: pageWidthMm,
+            pageHeight: pageHeightMm,
+          }
+        );
         onChange(fields.map((f) => (f.key === resize.key ? { ...f, ...next } : f)));
         return;
       }
 
+      // ---- Moving ----
       if (!drag) return;
       const rect = canvasRef.current.getBoundingClientRect();
+      let xMm = (event.clientX - rect.left) / pxPerMm - drag.offsetX;
+      let yMm = (event.clientY - rect.top) / pxPerMm - drag.offsetY;
 
-      let xMm = (event.clientX - rect.left) / PX_PER_MM - drag.offsetX;
-      let yMm = (event.clientY - rect.top) / PX_PER_MM - drag.offsetY;
+      const free = event.ctrlKey || event.metaKey; // Ctrl = free placement
+      let guideX = null;
+      let guideY = null;
 
-      // Snap to the page's vertical centre — the most common alignment on a
-      // cover, and the hardest to hit by hand. Ctrl bypasses it for a free move.
-      const centre = (pageWidthMm - drag.widthMm) / 2;
-      if (!event.ctrlKey && !event.metaKey && Math.abs(xMm - centre) <= SNAP_MM) {
-        xMm = centre;
-        setGuideX(pageWidthMm / 2);
-      } else {
-        setGuideX(null);
+      if (!free) {
+        const { xs, ys } = snapTargets(drag.key, drag.widthMm, drag.heightMm);
+        const nearestX = xs.find((t) => Math.abs(xMm - t) <= SNAP_MM);
+        const nearestY = ys.find((t) => Math.abs(yMm - t) <= SNAP_MM);
+        if (nearestX !== undefined) {
+          xMm = nearestX;
+          guideX = nearestX + drag.widthMm / 2;
+        }
+        if (nearestY !== undefined) {
+          yMm = nearestY;
+          guideY = nearestY + drag.heightMm / 2;
+        }
       }
+      setGuides({ x: guideX, y: guideY });
 
-      const step = event.ctrlKey || event.metaKey ? 0.1 : 0.5;
+      const step = free ? 0.1 : 0.5;
       onChange(
         fields.map((f) =>
           f.key === drag.key
-            ? {
-                ...f,
-                x: Math.max(0, roundTo(xMm, step)),
-                y: Math.max(0, roundTo(yMm, step)),
-              }
+            ? { ...f, x: Math.max(0, roundTo(xMm, step)), y: Math.max(0, roundTo(yMm, step)) }
             : f
         )
       );
     },
-    [drag, resize, fields, onChange, pageWidthMm, pageHeightMm]
+    [drag, resize, fields, onChange, pxPerMm, pageWidthMm, pageHeightMm, snapTargets]
   );
 
   useEffect(() => {
@@ -144,7 +206,7 @@ export default function TemplateCanvas({
     const stop = () => {
       setDrag(null);
       setResize(null);
-      setGuideX(null);
+      setGuides({ x: null, y: null });
       onChangeEnd?.();
     };
     window.addEventListener('pointermove', handlePointerMove);
@@ -170,27 +232,27 @@ export default function TemplateCanvas({
     }
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const xMm = Math.max(0, roundTo((event.clientX - rect.left) / PX_PER_MM, 0.5));
-    const yMm = Math.max(0, roundTo((event.clientY - rect.top) / PX_PER_MM, 0.5));
-    onDropNew({ ...payload, x: xMm, y: yMm });
+    onDropNew({
+      ...payload,
+      x: Math.max(0, roundTo((event.clientX - rect.left) / pxPerMm, 0.5)),
+      y: Math.max(0, roundTo((event.clientY - rect.top) / pxPerMm, 0.5)),
+    });
   };
 
-  // Painted in the same z order as the renderer, so "bring to front" behaves
-  // identically on screen and in the PDF.
   const ordered = [...fields].sort((a, b) => num(a?.zIndex, 0) - num(b?.zIndex, 0));
   const selected = fields.find((f) => f.key === selectedKey);
 
   const selectedBox = selected
     ? {
-        x: num(selected.x, 0) * PX_PER_MM,
-        y: num(selected.y, 0) * PX_PER_MM,
-        w: num(selected.width, 100) * PX_PER_MM,
-        h: selected.type === 'LINE' ? 0 : num(selected.height, 8) * PX_PER_MM,
+        x: num(selected.x, 0) * pxPerMm,
+        y: num(selected.y, 0) * pxPerMm,
+        w: num(selected.width, 100) * pxPerMm,
+        h: selected.type === 'LINE' ? 0 : num(selected.height, 8) * pxPerMm,
       }
     : null;
 
   const startResize = (event, dir) => {
-    if (!selected || !selectedBox) return;
+    if (!selected || !selectedBox || selected.locked) return;
     event.stopPropagation();
     event.preventDefault();
     onSelect?.(selected.key);
@@ -208,6 +270,28 @@ export default function TemplateCanvas({
         height: num(selected.height, 8),
       },
     });
+  };
+
+  const startMove = (event, field) => {
+    event.stopPropagation();
+    onSelect?.(field.key);
+    if (field.locked) return;
+    beginChange();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDrag({
+      key: field.key,
+      widthMm: num(field.width, 100),
+      heightMm: field.type === 'LINE' ? 0 : num(field.height, 8),
+      offsetX: (event.clientX - rect.left) / pxPerMm,
+      offsetY: (event.clientY - rect.top) / pxPerMm,
+    });
+  };
+
+  const selectionClass = (field) => {
+    if (field.key !== selectedKey) return 'hover:bg-brand-50/20';
+    return field.locked
+      ? 'outline outline-2 outline-amber-500 bg-amber-50/30'
+      : 'outline outline-2 outline-brand-500 bg-brand-50/40';
   };
 
   return (
@@ -234,26 +318,14 @@ export default function TemplateCanvas({
         onDrop={handleDrop}
       >
         {ordered.map((field) => {
-          const isSelected = field.key === selectedKey;
           const box = {
-            left: num(field.x, 0) * PX_PER_MM,
-            top: num(field.y, 0) * PX_PER_MM,
-            width: num(field.width, 100) * PX_PER_MM,
+            left: num(field.x, 0) * pxPerMm,
+            top: num(field.y, 0) * pxPerMm,
+            width: num(field.width, 100) * pxPerMm,
             zIndex: num(field.zIndex, 0),
+            ...boxChrome(field),
           };
-
-          const startMove = (e) => {
-            e.stopPropagation();
-            onSelect?.(field.key);
-            beginChange();
-            const rect = e.currentTarget.getBoundingClientRect();
-            setDrag({
-              key: field.key,
-              widthMm: num(field.width, 100),
-              offsetX: (e.clientX - rect.left) / PX_PER_MM,
-              offsetY: (e.clientY - rect.top) / PX_PER_MM,
-            });
-          };
+          const cursor = field.locked ? 'default' : 'move';
 
           if (field.type === 'LINE') {
             return (
@@ -261,14 +333,14 @@ export default function TemplateCanvas({
                 key={field.key}
                 role="button"
                 tabIndex={0}
-                onPointerDown={startMove}
-                className={`absolute cursor-move ${isSelected ? 'outline outline-2 outline-brand-500' : ''}`}
+                onPointerDown={(e) => startMove(e, field)}
+                className={`absolute ${cursor} ${selectionClass(field)}`}
                 style={{
                   ...box,
                   height: 0,
-                  borderTop: `${Math.max(num(field.height, 0.4) * PX_PER_MM, 1)}px solid ${field.color || '#111111'}`,
+                  borderTop: `${Math.max(num(field.height, 0.4) * pxPerMm, 1)}px solid ${field.color || '#111111'}`,
                 }}
-                title={`${field.label} (line)`}
+                title={`${field.label} (line${field.locked ? ', locked' : ''})`}
               />
             );
           }
@@ -280,12 +352,10 @@ export default function TemplateCanvas({
                 key={field.key}
                 role="button"
                 tabIndex={0}
-                onPointerDown={startMove}
-                className={`absolute cursor-move grid place-items-center overflow-hidden ${
-                  isSelected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
-                }`}
-                style={{ ...box, height: num(field.height, 25) * PX_PER_MM }}
-                title={`${field.label} (image${field.asset ? `: ${field.asset}` : ''})`}
+                onPointerDown={(e) => startMove(e, field)}
+                className={`absolute ${cursor} grid place-items-center overflow-hidden ${selectionClass(field)}`}
+                style={{ ...box, height: num(field.height, 25) * pxPerMm }}
+                title={`${field.label} (image${field.asset ? `: ${field.asset}` : ''}${field.locked ? ', locked' : ''})`}
               >
                 {url ? (
                   <img src={url} alt="" draggable={false} className="w-full h-full object-contain" />
@@ -308,41 +378,40 @@ export default function TemplateCanvas({
               key={field.key}
               role="button"
               tabIndex={0}
-              onPointerDown={startMove}
+              onPointerDown={(e) => startMove(e, field)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onSelect?.(field.key);
               }}
-              className={`absolute cursor-move overflow-hidden whitespace-pre-wrap leading-tight ${
-                isSelected ? 'outline outline-2 outline-brand-500 bg-brand-50/40' : 'hover:bg-brand-50/20'
-              }`}
-              style={{
-                ...box,
-                minHeight: Math.max(num(field.fontSize, 12) * 1.35, 8),
-                fontSize: `${num(field.fontSize, 12) * 1.1}px`,
-                fontWeight: field.bold ? 700 : 400,
-                fontStyle: field.italic ? 'italic' : 'normal',
-                textAlign: field.align || 'left',
-                color: field.color || '#111111',
-              }}
-              title={`${field.label} (${field.type})`}
+              className={`absolute ${cursor} overflow-hidden whitespace-pre-wrap ${selectionClass(field)}`}
+              style={{ ...box, ...textStyle(field), minHeight: Math.max(num(field.fontSize, 12) * 1.35, 8) }}
+              title={`${field.label} (${field.type}${field.locked ? ', locked' : ''})`}
             >
               {text}
             </div>
           );
         })}
 
-        {/* The alignment guide, shown only while something is snapped to it. */}
-        {guideX !== null && (
+        {/* Alignment guides, drawn only while a snap is actually in effect. */}
+        {guides.x !== null && (
           <div
             className="absolute top-0 bottom-0 border-l border-dashed border-brand-500 pointer-events-none"
-            style={{ left: guideX * PX_PER_MM }}
+            style={{ left: guides.x * pxPerMm }}
+          />
+        )}
+        {guides.y !== null && (
+          <div
+            className="absolute left-0 right-0 border-t border-dashed border-brand-500 pointer-events-none"
+            style={{ top: guides.y * pxPerMm }}
           />
         )}
 
-        {/* Resize grips for the selected element. */}
-        {selected && selectedBox && (
+        {/* The eight resize grips. A locked element shows none. */}
+        {selected && selectedBox && !selected.locked && (
           <>
-            {(selected.type === 'LINE' ? LINE_HANDLES : HANDLES.map((h) => h.dir)).map((dir) => {
+            {(selected.type === 'LINE'
+              ? LINE_HANDLES
+              : HANDLES.map((h) => h.dir)
+            ).map((dir) => {
               const cursor = HANDLES.find((h) => h.dir === dir)?.cursor || 'nwse-resize';
               const points = {
                 nw: [selectedBox.x, selectedBox.y],
@@ -362,13 +431,8 @@ export default function TemplateCanvas({
                   tabIndex={-1}
                   aria-label={`Resize ${dir}`}
                   onPointerDown={(e) => startResize(e, dir)}
-                  className="absolute w-[9px] h-[9px] bg-white border border-brand-600 rounded-[2px] z-50"
-                  style={{
-                    left: points[0],
-                    top: points[1],
-                    transform: 'translate(-50%, -50%)',
-                    cursor,
-                  }}
+                  className="absolute w-[10px] h-[10px] bg-white border-2 border-brand-600 rounded-[2px] z-50 shadow-sm"
+                  style={{ left: points[0], top: points[1], transform: 'translate(-50%, -50%)', cursor }}
                 />
               );
             })}
@@ -387,6 +451,12 @@ export default function TemplateCanvas({
           </>
         )}
       </div>
+
+      {scale !== 1 && (
+        <div className="absolute -bottom-5 right-0 text-[10px] text-slate-400">
+          {Math.round(pxPerMm / DEFAULT_PX_PER_MM * 100)}%
+        </div>
+      )}
     </div>
   );
 }

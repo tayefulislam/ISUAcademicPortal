@@ -125,10 +125,16 @@ export async function facultyOptionsForCourse(course) {
   if (!course) return [];
   const ids = await resolveFacultyForCourse(course);
   if (!ids || !ids.length) return [];
-  const users = await User.find({ _id: { $in: ids } }).select('name email').sort({ name: 1 });
+  const users = await User.find({ _id: { $in: ids } }).select('name email designation').sort({ name: 1 });
   return users
     .filter((user) => (user.name || '').trim())
-    .map((user) => ({ _id: String(user._id), name: user.name, email: user.email || '' }));
+    .map((user) => ({
+      _id: String(user._id),
+      name: user.name,
+      email: user.email || '',
+      // The rank the admin set for this teacher — printed on the document.
+      designation: user.designation || '',
+    }));
 }
 
 /**
@@ -201,6 +207,7 @@ export async function buildContext(user, course, { facultyId = null } = {}) {
     const chosen = pickFaculty(facultyOptions, facultyId);
     if (chosen) {
       context['faculty.name'] = chosen.name || '';
+      context['faculty.designation'] = chosen.designation || '';
       context['faculty.email'] = chosen.email || '';
       chosenFacultyId = chosen._id;
       ids.facultyId = chosen._id;

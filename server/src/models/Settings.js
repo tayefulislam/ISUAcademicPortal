@@ -205,13 +205,38 @@ export const LIST_SETTINGS = [
     label: 'Official University Email Domains',
     description: 'A student whose verified email ends in any of these domains is approved automatically — no Student ID submission needed. Each stored without the leading "@". Matched exactly (no automatic subdomain matching) and case-insensitively.',
     itemPattern: DOMAIN_PATTERN,
+    itemHint: 'e.g. "isu.ac.bd" (without the @)',
   },
   {
     key: 'academicGroups',
     label: 'Academic Groups',
     description: 'The class groups a batch can be split into (e.g. BOTH, A1, A2). "BOTH" means the whole batch and must always be present. Add a value here to make it selectable on routine/exam entries and assignable to students — nothing is hard-coded, so A3/B1/B2 work without a code change.',
     itemPattern: /^[A-Z0-9]{1,10}$/,
+    itemHint: 'up to 10 letters or digits, e.g. "A3"',
   },
+  {
+    key: 'facultyDesignations',
+    label: 'Faculty Designations',
+    description: 'The academic ranks a Faculty account can be given (e.g. Lecturer, Assistant Professor). Adding one here makes it selectable when creating or editing Faculty, and available to a document template as the "Teacher\'s Designation" field. Spelling is kept exactly as entered — it is what prints on the document.',
+    // Letters, spaces and the punctuation that appears in a real rank
+    // ("Assistant Professor", "Professor (Adjunct)", "Ph.D.").
+    itemPattern: /^[A-Za-z][A-Za-z0-9 .,'&()-]{0,60}$/,
+    // Unlike a domain, a rank is a display label: lower-casing it would print
+    // "assistant professor" on a cover page.
+    preserveCase: true,
+    itemHint: 'e.g. "Assistant Professor"',
+  },
+];
+
+// The ranks every deployment starts with. Only a starting set — the list lives
+// in the database, so adding "Senior Lecturer" is an admin edit, not a deploy.
+export const DEFAULT_FACULTY_DESIGNATIONS = [
+  'Lecturer',
+  'Assistant Professor',
+  'Associate Professor',
+  'Professor',
+  'Lab Instructor',
+  'Adjunct Faculty',
 ];
 
 // The academic groups every deployment starts with. A student whose group is
@@ -282,6 +307,12 @@ export async function getSettings() {
   }
   if (!settings.academicGroups?.length) {
     settings.academicGroups = [...DEFAULT_ACADEMIC_GROUPS];
+    dirty = true;
+  }
+  // Seeded for the same reason: an empty designation list would leave every
+  // Faculty form with nothing to choose.
+  if (!settings.facultyDesignations?.length) {
+    settings.facultyDesignations = [...DEFAULT_FACULTY_DESIGNATIONS];
     dirty = true;
   }
   if (dirty) await settings.save();

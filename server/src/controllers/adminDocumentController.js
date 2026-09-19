@@ -5,8 +5,8 @@ import DocumentCategory from '../models/DocumentCategory.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeTemplateSource, getTemplateSourceStream, deleteTemplateSource } from '../services/storage/storageService.js';
-import { normalizeFields } from '../services/documents/normalizeFields.js';
-import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS } from '../services/documents/fieldSources.js';
+import { normalizeFields, normalizeStyleConfig } from '../services/documents/normalizeFields.js';
+import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS, FONT_CHOICES, BORDER_STYLES } from '../services/documents/fieldSources.js';
 import { listAssets, readAssetBuffer, assetMimeType, isAssetFileName } from '../services/documents/assets.js';
 import { getSafeExtension } from '../utils/fileTypes.js';
 
@@ -111,9 +111,11 @@ export const getMetadata = asyncHandler(async (req, res) => {
     data: {
       fieldTypes: FIELD_TYPES,
       sources: FIELD_SOURCES.map((value) => ({ value, label: SOURCE_LABELS[value] || value })),
+      fonts: FONT_CHOICES,
       pageSizes: ['A4', 'LETTER'],
       orientations: ['portrait', 'landscape'],
       alignments: ['left', 'center', 'right'],
+      borderStyles: BORDER_STYLES,
       dateFormats: ['', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD MMM YYYY', 'MMMM D, YYYY', 'YYYY-MM-DD'],
     },
   });
@@ -294,6 +296,12 @@ export const createVersion = asyncHandler(async (req, res) => {
   const pageSize = String(body.pageSize || current.pageSize || 'A4');
   const orientation = (body.orientation || current.orientation) === 'landscape' ? 'landscape' : 'portrait';
 
+  // The page-level defaults (font, base size, colour) belong to the version too:
+  // supplying them replaces them, omitting them carries the current design's.
+  const styleConfig = body.styleConfig !== undefined && body.styleConfig !== ''
+    ? normalizeStyleConfig(body.styleConfig)
+    : (current.styleConfig ? current.styleConfig.toObject() : {});
+
   const version = await DocumentTemplateVersion.create({
     template: template._id,
     version: nextVersion,
@@ -301,7 +309,7 @@ export const createVersion = asyncHandler(async (req, res) => {
     orientation,
     fields,
     sourceFile,
-    styleConfig: current.styleConfig ? current.styleConfig.toObject() : {},
+    styleConfig,
     createdBy: req.user._id,
   });
 

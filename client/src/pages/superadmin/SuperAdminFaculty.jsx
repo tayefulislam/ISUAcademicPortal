@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, ShieldCheck, ShieldOff, Search } from 'lucide-react';
 import { superAdminApi, departmentApi, courseApi } from '../../api/endpoints.js';
@@ -6,7 +7,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { formatDate } from '../../utils/format.js';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 
-const empty = { name: '', email: '', password: '', assignedDepartments: [], assignedCourses: [] };
+const empty = { name: '', email: '', password: '', designation: '', assignedDepartments: [], assignedCourses: [] };
 
 export default function SuperAdminFaculty() {
   const [form, setForm] = useState(empty);
@@ -19,6 +20,11 @@ export default function SuperAdminFaculty() {
 
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
   const { data: courses } = useQuery({ queryKey: ['all-courses'], queryFn: () => courseApi.list({ limit: 500 }) });
+  // The designations an admin has configured (System Management → Faculty
+  // Designations). The picker below offers exactly this list — a rank is never
+  // typed, because it prints on the documents the teacher signs.
+  const { data: settings } = useQuery({ queryKey: ['system-settings'], queryFn: superAdminApi.getSettings });
+  const designations = settings?.data?.facultyDesignations || [];
   const { data, isLoading } = useQuery({
     queryKey: ['faculty-list', debouncedQ],
     queryFn: () => superAdminApi.listFaculty({ q: debouncedQ || undefined }),
@@ -35,6 +41,7 @@ export default function SuperAdminFaculty() {
         await superAdminApi.updateFaculty(editingId, {
           name: form.name,
           email: form.email,
+          designation: form.designation,
           assignedDepartments: form.assignedDepartments,
           assignedCourses: form.assignedCourses,
         });
@@ -57,6 +64,7 @@ export default function SuperAdminFaculty() {
       name: f.name,
       email: f.email,
       password: '',
+      designation: f.designation || '',
       assignedDepartments: (f.assignedDepartments || []).map((d) => d._id || d),
       assignedCourses: (f.assignedCourses || []).map((c) => c._id || c),
     });
@@ -106,6 +114,30 @@ export default function SuperAdminFaculty() {
               className="input"
             />
           )}
+
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-1.5">Designation</p>
+            <select
+              value={form.designation}
+              onChange={(e) => setForm({ ...form, designation: e.target.value })}
+              className="input"
+            >
+              <option value="">— none —</option>
+              {designations.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">
+              {designations.length === 0 ? (
+                <>
+                  No designations configured yet — add them in{' '}
+                  <Link to="/super-admin/system" className="text-brand-600 hover:underline">System Management</Link>.
+                </>
+              ) : (
+                'Prints on document templates that use the Teacher’s Designation field.'
+              )}
+            </p>
+          </div>
 
           <div>
             <p className="text-xs font-semibold text-slate-500 mb-1.5">Assigned Departments</p>
@@ -193,7 +225,9 @@ export default function SuperAdminFaculty() {
                     {f.status === 'blocked' ? 'deactivated' : 'active'}
                   </span>
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5">{f.email}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {f.designation ? `${f.designation} · ` : ''}{f.email}
+                </p>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {(f.assignedDepartments || []).map((d) => d.code).join(', ') || 'No departments'} &middot;{' '}
                   {(f.assignedCourses || []).map((c) => c.courseId).join(', ') || 'No courses'}

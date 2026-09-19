@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema(
     role: { type: String, default: 'student' },
 
     rollNo: { type: String, trim: true, default: '' },
+    // A faculty member's academic rank ("Lecturer", "Assistant Professor", …).
+    // The vocabulary is admin-managed (Settings.facultyDesignations) rather than
+    // free text, because it prints on the documents they sign — see
+    // utils/designations.js. Empty for every other role.
+    designation: { type: String, trim: true, default: '' },
     // Bangladeshi mobile format — exactly 11 digits, starting with "01" (e.g.
     // 01712345678). Also usable as a login identifier alongside email/rollNo
     // (see authController.js's login()).

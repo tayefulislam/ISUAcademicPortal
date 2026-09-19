@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -14,6 +14,10 @@ const links = [
   { to: '/super-admin/enrollments', label: 'Course Enrollment', icon: Layers3, flag: 'courseEnrollmentSystemEnabled' },
   { to: '/super-admin/routine', label: 'Routine Manager', icon: CalendarDays, flag: 'routineSystemEnabled' },
   { to: '/routine', label: 'My Calendar', icon: CalendarClock, flag: 'routineSystemEnabled' },
+  // Cover-page/document templates. Super Admin and Administrator hold the
+  // `documents` permission implicitly (the permission check always passes for
+  // them), so this is their way in without switching to the Admin panel.
+  { to: '/super-admin/document-templates', label: 'Document Templates', icon: FileText, flag: 'documentGeneratorEnabled', permission: 'documents' },
   { to: '/super-admin/notifications', label: 'Notifications', icon: Bell, permission: 'notifications' },
   { to: '/super-admin/error-logs', label: 'Error Logs', icon: AlertTriangle },
   { to: '/super-admin/system', label: 'System Management', icon: Settings },
