@@ -18,6 +18,7 @@ import {
   Trash2,
   Underline,
 } from 'lucide-react';
+import FontSelect from './FontSelect.jsx';
 
 // The property panel for one element — the Word-like "format" pane. Everything
 // the renderer understands is editable here: type, source, geometry, typeface,
@@ -231,16 +232,11 @@ export default function FieldMappingPanel({
 
           <div>
             <label className={labelClass}>Font</label>
-            <select
+            <FontSelect
               value={field.fontFamily || ''}
-              onChange={(e) => set({ fontFamily: e.target.value })}
-              className={inputClass}
-              style={{ fontFamily: field.fontFamily || undefined }}
-            >
-              {(meta?.fonts || [{ value: '', label: 'Default' }]).map((f) => (
-                <option key={f.value || 'default'} value={f.value}>{f.label}</option>
-              ))}
-            </select>
+              onChange={(fontFamily) => set({ fontFamily })}
+              fonts={meta?.fonts}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-2">

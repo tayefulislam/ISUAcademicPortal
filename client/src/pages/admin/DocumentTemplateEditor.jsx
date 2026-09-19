@@ -26,6 +26,7 @@ import useHistory from '../../hooks/useHistory.js';
 import usePanelBase from '../../hooks/usePanelBase.js';
 import TemplateCanvas, { pageSizeMm, DEFAULT_PX_PER_MM } from '../../components/documents/TemplateCanvas.jsx';
 import FieldMappingPanel from '../../components/documents/FieldMappingPanel.jsx';
+import FontSelect from '../../components/documents/FontSelect.jsx';
 
 // The palette an admin drags from. Each entry is a *kind of element*, not a
 // fixed field — where it lands on the page becomes its coordinates.
@@ -606,6 +607,7 @@ export default function DocumentTemplateEditor() {
               fields={fields}
               assets={assetUrls || {}}
               backgroundUrl={backgroundUrl || ''}
+              defaultFont={pageStyle.fontFamily || ''}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onChange={history.update}
@@ -633,16 +635,11 @@ export default function DocumentTemplateEditor() {
             <div className="space-y-2">
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">Default font</label>
-                <select
+                <FontSelect
                   value={pageStyle.fontFamily || ''}
-                  onChange={(e) => setPageStyle({ ...pageStyle, fontFamily: e.target.value })}
-                  className="w-full h-9 rounded-lg border border-slate-300 px-2 text-sm bg-white"
-                  style={{ fontFamily: pageStyle.fontFamily || undefined }}
-                >
-                  {(meta?.fonts || [{ value: '', label: 'Default' }]).map((f) => (
-                    <option key={f.value || 'default'} value={f.value}>{f.label}</option>
-                  ))}
-                </select>
+                  onChange={(fontFamily) => setPageStyle({ ...pageStyle, fontFamily })}
+                  fonts={meta?.fonts}
+                />
               </div>
               <div className="grid grid-cols-2 gap-2 items-end">
                 <div>
