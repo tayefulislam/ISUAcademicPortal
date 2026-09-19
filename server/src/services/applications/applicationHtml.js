@@ -1,6 +1,6 @@
 import { env } from '../../config/env.js';
 import { escapeHtml } from '../documents/sanitize.js';
-import { profileRows } from './profileSnapshot.js';
+import { signatureRows } from './profileSnapshot.js';
 
 // The formal letter, as the HTML the PDF renderer prints. Every interpolated
 // value is escaped, and the wording comes from the configured recipient/type —
@@ -41,7 +41,9 @@ export function buildApplicationHtml({ application, typeTemplate = {}, universit
     .map((line) => escapeHtml(String(line).trim()))
     .join('<br>');
 
-  const signatureRows = profileRows(profile)
+  // The letter signs off with the applicant's identity only — never a section,
+  // email or phone number (see signatureRows).
+  const signature = signatureRows(profile)
     .map((row) => `${escapeHtml(row.label)}: ${escapeHtml(row.value)}`)
     .join('<br>');
 
@@ -100,7 +102,7 @@ export function buildApplicationHtml({ application, typeTemplate = {}, universit
 
   <div class="signature">
     <div>Yours faithfully,</div>
-    <div class="signature-lines">${signatureRows}</div>
+    <div class="signature-lines">${signature}</div>
   </div>
 
   ${footer ? `<div class="footer">${escapeHtml(footer)}</div>` : ''}
