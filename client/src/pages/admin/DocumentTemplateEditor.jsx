@@ -10,6 +10,7 @@ import {
   Redo2,
   Save,
   Send,
+  Square,
   Trash2,
   Type,
   Undo2,
@@ -25,6 +26,7 @@ import useHistory from '../../hooks/useHistory.js';
 import usePanelBase from '../../hooks/usePanelBase.js';
 import TemplateCanvas, { pageSizeMm, DEFAULT_PX_PER_MM } from '../../components/documents/TemplateCanvas.jsx';
 import FieldMappingPanel from '../../components/documents/FieldMappingPanel.jsx';
+import FontSelect from '../../components/documents/FontSelect.jsx';
 
 // The palette an admin drags from. Each entry is a *kind of element*, not a
 // fixed field — where it lands on the page becomes its coordinates.
@@ -33,6 +35,7 @@ const PALETTE = [
   { type: 'AUTO', label: 'Dynamic field', hint: 'From the student record', icon: Variable },
   { type: 'IMAGE', label: 'Image / Logo', hint: 'From the server’s img folder', icon: ImageIcon },
   { type: 'LINE', label: 'Rule / line', hint: 'A divider', icon: Minus },
+  { type: 'BOX', label: 'Box / border', hint: 'A rectangle or page frame', icon: Square },
 ];
 
 function nextZ(fields) {
@@ -71,6 +74,20 @@ function makeElement({ type, asset, x = 20, y = 20, index, z }) {
   }
   if (type === 'LINE') {
     return { ...base, type: 'LINE', label: 'Rule', width: 170, height: 0.5 };
+  }
+  if (type === 'BOX') {
+    // A drawn rectangle — the admin frames the page or draws a panel. It has no
+    // value, so it prints its border/shading alone.
+    return {
+      ...base,
+      type: 'BOX',
+      label: 'Box',
+      width: 120,
+      height: 40,
+      borderWidth: 0.4,
+      borderStyle: 'solid',
+      borderColor: '#111111',
+    };
   }
   if (type === 'AUTO') {
     return { ...base, type: 'AUTO', label: 'Dynamic field', source: 'student.name', width: 120, height: 8, fontSize: 12 };
@@ -194,6 +211,19 @@ export default function DocumentTemplateEditor() {
   const addFromPalette = ({ type, asset, x = 20, y = 20 }) => {
     const element = makeElement({ type, asset, x, y, index: fields.length, z: nextZ(fields) });
     history.commit([...fields, element]);
+    setSelectedKey(element.key);
+  };
+
+  /**
+   * A border drawn exactly around the page — the frame a cover design usually
+   * has. One click rather than making the admin size a box to the page by hand.
+   */
+  const addPageBorder = () => {
+    const element = makeElement({ type: 'BOX', x: 0, y: 0, index: fields.length, z: nextZ(fields) });
+    history.commit([
+      ...fields,
+      { ...element, label: 'Page border', x: 0, y: 0, width: page.w, height: page.h, borderWidth: 0.5 },
+    ]);
     setSelectedKey(element.key);
   };
 
@@ -332,7 +362,7 @@ export default function DocumentTemplateEditor() {
   const sampleInput = (list) => {
     const data = {};
     for (const field of list) {
-      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC') continue;
+      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC' || field.type === 'BOX') continue;
       if (field.type === 'DATE') data[field.key] = '2026-09-20';
       else if (field.type === 'NUMBER') data[field.key] = '1';
       else data[field.key] = field.defaultValue || 'Sample';
@@ -515,6 +545,15 @@ export default function DocumentTemplateEditor() {
             ))}
           </div>
 
+          <button
+            type="button"
+            onClick={addPageBorder}
+            className="mt-2 w-full h-9 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-brand-50 hover:border-brand-300 flex items-center justify-center gap-1.5"
+            title="Add a border around the whole A4 page"
+          >
+            <Square size={13} /> A4 page border
+          </button>
+
           {assets.length > 0 && (
             <>
               <h3 className="text-[11px] font-semibold text-slate-500 mt-4 mb-2">Images</h3>
@@ -568,6 +607,7 @@ export default function DocumentTemplateEditor() {
               fields={fields}
               assets={assetUrls || {}}
               backgroundUrl={backgroundUrl || ''}
+              defaultFont={pageStyle.fontFamily || ''}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onChange={history.update}
@@ -595,16 +635,11 @@ export default function DocumentTemplateEditor() {
             <div className="space-y-2">
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">Default font</label>
-                <select
+                <FontSelect
                   value={pageStyle.fontFamily || ''}
-                  onChange={(e) => setPageStyle({ ...pageStyle, fontFamily: e.target.value })}
-                  className="w-full h-9 rounded-lg border border-slate-300 px-2 text-sm bg-white"
-                  style={{ fontFamily: pageStyle.fontFamily || undefined }}
-                >
-                  {(meta?.fonts || [{ value: '', label: 'Default' }]).map((f) => (
-                    <option key={f.value || 'default'} value={f.value}>{f.label}</option>
-                  ))}
-                </select>
+                  onChange={(fontFamily) => setPageStyle({ ...pageStyle, fontFamily })}
+                  fonts={meta?.fonts}
+                />
               </div>
               <div className="grid grid-cols-2 gap-2 items-end">
                 <div>

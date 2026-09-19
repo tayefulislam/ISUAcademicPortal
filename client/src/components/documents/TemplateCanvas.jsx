@@ -63,7 +63,7 @@ function boxChrome(field) {
 }
 
 /** The text styling a text element draws with — the same set the PDF applies. */
-function textStyle(field) {
+function textStyle(field, defaultFont) {
   const decorations = [
     field.underline ? 'underline' : '',
     field.strikethrough ? 'line-through' : '',
@@ -71,7 +71,9 @@ function textStyle(field) {
 
   return {
     fontSize: `${num(field.fontSize, 12) * 1.1}px`,
-    fontFamily: field.fontFamily || undefined,
+    // An element's own face wins; otherwise it inherits the page's default, so
+    // changing the default font is visible here and not only in the PDF.
+    fontFamily: field.fontFamily || defaultFont || undefined,
     fontWeight: field.bold ? 700 : 400,
     fontStyle: field.italic ? 'italic' : 'normal',
     textDecoration: decorations || undefined,
@@ -102,6 +104,7 @@ export default function TemplateCanvas({
   fields = [],
   assets = {},
   backgroundUrl = '',
+  defaultFont = '',
   selectedKey = '',
   onSelect,
   onChange,
@@ -366,6 +369,20 @@ export default function TemplateCanvas({
             );
           }
 
+          if (field.type === 'BOX') {
+            return (
+              <div
+                key={field.key}
+                role="button"
+                tabIndex={0}
+                onPointerDown={(e) => startMove(e, field)}
+                className={`absolute ${cursor} ${selectionClass(field)}`}
+                style={{ ...box, height: num(field.height, 20) * pxPerMm }}
+                title={`${field.label} (box${field.locked ? ', locked' : ''})`}
+              />
+            );
+          }
+
           const text =
             field.type === 'STATIC'
               ? field.staticValue || field.label
@@ -383,7 +400,7 @@ export default function TemplateCanvas({
                 if (e.key === 'Enter') onSelect?.(field.key);
               }}
               className={`absolute ${cursor} overflow-hidden whitespace-pre-wrap ${selectionClass(field)}`}
-              style={{ ...box, ...textStyle(field), minHeight: Math.max(num(field.fontSize, 12) * 1.35, 8) }}
+              style={{ ...box, ...textStyle(field, defaultFont), minHeight: Math.max(num(field.fontSize, 12) * 1.35, 8) }}
               title={`${field.label} (${field.type}${field.locked ? ', locked' : ''})`}
             >
               {text}

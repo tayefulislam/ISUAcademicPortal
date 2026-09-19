@@ -64,7 +64,11 @@ export default function DocumentGenerate() {
   const facultyOptions = autofill?.faculty || [];
   const isFacultyField = (field) => String(field.source || '').startsWith('faculty.');
   const facultyFields = fields.filter(isFacultyField);
-  const lockedFields = fields.filter((f) => !f.editable && !isFacultyField(f));
+  // Only the official values (AUTO/STATIC) are "locked information"; a drawn
+  // element (a box, rule or logo) is decoration, not a value the student reads.
+  const lockedFields = fields.filter(
+    (f) => (f.type === 'AUTO' || f.type === 'STATIC') && !isFacultyField(f)
+  );
   const editableFields = fields.filter((f) => f.editable);
 
   // Default to the course's first teacher; a different course means a different

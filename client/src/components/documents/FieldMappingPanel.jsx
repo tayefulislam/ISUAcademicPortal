@@ -18,6 +18,7 @@ import {
   Trash2,
   Underline,
 } from 'lucide-react';
+import FontSelect from './FontSelect.jsx';
 
 // The property panel for one element — the Word-like "format" pane. Everything
 // the renderer understands is editable here: type, source, geometry, typeface,
@@ -62,7 +63,8 @@ export default function FieldMappingPanel({
   const isDate = field.type === 'DATE';
   const isImage = field.type === 'IMAGE';
   const isLine = field.type === 'LINE';
-  const isTextual = !isImage && !isLine;
+  const isBox = field.type === 'BOX';
+  const isTextual = !isImage && !isLine && !isBox;
 
   const nudge = (dx, dy) => set({
     x: Math.max(0, Math.round((num(field.x, 0) + dx) * 10) / 10),
@@ -126,6 +128,7 @@ export default function FieldMappingPanel({
             isStatic ? 'Fixed text printed as-is.' :
             isImage ? 'An image from the server’s img/ folder.' :
             isLine ? 'A rule. Its height is its thickness.' :
+            isBox ? 'A drawn box — border and/or shading, no text.' :
             'Typed by the student on the generate screen.'}
         </p>
       </div>
@@ -166,7 +169,7 @@ export default function FieldMappingPanel({
         </div>
       )}
 
-      {!isAuto && !isStatic && !isImage && !isLine && (
+      {!isAuto && !isStatic && !isImage && !isLine && !isBox && (
         <>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={Boolean(field.required)} onChange={(e) => set({ required: e.target.checked })} />
@@ -229,16 +232,11 @@ export default function FieldMappingPanel({
 
           <div>
             <label className={labelClass}>Font</label>
-            <select
+            <FontSelect
               value={field.fontFamily || ''}
-              onChange={(e) => set({ fontFamily: e.target.value })}
-              className={inputClass}
-              style={{ fontFamily: field.fontFamily || undefined }}
-            >
-              {(meta?.fonts || [{ value: '', label: 'Default' }]).map((f) => (
-                <option key={f.value || 'default'} value={f.value}>{f.label}</option>
-              ))}
-            </select>
+              onChange={(fontFamily) => set({ fontFamily })}
+              fonts={meta?.fonts}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
