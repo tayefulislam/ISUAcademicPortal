@@ -62,9 +62,33 @@ export function eventSubtitle(event) {
   return event.course?.name || (event.course ? '' : event.title || '');
 }
 
+/**
+ * "13:00" -> "01:00 PM".
+ *
+ * The server stores and sends a timetable in 24-hour wall-clock, which is how it
+ * is entered and how it sorts; people read it in 12-hour form. Midnight is
+ * 12:00 AM and noon is 12:00 PM — the off-by-twelve a bare `hour % 12` gets
+ * wrong. Anything that is not already `H:mm` is passed through untouched.
+ */
+export function clock(value) {
+  const raw = String(value ?? '').trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (!match) return raw;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return raw;
+  const suffix = hour < 12 ? 'AM' : 'PM';
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${String(twelve).padStart(2, '0')}:${match[2]} ${suffix}`;
+}
+
 export function timeRange(event) {
   if (!event) return '';
-  return `${event.startTime} – ${event.endTime}`;
+  const from = clock(event.startTime);
+  const to = clock(event.endTime);
+  if (!from) return to;
+  if (!to) return from;
+  return `${from} – ${to}`;
 }
 
 export function hasOnline(event) {
