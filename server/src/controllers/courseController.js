@@ -117,7 +117,13 @@ const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const listCourses = asyncHandler(async (req, res) => {
   const { department } = req.query;
-  const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50 });
+  // maxLimit is deliberately far above the default. Several callers are pickers
+  // that load a department's whole catalogue and then filter it client-side (the
+  // routine, assignment and quiz forms), so any course past the cap is simply
+  // absent from the list — which presents as a course that "search cannot find"
+  // even though it exists and is active. parsePagination otherwise clamps every
+  // caller's `limit` to 100, silently truncating the larger pickers.
+  const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 1000 });
   const filter = { status: 'active' };
   if (department) filter.department = department;
   // Search box: a course's name or its human code ("CSE-203").
