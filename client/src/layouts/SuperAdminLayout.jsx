@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, UserCheck, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, UserX, FileStack, Settings, GraduationCap, MessageSquareText, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -25,6 +25,7 @@ const links = [
   { to: '/super-admin/notifications', label: 'Notifications', icon: Bell, permission: 'notifications' },
   { to: '/super-admin/error-logs', label: 'Error Logs', icon: AlertTriangle },
   { to: '/super-admin/system', label: 'System Management', icon: Settings },
+  { to: '/super-admin/account-deletions', label: 'Deletion Requests', icon: UserX },
   { to: '/super-admin/manual', label: 'User Manual', icon: HelpCircle },
 ];
 

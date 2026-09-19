@@ -106,10 +106,34 @@ saved application, stored **privately** at
 `expiresAt = now + AI_EXPORT_EXPIRATION_HOURS` (24). The download endpoint
 authorizes the owner, checks the expiry, and mints a fresh short-lived link.
 
-An **hourly** BullMQ job deletes expired objects and marks the row `EXPIRED`. A
-delete that fails leaves the row `ACTIVE` and retries next run; a missing object
-still marks the row expired. **The application is never deleted** by export
-expiry — only the temporary file.
+Deletion is driven by the **object**, not by the row's status. A BullMQ job on
+the existing `document-generation` queue sweeps **every 15 minutes**
+(`*/15 * * * *`), and once at startup so a restart after downtime catches up
+immediately instead of waiting for the next tick. For every export past its
+expiry that still claims an object it deletes that one key and stamps
+`storageDeletedAt`.
+
+`storageDeletedAt` — not `status` — is what marks the work done, deliberately: a
+download request that arrives after expiry flips the row to `EXPIRED` **without
+touching storage** (it must not block on the bucket), so a sweep keyed on status
+would skip those rows and leave their bytes in the bucket forever.
+
+A delete that fails leaves `storageDeletedAt` null and is retried next run — a
+record never claims its file is gone while the object is still there. Deleting a
+key that is already gone succeeds (S3 `DeleteObject` is idempotent), so an object
+removed by hand or by a bucket rule still clears its row. **The application is
+never deleted** by export expiry — only the temporary file.
+
+The sweeps are registered by a **stable scheduler id**, so changing a cadence
+replaces the schedule rather than adding a second one, and they are registered
+even when a separate process consumes them (`PDF_WORKER_IN_PROCESS=false`) —
+that topology previously registered no export cleanup at all.
+
+**Ops backstop.** The in-app sweep is the primary mechanism and there is
+deliberately no lifecycle rule the app can create, so also set an R2/S3 lifecycle
+rule expiring the `application-exports/` prefix after a day. It covers the case
+the sweep cannot: the worker (or Redis) being down long enough that nothing runs.
+The rule and `AI_EXPORT_EXPIRATION_HOURS` should be kept in step.
 
 ## Safety properties
 
@@ -129,4 +153,7 @@ expiry — only the temporary file.
 - Monthly recharge twice: paid once.
 - PDF + DOCX produced, stored privately, downloadable; expired download → 410.
 - Export expiry sweep twice: idempotent.
+- An export whose link was requested *after* expiry still has its object deleted
+  (status is not the marker), and a failed delete is retried rather than marked
+  done.
 - Admin adjustment writes an `ADMIN_ADJUSTMENT` transaction.

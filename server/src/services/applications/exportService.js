@@ -107,8 +107,9 @@ export async function createExport(user, applicationId, fileTypeInput) {
   const config = await resolveAiConfig();
   const key = `application-exports/${application._id}/${exportRow._id}.${EXT[fileType]}`;
 
+  let storageRef = '';
   try {
-    const { storageRef } = await storeGeneratedDocument(key, buffer, MIME[fileType]);
+    ({ storageRef } = await storeGeneratedDocument(key, buffer, MIME[fileType]));
     exportRow.storageRef = storageRef;
     exportRow.provider = env.fileStorageProvider;
     exportRow.fileName = safeFileName(application, fileType);
@@ -116,6 +117,12 @@ export async function createExport(user, applicationId, fileTypeInput) {
     exportRow.expiresAt = new Date(Date.now() + config.exportExpirationHours * 60 * 60 * 1000);
     await exportRow.save();
   } catch (error) {
+    // The object may already be in the bucket — the row write is what failed.
+    // It has to be removed here, because deleting the row would leave an object
+    // with no record for the sweep to find it by.
+    if (storageRef) {
+      await deletePrivateObjectStrict(storageRef).catch(() => {});
+    }
     await ApplicationExport.deleteOne({ _id: exportRow._id }).catch(() => {});
     console.error('[applications] export upload failed:', error.message);
     throw new ApiError(503, 'The file was created but could not be stored. Please try again.', null, 'STORAGE_FAILED');
@@ -142,7 +149,10 @@ export async function resolveExportForDownload(user, exportId) {
     throw new ApiError(410, 'This exported file has expired. Please generate the PDF/DOCX again.', null, 'EXPORT_EXPIRED');
   }
   if (exportRow.expiresAt && exportRow.expiresAt.getTime() <= Date.now()) {
-    // The sweep is the backstop; this is the request that arrives first.
+    // Mark it unavailable immediately, but deliberately leave storageDeletedAt
+    // alone: the sweep keys off that field, so the object is still removed on
+    // its next pass. Touching only the status here is what used to orphan the
+    // file — the row looked "done" while the bytes stayed in the bucket.
     await ApplicationExport.updateOne({ _id: exportRow._id }, { $set: { status: 'EXPIRED', deletedAt: new Date() } });
     throw new ApiError(410, 'This exported file has expired. Please generate the PDF/DOCX again.', null, 'EXPORT_EXPIRED');
   }
@@ -165,13 +175,25 @@ export async function getExportContent(user, exportId) {
 }
 
 /**
- * The hourly sweep: every ACTIVE export past its expiry loses its object and is
- * marked EXPIRED. A delete that fails is left ACTIVE and retried next run; a
- * missing object still marks the row expired (deleting an absent key succeeds).
+ * The export sweep: every export past its expiry that still claims an object
+ * loses it, and the row records that (storageDeletedAt). Status is irrelevant
+ * on purpose — a row flipped to EXPIRED by a late download request still has
+ * its object removed here. A delete that fails is left for the next run; a
+ * missing object still marks the row done (deleting an absent key is
+ * idempotent).
  */
 export async function cleanupExpiredExports() {
   const now = new Date();
-  const due = await ApplicationExport.find({ status: 'ACTIVE', expiresAt: { $ne: null, $lte: now } })
+  // Deliberately NOT filtered on status. Requesting a link after expiry marks a
+  // row EXPIRED without touching storage (see resolveExportForDownload), and
+  // those objects must still be removed. What marks the work as done is
+  // storageDeletedAt — stamped only once the delete actually succeeded — so a
+  // row is never skipped just because it already became unavailable.
+  const due = await ApplicationExport.find({
+    expiresAt: { $ne: null, $lte: now },
+    storageRef: { $ne: '' },
+    storageDeletedAt: null,
+  })
     .select('_id storageRef')
     .lean();
 
@@ -182,13 +204,29 @@ export async function cleanupExpiredExports() {
       // eslint-disable-next-line no-await-in-loop
       await deletePrivateObjectStrict(row.storageRef);
     } catch (error) {
+      // Left for the next run rather than marked done: a record must never
+      // claim its file is gone while the object is still there.
       deferred += 1;
       console.error(`[applications] could not delete export ${row._id}; will retry:`, error.message);
       continue;
     }
+    // Guarded on storageDeletedAt: null so two overlapping sweeps cannot both
+    // count the same row, and deletedAt keeps the FIRST time it became
+    // unavailable (the expiry request) rather than being moved to the sweep's.
     // eslint-disable-next-line no-await-in-loop
-    await ApplicationExport.updateOne({ _id: row._id }, { $set: { status: 'EXPIRED', deletedAt: new Date() } });
-    cleaned += 1;
+    const result = await ApplicationExport.updateOne(
+      { _id: row._id, storageDeletedAt: null },
+      [
+        {
+          $set: {
+            status: 'EXPIRED',
+            storageDeletedAt: '$$NOW',
+            deletedAt: { $ifNull: ['$deletedAt', '$$NOW'] },
+          },
+        },
+      ]
+    );
+    if (result.modifiedCount) cleaned += 1;
   }
   return { cleaned, deferred };
 }

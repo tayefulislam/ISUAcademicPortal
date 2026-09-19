@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import Seo from '../../components/Seo.jsx';
 import LegalShell, { LegalSection, LegalBullets, LegalCallout, LegalTable } from '../../components/legal/LegalShell.jsx';
@@ -17,6 +18,7 @@ const SECTIONS = [
   { id: 'third-party', label: '10. Third-Party Services' },
   { id: 'changes', label: '11. Changes to This Policy' },
   { id: 'contact', label: '12. Contact Us' },
+  { id: 'acknowledgements', label: 'Acknowledgements' },
 ];
 
 export default function PrivacyPolicy() {
@@ -52,13 +54,6 @@ export default function PrivacyPolicy() {
             official policies and this document differ, the university&apos;s official institutional policies take
             precedence.
           </p>
-          <LegalCallout tone="info" title="About this document">
-            <p>
-              This policy describes only the data the portal software actually handles. Values shown in an amber
-              <strong> [CONFIG PLACEHOLDER]</strong> chip have not yet been supplied by the university and must be
-              filled in before public release.
-            </p>
-          </LegalCallout>
         </LegalSection>
 
         <LegalSection id="collect" title="2. Information We Collect">
@@ -251,6 +246,12 @@ export default function PrivacyPolicy() {
             ask you to verify your identity before acting on a request. Some requests may be limited where the university
             has a legal or academic-record obligation to retain the data.
           </p>
+          <p>
+            To delete your account, use{' '}
+            <Link to="/delete-account" className="text-brand-700 font-medium hover:underline">Delete your account</Link>
+            {' '}or the same option on your Profile page inside the app. The page also explains exactly what is removed and
+            what the university must keep.
+          </p>
         </LegalSection>
 
         <LegalSection id="children" title="9. Children's Privacy">
@@ -305,6 +306,12 @@ export default function PrivacyPolicy() {
               </p>
             </LegalCallout>
           )}
+        </LegalSection>
+
+        <LegalSection id="acknowledgements" title="Acknowledgements">
+          <p>
+            All thanks go to the contributors who are giving or uploading files to the platform.
+          </p>
         </LegalSection>
       </LegalShell>
     </>

@@ -7,7 +7,7 @@
 import { connectDB } from './config/db.js';
 import { env } from './config/env.js';
 import { describeRedis } from './services/queue/redis.js';
-import { ensureCleanupSchedule } from './services/queue/documentQueue.js';
+import { ensureCleanupSchedule, ensureApplicationSchedules } from './services/queue/documentQueue.js';
 import { startDocumentWorker, stopDocumentWorker } from './workers/documentWorker.js';
 
 async function main() {
@@ -15,9 +15,24 @@ async function main() {
   console.log(`[worker] redis=${describeRedis()}`);
 
   // Registered by id, so a restart re-asserts the schedule rather than adding a
-  // second copy of it.
+  // second copy of it. The Write Application sweeps ride this same worker, so
+  // they are asserted here too — with PDF_WORKER_IN_PROCESS=false the API never
+  // registers them.
   await ensureCleanupSchedule().catch((error) => {
     console.error('[worker] could not schedule the expiry sweep:', error.message);
+  });
+  await ensureApplicationSchedules().catch((error) => {
+    console.error('[worker] could not schedule the credit/export sweeps:', error.message);
+  });
+
+  // Catch-up for anything that expired while this process was down.
+  const { cleanupExpiredExports } = await import('./services/applications/exportService.js');
+  await cleanupExpiredExports().catch((error) => {
+    console.error('[worker] startup export sweep failed:', error.message);
+  });
+  const { rechargeDueAccounts } = await import('./services/applications/creditService.js');
+  await rechargeDueAccounts().catch((error) => {
+    console.error('[worker] startup credit recharge failed:', error.message);
   });
 
   startDocumentWorker();

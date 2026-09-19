@@ -34,11 +34,13 @@ function Channel({ icon: Icon, title, description, field, configuredNote }) {
 }
 
 export default function Contact() {
+  // Only the contact addresses are required. The postal address and phone number
+  // are deliberately optional (the page says so below), so their absence must
+  // not raise a "this must be fixed before release" warning.
   const anyPlaceholder =
     isPlaceholder(siteConfig.supportEmail) ||
     isPlaceholder(siteConfig.privacyEmail) ||
-    isPlaceholder(siteConfig.contactPhone) ||
-    isPlaceholder(siteConfig.contactAddress);
+    isPlaceholder(siteConfig.legalEmail);
 
   return (
     <>

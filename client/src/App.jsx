@@ -56,6 +56,7 @@ import PrivacyPolicy from './pages/legal/PrivacyPolicy.jsx';
 import Terms from './pages/legal/Terms.jsx';
 import Help from './pages/legal/Help.jsx';
 import Contact from './pages/legal/Contact.jsx';
+import DeleteAccount from './pages/legal/DeleteAccount.jsx';
 import Forbidden403 from './pages/Forbidden403.jsx';
 import NotFound from './pages/NotFound.jsx';
 
@@ -73,6 +74,7 @@ import SuperAdminUsers from './pages/superadmin/SuperAdminUsers.jsx';
 import SuperAdminFaculty from './pages/superadmin/SuperAdminFaculty.jsx';
 import SuperAdminFiles from './pages/superadmin/SuperAdminFiles.jsx';
 import SuperAdminSystem from './pages/superadmin/SuperAdminSystem.jsx';
+import SuperAdminDeletions from './pages/superadmin/SuperAdminDeletions.jsx';
 import SuperAdminFeedback from './pages/superadmin/SuperAdminFeedback.jsx';
 import SuperAdminErrorLogs from './pages/superadmin/SuperAdminErrorLogs.jsx';
 
@@ -307,6 +309,9 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/help" element={<Help />} />
           <Route path="/contact" element={<Contact />} />
+          {/* The account-deletion URL Google Play requires be reachable
+              without signing in. */}
+          <Route path="/delete-account" element={<DeleteAccount />} />
           <Route
             path="/messages"
             element={
@@ -388,6 +393,7 @@ export default function App() {
           <Route path="faculty" element={<SuperAdminFaculty />} />
           <Route path="files" element={<SuperAdminFiles />} />
           <Route path="system" element={<SuperAdminSystem />} />
+          <Route path="account-deletions" element={<SuperAdminDeletions />} />
           <Route path="feedback" element={<SuperAdminFeedback />} />
           <Route path="error-logs" element={<SuperAdminErrorLogs />} />
           <Route path="messages" element={<Messages />} />

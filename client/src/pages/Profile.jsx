@@ -6,6 +6,7 @@ import { profileApi, authApi, departmentApi, batchApi, semesterApi, routineApi }
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatDate } from '../utils/format.js';
+import DeleteAccountCard from '../components/DeleteAccountCard.jsx';
 
 const ROLE_LABEL = { student: 'Student', admin: 'Admin', super_admin: 'Super Admin' };
 
@@ -247,6 +248,8 @@ export default function Profile() {
           View Bookmarks
         </Link>
       </div>
+
+      <DeleteAccountCard />
 
       <style>{`.input { width: 100%; height: 2.5rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; padding: 0 0.75rem; font-size: 0.875rem; }
       .input:focus { outline: none; box-shadow: 0 0 0 2px #3a66f5; border-color: transparent; }`}</style>

@@ -146,16 +146,19 @@ export const NUMERIC_SETTINGS = [
     key: 'maxAdditionalCoursesPerSemester',
     label: 'Max Additional Courses per Semester',
     description: 'Maximum total retake/extra/backlog/improvement/advance enrollments a student may have open at once for one academic year + semester. 0 = unlimited.',
+    group: 'enrollment',
   },
   {
     key: 'maxRetakeCourses',
     label: 'Max Retake Courses',
     description: 'Maximum open retake enrollments a student may have at once. 0 = unlimited.',
+    group: 'enrollment',
   },
   {
     key: 'maxExtraCourses',
     label: 'Max Extra Courses',
     description: 'Maximum open extra-course enrollments a student may have at once. 0 = unlimited.',
+    group: 'enrollment',
   },
   // Write Application — AI credits and export lifetime. The defaults come from
   // the environment (AI_MONTHLY_CREDITS etc.) so an existing deployment keeps
@@ -165,18 +168,21 @@ export const NUMERIC_SETTINGS = [
     label: 'AI Credits per Month',
     description: 'How many AI application generations each user is given at the start of every monthly period. 0 = no credits (AI generation disabled for everyone).',
     default: env.ai.monthlyCredits,
+    group: 'ai',
   },
   {
     key: 'aiGenerationCost',
     label: 'AI Generation Cost (credits)',
     description: 'Credits one AI application generation costs. Default 1.',
     default: env.ai.generationCost,
+    group: 'ai',
   },
   {
     key: 'aiExportExpirationHours',
     label: 'Export File Lifetime (hours)',
     description: 'How long a generated PDF/DOCX stays downloadable before it is deleted from storage. Default 24 hours. The saved application is never affected.',
     default: env.ai.exportExpirationHours,
+    group: 'ai',
   },
 ];
 
@@ -196,6 +202,7 @@ export const STRING_SETTINGS = [
     description: 'Where newly submitted/resubmitted Student ID photos are uploaded. Changing this does not move or affect already-stored photos.',
     options: ['imgbb', 's3'],
     default: env.studentIdStorageProvider,
+    group: 'studentIdStorage',
   },
   // Write Application — which AI provider/model the generator calls. Either an
   // `options` list (a fixed enum) or a `pattern` (a free string) is accepted.
@@ -205,6 +212,7 @@ export const STRING_SETTINGS = [
     description: 'Which AI service drafts applications. DeepSeek/OpenAI/OpenRouter share one OpenAI-compatible request shape; Gemini uses Google’s. The API key itself lives in the server environment, never here.',
     options: ['deepseek', 'openai', 'openrouter', 'gemini'],
     default: env.ai.provider,
+    group: 'ai',
   },
   {
     key: 'aiModel',
@@ -212,6 +220,28 @@ export const STRING_SETTINGS = [
     description: 'The model to request from the provider (e.g. deepseek-chat, gpt-4o-mini, gemini-1.5-flash). Free text — the provider name validates it.',
     pattern: /^[A-Za-z0-9._:/-]{1,80}$/,
     default: env.ai.model,
+    group: 'ai',
+  },
+];
+
+// How the admin panel groups the settings above (see the `group` on each
+// entry). Declared next to the entries so adding a setting under a new group
+// stays a one-file change — the panel renders whatever it is handed.
+export const SETTING_GROUPS = [
+  {
+    key: 'studentIdStorage',
+    label: 'Student ID Image Storage',
+    description: 'Credentials stay server-side — this only picks which configured provider new/resubmitted photos go to.',
+  },
+  {
+    key: 'enrollment',
+    label: 'Course Enrollment Limits',
+    description: 'Cap how many open enrollments a student can hold at once. 0 = unlimited.',
+  },
+  {
+    key: 'ai',
+    label: 'AI Applications',
+    description: 'Which AI service drafts an application, and what each generation and its temporary PDF/DOCX files cost or last.',
   },
 ];
 
@@ -262,6 +292,10 @@ export const LIST_SETTINGS = [
     description: 'The class groups a batch can be split into (e.g. BOTH, A1, A2). "BOTH" means the whole batch and must always be present. Add a value here to make it selectable on routine/exam entries and assignable to students — nothing is hard-coded, so A3/B1/B2 work without a code change.',
     itemPattern: /^[A-Z0-9]{1,10}$/,
     itemHint: 'up to 10 letters or digits, e.g. "A3"',
+    // A group is printed exactly as configured ("A1"), so it must NOT go
+    // through the domain normalizer — lower-casing it would then fail
+    // itemPattern's [A-Z0-9] and make adding a group impossible.
+    preserveCase: true,
   },
   {
     key: 'facultyDesignations',

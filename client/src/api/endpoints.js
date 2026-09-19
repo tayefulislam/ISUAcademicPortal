@@ -38,6 +38,11 @@ export const emailApi = {
 export const profileApi = {
   get: () => api.get('/profile').then((r) => r.data),
   update: (data) => api.patch('/profile', data).then((r) => r.data),
+  // Account deletion — Google Play requires an app with accounts to let the
+  // account holder ask for deletion from inside the app. `deletionRequest`
+  // reads the caller's own request; `requestDeletion` submits one.
+  deletionRequest: () => api.get('/profile/deletion-request').then((r) => r.data),
+  requestDeletion: (data) => api.post('/profile/deletion-request', data || {}).then((r) => r.data),
 };
 
 // ----- Bookmarks -----
@@ -424,6 +429,11 @@ export const superAdminApi = {
   removeFile: (id) => api.delete(`/super-admin/files/${id}`).then((r) => r.data),
   getSettings: () => api.get('/super-admin/settings').then((r) => r.data),
   updateSettings: (data) => api.patch('/super-admin/settings', data).then((r) => r.data),
+
+  // ----- Account deletion requests (Google Play requirement) -----
+  deletionRequests: (params) => api.get('/super-admin/account-deletions', { params }).then((r) => r.data),
+  approveDeletion: (id, data) => api.post(`/super-admin/account-deletions/${id}/approve`, data || {}).then((r) => r.data),
+  rejectDeletion: (id, data) => api.post(`/super-admin/account-deletions/${id}/reject`, data || {}).then((r) => r.data),
 
   // ----- Faculty management -----
   listFaculty: (params) => api.get('/super-admin/faculty', { params }).then((r) => r.data),
