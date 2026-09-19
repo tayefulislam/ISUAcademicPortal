@@ -27,25 +27,51 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-/** The box every element occupies, in mm, plus its forced paint order. */
+// `none` is in the list so an explicitly borderless box is honoured rather than
+// falling through to the `solid` default.
+const BORDER_STYLES = ['none', 'solid', 'dashed', 'dotted'];
+const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
+
+/** The box every element occupies, in mm: position, borders, shading, paint order. */
 function boxStyles(field) {
+  const borderWidth = num(field.borderWidth, 0);
+  const borderStyle = BORDER_STYLES.includes(field.borderStyle) ? field.borderStyle : 'solid';
+  const background = HEX_COLOR.test(String(field.backgroundColor || '')) ? field.backgroundColor : '';
+  const radius = num(field.borderRadius, 0);
+
   return [
     `left:${num(field.x, 20)}mm`,
     `top:${num(field.y, 20)}mm`,
     `width:${num(field.width, 100)}mm`,
     `z-index:${Math.round(num(field.zIndex, 0))}`,
-  ];
+    // A border only when there is a width AND a style — Word's "no border".
+    borderWidth > 0 && borderStyle !== 'none'
+      ? `border:${borderWidth}mm ${borderStyle} ${escapeCssValue(field.borderColor, '#111111')}`
+      : '',
+    radius > 0 ? `border-radius:${radius}mm` : '',
+    background ? `background-color:${background}` : '',
+  ].filter(Boolean);
 }
 
 function renderText(field, value) {
+  const decorations = [
+    field.underline ? 'underline' : '',
+    field.strikethrough ? 'line-through' : '',
+  ].filter(Boolean).join(' ');
+
+  const spacing = num(field.letterSpacing, 0);
+
   const styles = [
     ...boxStyles(field),
     `min-height:${num(field.height, 8)}mm`,
     `font-size:${num(field.fontSize, 12)}pt`,
+    `line-height:${num(field.lineHeight, 1.25)}`,
     `text-align:${['left', 'center', 'right'].includes(field.align) ? field.align : 'left'}`,
     `color:${escapeCssValue(field.color, '#111111')}`,
     field.bold ? 'font-weight:700' : '',
     field.italic ? 'font-style:italic' : '',
+    decorations ? `text-decoration:${decorations}` : '',
+    spacing ? `letter-spacing:${spacing}pt` : '',
     field.fontFamily ? `font-family:${escapeCssValue(field.fontFamily, '')}` : '',
   ].filter(Boolean).join(';');
 
@@ -73,6 +99,7 @@ function renderImage(field, assets) {
 /**
  * A rule/divider. Its `height` is read as the line's thickness in mm (a line has
  * no height of its own), so one number drives both the editor and the print.
+ * A background colour turns it into a shaded band; a border draws a second rule.
  */
 function renderLine(field) {
   const thickness = clamp(num(field.height, 0.4), 0.1, 5);

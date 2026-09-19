@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -16,11 +16,14 @@ import {
   Upload,
   Variable,
   Zap,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { adminDocumentApi, documentApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useHistory from '../../hooks/useHistory.js';
-import TemplateCanvas, { pageSizeMm } from '../../components/documents/TemplateCanvas.jsx';
+import usePanelBase from '../../hooks/usePanelBase.js';
+import TemplateCanvas, { pageSizeMm, DEFAULT_PX_PER_MM } from '../../components/documents/TemplateCanvas.jsx';
 import FieldMappingPanel from '../../components/documents/FieldMappingPanel.jsx';
 
 // The palette an admin drags from. Each entry is a *kind of element*, not a
@@ -90,6 +93,8 @@ export default function DocumentTemplateEditor() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  // Stays in whichever panel opened this screen (Admin or Super Admin).
+  const base = usePanelBase();
 
   const [versionNumber, setVersionNumber] = useState(null);
   const history = useHistory([]);
@@ -98,6 +103,11 @@ export default function DocumentTemplateEditor() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [busy, setBusy] = useState('');
   const [sourceFile, setSourceFile] = useState(null);
+  // Canvas zoom (1 = 100%) and the page-level typography the version carries.
+  const [zoom, setZoom] = useState(1);
+  const [pageStyle, setPageStyle] = useState({ fontFamily: '', baseFontSize: 12, textColor: '#111111' });
+  // The editor's own clipboard, for Ctrl+C / Ctrl+V of one element.
+  const clipboard = useRef(null);
 
   const { data: templateData } = useQuery({
     queryKey: ['admin-document-template', id],
@@ -147,6 +157,11 @@ export default function DocumentTemplateEditor() {
   useEffect(() => {
     if (version) {
       history.reset(version.fields || []);
+      setPageStyle({
+        fontFamily: version.styleConfig?.fontFamily || '',
+        baseFontSize: version.styleConfig?.baseFontSize ?? 12,
+        textColor: version.styleConfig?.textColor || '#111111',
+      });
       setSelectedKey('');
       setPreviewHtml('');
     }
@@ -180,6 +195,38 @@ export default function DocumentTemplateEditor() {
     const element = makeElement({ type, asset, x, y, index: fields.length, z: nextZ(fields) });
     history.commit([...fields, element]);
     setSelectedKey(element.key);
+  };
+
+  /** A copy of the selected element, offset slightly so it is visibly a new one. */
+  const duplicateSelected = () => {
+    if (!selectedField) return;
+    const copy = {
+      ...selectedField,
+      key: `el_${Date.now().toString(36)}_${fields.length}`,
+      x: Math.min(page.w - 5, Number(selectedField.x || 0) + 5),
+      y: Math.min(page.h - 5, Number(selectedField.y || 0) + 5),
+      zIndex: nextZ(fields),
+    };
+    history.commit([...fields, copy]);
+    setSelectedKey(copy.key);
+  };
+
+  const copySelected = () => {
+    if (selectedField) clipboard.current = { ...selectedField };
+  };
+
+  const pasteElement = () => {
+    const source = clipboard.current;
+    if (!source) return;
+    const pasted = {
+      ...source,
+      key: `el_${Date.now().toString(36)}_${fields.length}`,
+      x: Math.min(page.w - 5, Number(source.x || 0) + 5),
+      y: Math.min(page.h - 5, Number(source.y || 0) + 5),
+      zIndex: nextZ(fields),
+    };
+    history.commit([...fields, pasted]);
+    setSelectedKey(pasted.key);
   };
 
   const bringToFront = () => {
@@ -235,7 +282,32 @@ export default function DocumentTemplateEditor() {
         history.redo();
         return;
       }
-      if (typing || !selectedKey) return;
+      if (typing) return;
+
+      // Clipboard and element shortcuts. Paste works with nothing selected (the
+      // editor has its own clipboard); the rest need a selection.
+      if (mod && event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        pasteElement();
+        return;
+      }
+      if (!selectedKey) return;
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        removeField();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        copySelected();
+        return;
+      }
 
       const step = event.shiftKey ? 10 : 1;
       const moves = {
@@ -285,6 +357,9 @@ export default function DocumentTemplateEditor() {
     try {
       const payload = new FormData();
       payload.append('fields', JSON.stringify(fields));
+      // The page defaults ride with the version, so the document's typography is
+      // part of the design rather than a per-element repetition.
+      payload.append('styleConfig', JSON.stringify(pageStyle));
       if (sourceFile) payload.append('source', sourceFile);
       const res = await adminDocumentApi.createVersion(id, payload);
       toast(`Saved as v${res.data.version}`, 'success');
@@ -320,7 +395,7 @@ export default function DocumentTemplateEditor() {
   return (
     <div>
       <button
-        onClick={() => navigate('/admin/document-templates')}
+        onClick={() => navigate(`${base}/document-templates`)}
         className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-700 mb-4"
       >
         <ArrowLeft size={15} /> All templates
@@ -369,6 +444,29 @@ export default function DocumentTemplateEditor() {
               </option>
             ))}
           </select>
+
+          {/* Zoom, like a document window. */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+              className="h-10 px-2 text-slate-600 hover:bg-slate-50"
+              title="Zoom out"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span className="h-10 px-1 grid place-items-center text-xs text-slate-500 w-12 border-x border-slate-200">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(2, Math.round((z + 0.25) * 100) / 100))}
+              className="h-10 px-2 text-slate-600 hover:bg-slate-50"
+              title="Zoom in"
+            >
+              <ZoomIn size={16} />
+            </button>
+          </div>
           <button
             onClick={preview}
             disabled={busy === 'preview'}
@@ -447,7 +545,8 @@ export default function DocumentTemplateEditor() {
           <div className="flex items-center justify-between mb-3 gap-3">
             <p className="text-xs text-slate-500">
               Drag to move · drag a <strong>grip</strong> to resize · <kbd className="px-1 border rounded">Ctrl</kbd> for
-              0.1 mm steps · <kbd className="px-1 border rounded">Shift</kbd> to keep the shape · arrows nudge
+              0.1 mm steps · <kbd className="px-1 border rounded">Shift</kbd> to keep the shape · arrows nudge ·
+              Ctrl+D duplicate · Ctrl+C/V copy · Del removes · Ctrl+Z undo
             </p>
             <label className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500 cursor-pointer hover:bg-slate-50 shrink-0">
               <Upload size={13} />
@@ -465,6 +564,7 @@ export default function DocumentTemplateEditor() {
             <TemplateCanvas
               pageSize={pageSize}
               orientation={orientation}
+              pxPerMm={DEFAULT_PX_PER_MM * zoom}
               fields={fields}
               assets={assetUrls || {}}
               backgroundUrl={backgroundUrl || ''}
@@ -488,6 +588,47 @@ export default function DocumentTemplateEditor() {
         </div>
 
         <div className="space-y-4">
+          {/* Page defaults: the typography the whole document inherits, part of
+              the version rather than repeated on every element. */}
+          <aside className="bg-white border border-slate-200 rounded-xl p-3">
+            <h2 className="text-sm font-semibold text-slate-700 mb-2">Page</h2>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[11px] text-slate-500 mb-1">Default font</label>
+                <select
+                  value={pageStyle.fontFamily || ''}
+                  onChange={(e) => setPageStyle({ ...pageStyle, fontFamily: e.target.value })}
+                  className="w-full h-9 rounded-lg border border-slate-300 px-2 text-sm bg-white"
+                  style={{ fontFamily: pageStyle.fontFamily || undefined }}
+                >
+                  {(meta?.fonts || [{ value: '', label: 'Default' }]).map((f) => (
+                    <option key={f.value || 'default'} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2 items-end">
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Base size (pt)</label>
+                  <input
+                    type="number"
+                    value={pageStyle.baseFontSize ?? 12}
+                    onChange={(e) => setPageStyle({ ...pageStyle, baseFontSize: e.target.value })}
+                    className="w-full h-9 rounded-lg border border-slate-300 px-2 text-sm"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="color"
+                    value={/^#[0-9a-fA-F]{6}$/.test(pageStyle.textColor || '') ? pageStyle.textColor : '#111111'}
+                    onChange={(e) => setPageStyle({ ...pageStyle, textColor: e.target.value })}
+                    className="w-7 h-7 rounded border border-slate-300"
+                  />
+                  Text colour
+                </label>
+              </div>
+            </div>
+          </aside>
+
           <aside className="bg-white border border-slate-200 rounded-xl p-3">
             <h2 className="text-sm font-semibold text-slate-700 mb-2">
               On the page <span className="text-slate-400 font-normal">({fields.length})</span>
@@ -537,6 +678,7 @@ export default function DocumentTemplateEditor() {
               pageHeightMm={page.h}
               onChange={updateField}
               onDelete={() => removeField()}
+              onDuplicate={duplicateSelected}
               onBringToFront={bringToFront}
               onSendToBack={sendToBack}
               onAlign={handleAlign}

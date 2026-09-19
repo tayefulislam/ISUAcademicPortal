@@ -51,6 +51,7 @@ export function experimentCoverFields() {
 
     { key: 'submitted_to', label: 'Submitted to', type: 'STATIC', staticValue: 'Submitted to', x: 22, y: 182, width: 166, height: 9, fontSize: 14, bold: true },
     { key: 'teacher_name', label: "Teacher's Name", type: 'AUTO', source: 'faculty.name', formatting: { prefix: "Teacher's Name: " }, x: 28, y: 192, width: 160, height: 8, fontSize: 12 },
+    { key: 'teacher_designation', label: "Teacher's Designation", type: 'AUTO', source: 'faculty.designation', formatting: { prefix: 'Designation: ' }, x: 28, y: 200, width: 160, height: 8, fontSize: 12 },
 
     { key: 'experiment_date', label: 'Date of Experiment', type: 'DATE', required: true, formatting: { prefix: 'Date of Experiment: ', dateFormat: 'DD MMM YYYY' }, x: 22, y: 216, width: 166, height: 8, fontSize: 12 },
     { key: 'submission_date', label: 'Date of Submission', type: 'DATE', required: true, formatting: { prefix: 'Date of Submission: ', dateFormat: 'DD MMM YYYY' }, x: 22, y: 224, width: 166, height: 8, fontSize: 12 },

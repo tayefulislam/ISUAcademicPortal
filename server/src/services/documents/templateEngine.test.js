@@ -157,3 +157,58 @@ describe('renderHtml — draw order', () => {
     assert.match(html, /z-index:5/);
   });
 });
+
+describe('renderHtml — Word-like styling', () => {
+  const text = (overrides) => renderHtml(
+    { ...VERSION, fields: [{ key: 'a', type: 'STATIC', ...overrides }] },
+    { a: 'Hello' }
+  );
+
+  test('font family, size and colour are applied', () => {
+    const html = text({ fontFamily: 'Georgia, serif', fontSize: 18, color: '#2038ab' });
+    assert.match(html, /font-family:Georgia, serif/);
+    assert.match(html, /font-size:18pt/);
+    assert.match(html, /color:#2038ab/);
+  });
+
+  test('underline and strikethrough combine into one text-decoration', () => {
+    assert.match(text({ underline: true }), /text-decoration:underline/);
+    assert.match(text({ strikethrough: true }), /text-decoration:line-through/);
+    assert.match(text({ underline: true, strikethrough: true }), /text-decoration:underline line-through/);
+  });
+
+  test('line height and character spacing are applied', () => {
+    const html = text({ lineHeight: 1.5, letterSpacing: 2 });
+    assert.match(html, /line-height:1\.5/);
+    assert.match(html, /letter-spacing:2pt/);
+  });
+
+  test('a highlight is shaded, and an empty one is not', () => {
+    assert.match(text({ backgroundColor: '#fff3bf' }), /background-color:#fff3bf/);
+    assert.doesNotMatch(text({ backgroundColor: '' }), /background-color/);
+  });
+
+  test('borders and shading render on any element', () => {
+    const bordered = text({ borderWidth: 0.5, borderStyle: 'dashed', borderColor: '#dc2626', borderRadius: 2 });
+    assert.match(bordered, /border:0\.5mm dashed #dc2626/);
+    assert.match(bordered, /border-radius:2mm/);
+  });
+
+  test('a zero-width or "none" border is not drawn at all', () => {
+    assert.doesNotMatch(text({ borderWidth: 0, borderStyle: 'solid' }), /border:/);
+    assert.doesNotMatch(text({ borderWidth: 0.5, borderStyle: 'none' }), /border:/);
+  });
+
+  test('an image element can carry a border and a highlight too', () => {
+    const html = renderHtml(
+      {
+        ...VERSION,
+        fields: [{ key: 'logo', type: 'IMAGE', asset: 'logo.png', borderWidth: 1, borderColor: '#111111', backgroundColor: '#f1f5f9' }],
+      },
+      {},
+      { assets: { 'logo.png': 'data:image/png;base64,iVBORw0KGgo=' } }
+    );
+    assert.match(html, /border:1mm solid #111111/);
+    assert.match(html, /background-color:#f1f5f9/);
+  });
+});

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Copy, FileText, Plus, Power, Trash2, Wand2 } from 'lucide-react';
 import { adminDocumentApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import usePanelBase from '../../hooks/usePanelBase.js';
 
 const STATUS_STYLES = {
   ACTIVE: 'bg-emerald-50 text-emerald-700',
@@ -17,6 +18,8 @@ const courseLabel = (t) => (t.courseId ? [t.courseId.courseId, t.courseId.name].
 export default function DocumentTemplates() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  // Keeps every link in whichever panel opened this screen (Admin or Super Admin).
+  const base = usePanelBase();
   const { data, isLoading } = useQuery({
     queryKey: ['admin-document-templates'],
     queryFn: () => adminDocumentApi.templates({}),
@@ -67,7 +70,7 @@ export default function DocumentTemplates() {
           </p>
         </div>
         <Link
-          to="/admin/document-templates/new"
+          to={`${base}/document-templates/new`}
           className="shrink-0 flex items-center gap-2 h-10 px-4 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
         >
           <Plus size={16} /> Add template
@@ -116,14 +119,14 @@ export default function DocumentTemplates() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <Link
-                          to={`/admin/document-templates/${t._id}`}
+                          to={`${base}/document-templates/${t._id}`}
                           className="p-2 rounded-md text-slate-500 hover:bg-slate-100"
                           title="Preview / edit design"
                         >
                           <Wand2 size={16} />
                         </Link>
                         <Link
-                          to={`/admin/document-templates/${t._id}/edit`}
+                          to={`${base}/document-templates/${t._id}/edit`}
                           className="p-2 rounded-md text-slate-500 hover:bg-slate-100"
                           title="Edit details"
                         >

@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeFields } from './normalizeFields.js';
+import { normalizeFields, normalizeStyleConfig } from './normalizeFields.js';
 
 function expectApiError(fn, status = 422) {
   assert.throws(fn, (err) => err.statusCode === status);
@@ -124,6 +124,71 @@ describe('normalizeFields — geometry and validation bounds', () => {
   test('z-order is kept and bounded', () => {
     assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', zIndex: 7 }])[0].zIndex, 7);
     assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', zIndex: 100000 }])[0].zIndex, 999);
+  });
+});
+
+describe('normalizeFields — Word-like styling', () => {
+  test('text decoration flags are kept', () => {
+    const [field] = normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', bold: true, italic: true, underline: true, strikethrough: true }]);
+    assert.equal(field.bold, true);
+    assert.equal(field.italic, true);
+    assert.equal(field.underline, true);
+    assert.equal(field.strikethrough, true);
+  });
+
+  test('line height and character spacing are bounded', () => {
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', lineHeight: 9 }])[0].lineHeight, 3);
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', lineHeight: 0 }])[0].lineHeight, 0.8);
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', letterSpacing: -9 }])[0].letterSpacing, -2);
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', letterSpacing: 99 }])[0].letterSpacing, 10);
+  });
+
+  test('a highlight must be a real colour, and "none" is empty', () => {
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', backgroundColor: '#fff3bf' }])[0].backgroundColor, '#fff3bf');
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', backgroundColor: 'red;}bad' }])[0].backgroundColor, '');
+  });
+
+  test('border width, style and radius are validated', () => {
+    const [field] = normalizeFields([{
+      key: 'a', label: 'A', type: 'TEXT', borderWidth: 99, borderStyle: 'wavy', borderColor: '#dc2626', borderRadius: -5,
+    }]);
+    assert.equal(field.borderWidth, 5);
+    assert.equal(field.borderStyle, 'solid'); // unknown style falls back
+    assert.equal(field.borderColor, '#dc2626');
+    assert.equal(field.borderRadius, 0);
+  });
+
+  test('an explicit "none" border style is preserved', () => {
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', borderWidth: 1, borderStyle: 'none' }])[0].borderStyle, 'none');
+  });
+
+  test('an element can be locked', () => {
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT', locked: true }])[0].locked, true);
+    assert.equal(normalizeFields([{ key: 'a', label: 'A', type: 'TEXT' }])[0].locked, false);
+  });
+});
+
+describe('normalizeStyleConfig — the page defaults', () => {
+  test('defaults when nothing is supplied', () => {
+    assert.deepEqual(normalizeStyleConfig(undefined), { fontFamily: '', baseFontSize: 12, textColor: '#111111' });
+    assert.deepEqual(normalizeStyleConfig(''), { fontFamily: '', baseFontSize: 12, textColor: '#111111' });
+  });
+
+  test('accepts an object or a JSON string (a multipart field)', () => {
+    const fromObject = normalizeStyleConfig({ fontFamily: 'Georgia, serif', baseFontSize: 14, textColor: '#2038ab' });
+    const fromString = normalizeStyleConfig(JSON.stringify({ fontFamily: 'Georgia, serif', baseFontSize: 14, textColor: '#2038ab' }));
+    assert.deepEqual(fromObject, fromString);
+    assert.equal(fromObject.fontFamily, 'Georgia, serif');
+  });
+
+  test('clamps the size and rejects a bad colour', () => {
+    const config = normalizeStyleConfig({ baseFontSize: 999, textColor: 'not-a-colour' });
+    assert.equal(config.baseFontSize, 96);
+    assert.equal(config.textColor, '#111111');
+  });
+
+  test('malformed JSON is a 422, not a crash', () => {
+    assert.throws(() => normalizeStyleConfig('{not json'), (err) => err.statusCode === 422);
   });
 
   test('a valid regex and numeric bounds are kept', () => {

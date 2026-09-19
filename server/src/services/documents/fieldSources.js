@@ -23,6 +23,7 @@ export const FIELD_SOURCES = [
   'course.name',
   'course.department',
   'faculty.name',
+  'faculty.designation',
   'faculty.email',
   'department.name',
   'university.name',
@@ -40,6 +41,7 @@ export const SOURCE_LABELS = {
   'course.name': 'Course Name',
   'course.department': 'Course Department',
   'faculty.name': "Teacher's Name",
+  'faculty.designation': "Teacher's Designation",
   'faculty.email': "Teacher's Email",
   'department.name': 'Department',
   'university.name': 'University Name',
@@ -47,6 +49,30 @@ export const SOURCE_LABELS = {
 
 /** The types whose value comes from the client rather than a record. */
 export const EDITABLE_TYPES = ['USER_INPUT', 'TEXT', 'DATE', 'NUMBER'];
+
+/**
+ * The fonts an admin can set a document (or one element) in.
+ *
+ * <p>Each is a STACK, not a single name: the renderer runs in a container whose
+ * exact font set is not knowable, so a missing first choice degrades to a
+ * metric-compatible fallback rather than to a default face. The list is served
+ * from here so the editor's picker cannot drift from what the renderer writes.
+ */
+export const FONT_CHOICES = [
+  { value: '', label: 'Default (Helvetica / Arial)' },
+  { value: 'Arial, Helvetica, sans-serif', label: 'Arial' },
+  { value: '"Times New Roman", Times, serif', label: 'Times New Roman' },
+  { value: 'Georgia, serif', label: 'Georgia' },
+  { value: 'Garamond, Georgia, serif', label: 'Garamond' },
+  { value: 'Verdana, Geneva, sans-serif', label: 'Verdana' },
+  { value: 'Tahoma, Verdana, sans-serif', label: 'Tahoma' },
+  { value: '"Trebuchet MS", Tahoma, sans-serif', label: 'Trebuchet MS' },
+  { value: '"Courier New", Courier, monospace', label: 'Courier New' },
+  { value: '"Brush Script MT", cursive', label: 'Brush Script' },
+];
+
+/** The border styles a box can draw. */
+export const BORDER_STYLES = ['none', 'solid', 'dashed', 'dotted'];
 
 export function isSource(value) {
   return FIELD_SOURCES.includes(value);

@@ -5,6 +5,7 @@ import { ArrowLeft, Upload } from 'lucide-react';
 import { adminDocumentApi, documentCategoryApi, departmentApi, courseApi } from '../../api/endpoints.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import usePanelBase from '../../hooks/usePanelBase.js';
 
 const EMPTY = {
   name: '',
@@ -26,6 +27,8 @@ export default function DocumentTemplateForm() {
   const editing = Boolean(id);
   const { toast } = useToast();
   const navigate = useNavigate();
+  // Stays in whichever panel opened this screen (Admin or Super Admin).
+  const base = usePanelBase();
 
   const [form, setForm] = useState(EMPTY);
   const [file, setFile] = useState(null);
@@ -90,7 +93,7 @@ export default function DocumentTemplateForm() {
           status: form.status,
         });
         toast('Template updated', 'success');
-        navigate(`/admin/document-templates/${id}`);
+        navigate(`${base}/document-templates/${id}`);
       } else {
         const fd = new FormData();
         fd.append('name', form.name);
@@ -108,7 +111,7 @@ export default function DocumentTemplateForm() {
 
         const res = await adminDocumentApi.create(fd);
         toast('Template created', 'success');
-        navigate(`/admin/document-templates/${res.data._id}`);
+        navigate(`${base}/document-templates/${res.data._id}`);
       }
     } catch (err) {
       toast(err.response?.data?.message || 'Save failed', 'error');
@@ -120,7 +123,7 @@ export default function DocumentTemplateForm() {
   return (
     <div className="max-w-3xl">
       <button
-        onClick={() => navigate('/admin/document-templates')}
+        onClick={() => navigate(`${base}/document-templates`)}
         className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-700 mb-4"
       >
         <ArrowLeft size={15} /> All templates
@@ -279,7 +282,7 @@ export default function DocumentTemplateForm() {
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
-            onClick={() => navigate('/admin/document-templates')}
+            onClick={() => navigate(`${base}/document-templates`)}
             className="h-10 px-4 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600"
           >
             Cancel

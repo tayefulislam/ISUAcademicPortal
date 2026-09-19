@@ -5,6 +5,7 @@ import { isAssetFileName } from './assets.js';
 // Bounds so a template cannot define an unbounded page of fields.
 const MAX_FIELDS = 200;
 const ALIGNMENTS = ['left', 'center', 'right'];
+const BORDER_STYLES = ['none', 'solid', 'dashed', 'dotted'];
 const COLOR = /^#[0-9a-fA-F]{3,8}$/;
 const KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
@@ -118,12 +119,50 @@ export function normalizeFields(raw) {
       italic: Boolean(field.italic),
       align: ALIGNMENTS.includes(field.align) ? field.align : 'left',
       color: COLOR.test(String(field.color || '')) ? field.color : '#111111',
+
+      // Word-like text styling.
+      underline: Boolean(field.underline),
+      strikethrough: Boolean(field.strikethrough),
+      lineHeight: clamp(numOr(field.lineHeight, 1.25), 0.8, 3),
+      letterSpacing: clamp(numOr(field.letterSpacing, 0), -2, 10),
+      backgroundColor: COLOR.test(String(field.backgroundColor || '')) ? field.backgroundColor : '',
+
+      // Borders & shading.
+      borderWidth: clamp(numOr(field.borderWidth, 0), 0, 5),
+      borderColor: COLOR.test(String(field.borderColor || '')) ? field.borderColor : '#111111',
+      borderStyle: BORDER_STYLES.includes(field.borderStyle) ? field.borderStyle : 'solid',
+      borderRadius: clamp(numOr(field.borderRadius, 0), 0, 30),
+
       // An IMAGE element's file name in the server's img/ folder. Validated here
       // so a design can never reference a path or a non-image file.
       asset: isAssetFileName(field.asset) ? String(field.asset).trim() : '',
       zIndex: clamp(numOr(field.zIndex, index), -999, 999),
+      locked: Boolean(field.locked),
     };
   });
 }
 
-export default { normalizeFields };
+/**
+ * The page-level defaults a version carries: the font the whole document is set
+ * in, its base size and colour. Kept beside the field normalizer because it is
+ * the same kind of input (admin-authored, saved with the version).
+ */
+export function normalizeStyleConfig(raw) {
+  let config = raw;
+  if (typeof raw === 'string') {
+    if (!raw.trim()) return { fontFamily: '', baseFontSize: 12, textColor: '#111111' };
+    try {
+      config = JSON.parse(raw);
+    } catch {
+      throw new ApiError(422, 'styleConfig must be valid JSON');
+    }
+  }
+  const source = config && typeof config === 'object' ? config : {};
+  return {
+    fontFamily: String(source.fontFamily || '').slice(0, 120),
+    baseFontSize: clamp(numOr(source.baseFontSize, 12), 4, 96),
+    textColor: COLOR.test(String(source.textColor || '')) ? source.textColor : '#111111',
+  };
+}
+
+export default { normalizeFields, normalizeStyleConfig };

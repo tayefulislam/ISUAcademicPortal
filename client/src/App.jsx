@@ -356,6 +356,13 @@ export default function App() {
           <Route path="emails" element={<EmailComposer />} />
           <Route path="enrollments" element={<EnrollmentManager />} />
           <Route path="routine" element={<RoutineManager />} />
+          {/* Registered here as well as under /admin: Super Admin and
+              Administrator have the same access, and the pages keep their links
+              inside whichever panel opened them (see hooks/usePanelBase.js). */}
+          <Route path="document-templates" element={<DocumentTemplates />} />
+          <Route path="document-templates/new" element={<DocumentTemplateForm />} />
+          <Route path="document-templates/:id/edit" element={<DocumentTemplateForm />} />
+          <Route path="document-templates/:id" element={<DocumentTemplateEditor />} />
           <Route path="notifications" element={<SuperAdminNotifications />} />
           <Route path="manual" element={<Manual role="super_admin" />} />
         </Route>
