@@ -1,12 +1,13 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Packer,
   Paragraph,
   TextRun,
 } from 'docx';
 import { env } from '../../config/env.js';
-import { profileRows } from './profileSnapshot.js';
+import { signatureRows } from './profileSnapshot.js';
 
 // A real Word document — headings, paragraphs and a signature block built from
 // the docx object model — rather than HTML pasted into a .docx, so the file
@@ -29,6 +30,14 @@ function line(text, opts = {}) {
     spacing: { after: opts.after ?? 60 },
     alignment: opts.alignment,
     children: [new TextRun({ text, bold: opts.bold, italics: opts.italics, size: opts.size ?? 24 })],
+  });
+}
+
+/** The horizontal rule under the letterhead, matching the PDF's `.rule`. */
+function rule() {
+  return new Paragraph({
+    spacing: { after: 240 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '111111', space: 1 } },
   });
 }
 
@@ -60,7 +69,7 @@ export async function buildApplicationDocx({ application, typeTemplate = {}, uni
     children.push(line(letterhead.addressLine, { size: 20, alignment: AlignmentType.CENTER, after: 240 }));
   }
   if (header || letterhead.addressLine) {
-    children.push(new Paragraph({ spacing: { after: 240 } }));
+    children.push(rule());
   }
 
   children.push(line(`Date: ${formatDate(now)}`, { after: 240 }));
@@ -88,7 +97,8 @@ export async function buildApplicationDocx({ application, typeTemplate = {}, uni
   children.push(line(typeTemplate.closing || 'I shall be grateful for your kind consideration.', { after: 400 }));
 
   children.push(line('Yours faithfully,', { after: 400 }));
-  for (const row of profileRows(profile)) {
+  // Identity only — no section, email or phone (see signatureRows).
+  for (const row of signatureRows(profile)) {
     children.push(line(`${row.label}: ${row.value}`, { after: 40 }));
   }
 

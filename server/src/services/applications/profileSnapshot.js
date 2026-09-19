@@ -69,6 +69,28 @@ export function profileRows(profile) {
   return rows;
 }
 
+/**
+ * The rows printed in the letter's own signature block. Deliberately shorter
+ * than {@link profileRows}: a formal application signs off with who you are —
+ * name, ID, department, batch, semester — not with your section, email or
+ * phone. Those stay in the transparency preview (profileRows) where they are
+ * useful, and are never printed at the foot of the letter.
+ */
+export function signatureRows(profile) {
+  if (!profile) return [];
+  const rows = [];
+  const add = (label, value) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') rows.push({ label, value: String(value) });
+  };
+  add('Name', profile.name);
+  add('Student ID', profile.studentId);
+  add('Designation', profile.designation);
+  add('Department', profile.department);
+  add('Batch', profile.batch);
+  add('Semester', profile.semester);
+  return rows;
+}
+
 /** The same rows as plain text for the AI prompt. */
 export function profileText(profile) {
   return profileRows(profile)
@@ -76,4 +98,4 @@ export function profileText(profile) {
     .join('\n');
 }
 
-export default { buildProfileSnapshot, profileRows, profileText };
+export default { buildProfileSnapshot, profileRows, signatureRows, profileText };
