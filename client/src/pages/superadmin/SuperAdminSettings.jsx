@@ -271,8 +271,10 @@ export default function SuperAdminSettings() {
       </div>
 
       {listSettings.length > 0 && (
-        <div className="space-y-6 mb-10">
-          {listSettings.map((l) => (
+        <SettingSections
+          items={listSettings}
+          groups={settingGroups}
+          render={(l) => (
             <ListSettingCard
               key={l.key}
               title={l.label}
@@ -281,8 +283,8 @@ export default function SuperAdminSettings() {
               hint={l.itemHint}
               onSave={(v) => saveValue(l.key, v, l.label)}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {numericSettings.length > 0 && (

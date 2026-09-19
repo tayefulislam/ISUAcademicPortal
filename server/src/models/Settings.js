@@ -134,6 +134,17 @@ export const FEATURE_FLAGS = [
     description: 'When ON, each AI application generation (and each AI edit action) costs credits, and the monthly allowance is recharged automatically. When OFF, AI generation is unlimited and no credits are tracked.',
     default: true,
   },
+  {
+    key: 'contributorsEnabled',
+    label: 'Show Contributor List',
+    description: 'When ON, the Android app\'s App credits screen lists the contributors configured below. When OFF, that section is hidden in the app entirely.',
+    default: true,
+  },
+  {
+    key: 'appUpdateRequired',
+    label: 'App Update Is Mandatory',
+    description: 'When ON, the update prompt below cannot be dismissed — the user must update before continuing to use the app. Leave OFF to let them update later.',
+  },
 ];
 
 // Numeric business-rule limits for the Course Enrollment system — separate
@@ -222,6 +233,36 @@ export const STRING_SETTINGS = [
     default: env.ai.model,
     group: 'ai',
   },
+  // Android app release. The app compares `appLatestVersion` against the
+  // version it was built with and prompts when they differ; the message and
+  // link below are what that prompt shows. Leaving the version blank means
+  // "no release published", and no app is ever told to update.
+  {
+    key: 'appLatestVersion',
+    label: 'Latest App Version',
+    description: 'The newest published version of the Android app, e.g. 1.1. Leave blank to switch the update prompt off entirely.',
+    pattern: /^(|\d+(\.\d+){0,3})$/,
+    default: '',
+    group: 'app',
+  },
+  {
+    key: 'appUpdateMessage',
+    label: 'Update Message',
+    description: 'What the update prompt says in the app, e.g. "A new version is available with bug fixes and a faster document downloader."',
+    // Deliberately permissive: this is prose, and the only limits worth
+    // enforcing are the length ones the schema already applies.
+    pattern: /^[\s\S]{0,600}$/,
+    default: '',
+    group: 'app',
+  },
+  {
+    key: 'appUpdateUrl',
+    label: 'Update Link',
+    description: 'Where the prompt sends the user — normally the Google Play listing. Leave blank and the prompt still appears, without an "Update" button.',
+    pattern: /^(|https?:\/\/\S{1,300})$/,
+    default: '',
+    group: 'app',
+  },
 ];
 
 // How the admin panel groups the settings above (see the `group` on each
@@ -242,6 +283,11 @@ export const SETTING_GROUPS = [
     key: 'ai',
     label: 'AI Applications',
     description: 'Which AI service drafts an application, and what each generation and its temporary PDF/DOCX files cost or last.',
+  },
+  {
+    key: 'app',
+    label: 'Android App',
+    description: 'What the app shows on its App credits screen, and the update prompt it raises when a newer version has been published.',
   },
 ];
 
@@ -296,6 +342,16 @@ export const LIST_SETTINGS = [
     // through the domain normalizer — lower-casing it would then fail
     // itemPattern's [A-Z0-9] and make adding a group impossible.
     preserveCase: true,
+  },
+  {
+    key: 'contributors',
+    label: 'Contributors',
+    description: 'The people credited on the Android app\'s App credits screen, in the order listed. Shown only while "Show Contributor List" above is ON.',
+    itemPattern: /^[\s\S]{1,80}$/,
+    itemHint: 'a name, e.g. "Kazi Tayeful Islam"',
+    // A person's name is printed exactly as entered.
+    preserveCase: true,
+    group: 'app',
   },
   {
     key: 'facultyDesignations',
