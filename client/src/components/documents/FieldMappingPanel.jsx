@@ -62,7 +62,8 @@ export default function FieldMappingPanel({
   const isDate = field.type === 'DATE';
   const isImage = field.type === 'IMAGE';
   const isLine = field.type === 'LINE';
-  const isTextual = !isImage && !isLine;
+  const isBox = field.type === 'BOX';
+  const isTextual = !isImage && !isLine && !isBox;
 
   const nudge = (dx, dy) => set({
     x: Math.max(0, Math.round((num(field.x, 0) + dx) * 10) / 10),
@@ -126,6 +127,7 @@ export default function FieldMappingPanel({
             isStatic ? 'Fixed text printed as-is.' :
             isImage ? 'An image from the server’s img/ folder.' :
             isLine ? 'A rule. Its height is its thickness.' :
+            isBox ? 'A drawn box — border and/or shading, no text.' :
             'Typed by the student on the generate screen.'}
         </p>
       </div>
@@ -166,7 +168,7 @@ export default function FieldMappingPanel({
         </div>
       )}
 
-      {!isAuto && !isStatic && !isImage && !isLine && (
+      {!isAuto && !isStatic && !isImage && !isLine && !isBox && (
         <>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={Boolean(field.required)} onChange={(e) => set({ required: e.target.checked })} />

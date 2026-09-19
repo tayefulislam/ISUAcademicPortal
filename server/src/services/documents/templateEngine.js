@@ -112,11 +112,26 @@ function renderLine(field) {
   return `    <div class="doc-field" style="${styles}"></div>`;
 }
 
+/**
+ * A box: border and/or shading only, with no text of its own. This is what an
+ * admin uses to frame the page (an A4 border) or draw a rectangle — a text field
+ * cannot do it, because a text field with no value prints nothing.
+ */
+function renderBox(field) {
+  const styles = [
+    ...boxStyles(field),
+    `height:${num(field.height, 20)}mm`,
+  ].join(';');
+
+  return `    <div class="doc-field" style="${styles}"></div>`;
+}
+
 function renderField(field, values, assets) {
   if (!field) return '';
 
   // Elements that draw without a resolved value.
   if (field.type === 'LINE') return renderLine(field);
+  if (field.type === 'BOX') return renderBox(field);
   if (field.type === 'IMAGE') return renderImage(field, assets);
 
   const value = values[field.key];

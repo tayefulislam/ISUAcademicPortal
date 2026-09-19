@@ -141,6 +141,29 @@ describe('renderHtml — rule elements', () => {
   });
 });
 
+describe('renderHtml — box elements', () => {
+  test('a box draws its border without needing a value', () => {
+    const html = renderHtml(
+      {
+        ...VERSION,
+        fields: [{ key: 'frame', type: 'BOX', x: 0, y: 0, width: 210, height: 297, borderWidth: 0.5, borderColor: '#1f3288' }],
+      },
+      {}
+    );
+    assert.match(html, /class="doc-field"/);
+    assert.match(html, /left:0mm/);
+    assert.match(html, /width:210mm/);
+    assert.match(html, /height:297mm/);
+    assert.match(html, /border:0\.5mm solid #1f3288/);
+  });
+
+  test('a shaded box needs no border', () => {
+    const html = renderHtml({ ...VERSION, fields: [{ key: 'band', type: 'BOX', backgroundColor: '#eef4ff' }] }, {});
+    assert.match(html, /background-color:#eef4ff/);
+    assert.doesNotMatch(html, /border:/);
+  });
+});
+
 describe('renderHtml — draw order', () => {
   test('elements are painted in z order, so "bring to front" wins in the PDF too', () => {
     const html = renderHtml(

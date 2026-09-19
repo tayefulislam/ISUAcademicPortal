@@ -2,8 +2,15 @@
 // imported by both the Mongoose model (for its enums) and the pure engine
 // modules (for rendering/validation) without dragging Mongoose into a unit test.
 
-/** The kinds of field a template can define. */
-export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC', 'LINE'];
+/**
+ * The kinds of field a template can define.
+ *
+ * <p>`BOX` is a drawn element with no value of its own — a border and/or shading
+ * only. It exists so an admin can frame the page (an A4 border) or draw a
+ * rectangle, which a text field cannot do: a text field with no value prints
+ * nothing at all.
+ */
+export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC', 'LINE', 'BOX'];
 
 /**
  * Every value a field's `source` may take. Each one is resolved server-side

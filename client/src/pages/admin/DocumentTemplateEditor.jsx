@@ -10,6 +10,7 @@ import {
   Redo2,
   Save,
   Send,
+  Square,
   Trash2,
   Type,
   Undo2,
@@ -33,6 +34,7 @@ const PALETTE = [
   { type: 'AUTO', label: 'Dynamic field', hint: 'From the student record', icon: Variable },
   { type: 'IMAGE', label: 'Image / Logo', hint: 'From the server’s img folder', icon: ImageIcon },
   { type: 'LINE', label: 'Rule / line', hint: 'A divider', icon: Minus },
+  { type: 'BOX', label: 'Box / border', hint: 'A rectangle or page frame', icon: Square },
 ];
 
 function nextZ(fields) {
@@ -71,6 +73,20 @@ function makeElement({ type, asset, x = 20, y = 20, index, z }) {
   }
   if (type === 'LINE') {
     return { ...base, type: 'LINE', label: 'Rule', width: 170, height: 0.5 };
+  }
+  if (type === 'BOX') {
+    // A drawn rectangle — the admin frames the page or draws a panel. It has no
+    // value, so it prints its border/shading alone.
+    return {
+      ...base,
+      type: 'BOX',
+      label: 'Box',
+      width: 120,
+      height: 40,
+      borderWidth: 0.4,
+      borderStyle: 'solid',
+      borderColor: '#111111',
+    };
   }
   if (type === 'AUTO') {
     return { ...base, type: 'AUTO', label: 'Dynamic field', source: 'student.name', width: 120, height: 8, fontSize: 12 };
@@ -194,6 +210,19 @@ export default function DocumentTemplateEditor() {
   const addFromPalette = ({ type, asset, x = 20, y = 20 }) => {
     const element = makeElement({ type, asset, x, y, index: fields.length, z: nextZ(fields) });
     history.commit([...fields, element]);
+    setSelectedKey(element.key);
+  };
+
+  /**
+   * A border drawn exactly around the page — the frame a cover design usually
+   * has. One click rather than making the admin size a box to the page by hand.
+   */
+  const addPageBorder = () => {
+    const element = makeElement({ type: 'BOX', x: 0, y: 0, index: fields.length, z: nextZ(fields) });
+    history.commit([
+      ...fields,
+      { ...element, label: 'Page border', x: 0, y: 0, width: page.w, height: page.h, borderWidth: 0.5 },
+    ]);
     setSelectedKey(element.key);
   };
 
@@ -332,7 +361,7 @@ export default function DocumentTemplateEditor() {
   const sampleInput = (list) => {
     const data = {};
     for (const field of list) {
-      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC') continue;
+      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC' || field.type === 'BOX') continue;
       if (field.type === 'DATE') data[field.key] = '2026-09-20';
       else if (field.type === 'NUMBER') data[field.key] = '1';
       else data[field.key] = field.defaultValue || 'Sample';
@@ -514,6 +543,15 @@ export default function DocumentTemplateEditor() {
               </div>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={addPageBorder}
+            className="mt-2 w-full h-9 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-brand-50 hover:border-brand-300 flex items-center justify-center gap-1.5"
+            title="Add a border around the whole A4 page"
+          >
+            <Square size={13} /> A4 page border
+          </button>
 
           {assets.length > 0 && (
             <>

@@ -366,6 +366,20 @@ export default function TemplateCanvas({
             );
           }
 
+          if (field.type === 'BOX') {
+            return (
+              <div
+                key={field.key}
+                role="button"
+                tabIndex={0}
+                onPointerDown={(e) => startMove(e, field)}
+                className={`absolute ${cursor} ${selectionClass(field)}`}
+                style={{ ...box, height: num(field.height, 20) * pxPerMm }}
+                title={`${field.label} (box${field.locked ? ', locked' : ''})`}
+              />
+            );
+          }
+
           const text =
             field.type === 'STATIC'
               ? field.staticValue || field.label
