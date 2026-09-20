@@ -85,6 +85,85 @@ function textStyle(field, defaultFont) {
 }
 
 /**
+ * Positive column/row weights padded to `count` — the same relative-weight scheme
+ * the server renderer uses, so columns line up between the canvas and the PDF.
+ */
+function gridWeights(raw, count) {
+  const list = Array.isArray(raw) ? raw.slice(0, count) : [];
+  while (list.length < count) list.push(1);
+  return list.map((value) => {
+    const weight = Number(value);
+    return Number.isFinite(weight) && weight > 0 ? weight : 1;
+  });
+}
+
+/**
+ * The grid inside a TABLE element. Drawn as a real <table> at canvas scale, so
+ * what the admin sees is what the PDF prints (the server draws the same grid).
+ */
+function TableGrid({ field, pxPerMm }) {
+  const table = field.table && typeof field.table === 'object' ? field.table : {};
+  const cols = Math.max(1, Math.round(num(table.cols, 1)));
+  const rows = Math.max(1, Math.round(num(table.rows, 1)));
+  const weights = gridWeights(table.columnWidths, cols);
+  const rowWeights = gridWeights(table.rowHeights, rows);
+  const totalWidth = weights.reduce((sum, value) => sum + value, 0) || cols;
+  const totalHeight = rowWeights.reduce((sum, value) => sum + value, 0) || rows;
+  const cells = Array.isArray(table.cells) ? table.cells : [];
+  const heightMm = num(field.height, 40);
+
+  const borderWidth = num(field.borderWidth, 0);
+  const cellBorder = borderWidth > 0
+    ? `${Math.max(borderWidth * pxPerMm, 1)}px ${BORDER_STYLES.includes(field.borderStyle) ? field.borderStyle : 'solid'} ${HEX.test(field.borderColor || '') ? field.borderColor : '#111111'}`
+    : undefined;
+  const padding = num(table.cellPadding, 1.5) * pxPerMm;
+  const headerBackground = table.headerRow && HEX.test(table.headerBackground || '') ? table.headerBackground : '';
+
+  return (
+    <table style={{ width: '100%', height: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+      <colgroup>
+        {weights.map((weight, index) => (
+          <col key={index} style={{ width: `${(weight / totalWidth) * 100}%` }} />
+        ))}
+      </colgroup>
+      <tbody>
+        {Array.from({ length: rows }).map((_, r) => (
+          <tr key={r} style={{ height: `${(heightMm * rowWeights[r]) / totalHeight}mm` }}>
+            {Array.from({ length: cols }).map((__, c) => {
+              const isHeader = Boolean(table.headerRow) && r === 0;
+              return (
+                <td
+                  key={c}
+                  style={{
+                    border: cellBorder,
+                    padding,
+                    verticalAlign: 'top',
+                    textAlign: field.align || 'left',
+                    fontSize: `${num(field.fontSize, 11) * 1.1}px`,
+                    lineHeight: num(field.lineHeight, 1.25),
+                    letterSpacing: num(field.letterSpacing, 0) ? `${num(field.letterSpacing, 0) * 0.35}px` : undefined,
+                    fontFamily: field.fontFamily || undefined,
+                    fontWeight: isHeader || field.bold ? 700 : 400,
+                    fontStyle: field.italic ? 'italic' : 'normal',
+                    color: field.color || '#111111',
+                    backgroundColor: isHeader && headerBackground ? headerBackground : undefined,
+                    overflow: 'hidden',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {cells[r * cols + c] || ''}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
  * The A4 canvas the admin composes the design on.
  *
  * <p>Coordinates are millimetres throughout — the same units the server renders
@@ -380,6 +459,32 @@ export default function TemplateCanvas({
                 style={{ ...box, height: num(field.height, 20) * pxPerMm }}
                 title={`${field.label} (box${field.locked ? ', locked' : ''})`}
               />
+            );
+          }
+
+          if (field.type === 'TABLE') {
+            // The wrapper stays borderless — the cells draw the gridlines, so the
+            // outer edge is not doubled (exactly as the PDF renderer does it).
+            return (
+              <div
+                key={field.key}
+                role="button"
+                tabIndex={0}
+                onPointerDown={(e) => startMove(e, field)}
+                className={`absolute ${cursor} overflow-hidden ${selectionClass(field)}`}
+                style={{
+                  left: box.left,
+                  top: box.top,
+                  width: box.width,
+                  zIndex: box.zIndex,
+                  height: num(field.height, 40) * pxPerMm,
+                  borderRadius: box.borderRadius,
+                  backgroundColor: box.backgroundColor,
+                }}
+                title={`${field.label} (table${field.locked ? ', locked' : ''})`}
+              >
+                <TableGrid field={field} pxPerMm={pxPerMm} />
+              </div>
             );
           }
 

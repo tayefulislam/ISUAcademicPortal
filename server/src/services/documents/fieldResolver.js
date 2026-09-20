@@ -1,5 +1,5 @@
 import { ApiError } from '../../utils/ApiError.js';
-import { EDITABLE_TYPES } from './fieldSources.js';
+import { EDITABLE_TYPES, FIELD_SOURCES } from './fieldSources.js';
 import { cleanText } from './sanitize.js';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -92,6 +92,34 @@ export function validateFieldValue(field, value) {
 }
 
 /**
+ * A TABLE element's resolved grid (row-major, 2D). A cell whose matching
+ * `cellSources` entry names an official source prints that source's value;
+ * every other cell prints its own stored text. The source is validated against
+ * the same allowlist an AUTO field uses, so a cell can never read anything else.
+ */
+function resolveTableGrid(table, context) {
+  const source = table && typeof table === 'object' ? table : {};
+  const rows = Math.max(0, Math.round(Number(source.rows) || 0));
+  const cols = Math.max(0, Math.round(Number(source.cols) || 0));
+  const cells = Array.isArray(source.cells) ? source.cells : [];
+  const sources = Array.isArray(source.cellSources) ? source.cellSources : [];
+
+  const grid = [];
+  for (let r = 0; r < rows; r += 1) {
+    const row = [];
+    for (let c = 0; c < cols; c += 1) {
+      const index = r * cols + c;
+      const from = sources[index];
+      row.push(from && FIELD_SOURCES.includes(from)
+        ? String(context[from] ?? '')
+        : String(cells[index] ?? ''));
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+/**
  * Builds the values a template renders with.
  *
  * <p>The security rule lives here: a field's type decides where its value comes
@@ -128,6 +156,15 @@ export function buildRenderData({ fields = [], context = {}, inputData = {} }) {
       value = cleanText(source, field.validation?.maxLength || 0);
       validateFieldValue(field, value);
       resolved[key] = { type: field.type, value };
+    } else if (field.type === 'TABLE') {
+      // A table is drawn rather than typed: its grid is resolved here (official
+      // cell sources included) and handed to the renderer as a JSON string,
+      // which is what the flat `values` map carries. It carries its own value
+      // already, so it skips the prefix/suffix formatting step below.
+      const grid = resolveTableGrid(field.table, context);
+      values[key] = JSON.stringify(grid);
+      resolved[key] = { type: 'TABLE', value: grid };
+      continue;
     } else if (field.type === 'IMAGE') {
       // Images are modelled but not yet collectable from the student; a static
       // image (the university logo) is supplied by the template itself.

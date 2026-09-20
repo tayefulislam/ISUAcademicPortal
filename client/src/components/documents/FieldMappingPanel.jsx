@@ -19,6 +19,7 @@ import {
   Underline,
 } from 'lucide-react';
 import FontSelect from './FontSelect.jsx';
+import TableEditor from './TableEditor.jsx';
 
 // The property panel for one element — the Word-like "format" pane. Everything
 // the renderer understands is editable here: type, source, geometry, typeface,
@@ -64,7 +65,11 @@ export default function FieldMappingPanel({
   const isImage = field.type === 'IMAGE';
   const isLine = field.type === 'LINE';
   const isBox = field.type === 'BOX';
-  const isTextual = !isImage && !isLine && !isBox;
+  const isTable = field.type === 'TABLE';
+  // A table is not a value the student types, but it does have a typeface: its
+  // cells inherit the field's font, size, colour and alignment.
+  const isTextual = !isImage && !isLine && !isBox && !isTable;
+  const wantsTypography = isTextual || isTable;
 
   const nudge = (dx, dy) => set({
     x: Math.max(0, Math.round((num(field.x, 0) + dx) * 10) / 10),
@@ -129,6 +134,7 @@ export default function FieldMappingPanel({
             isImage ? 'An image from the server’s img/ folder.' :
             isLine ? 'A rule. Its height is its thickness.' :
             isBox ? 'A drawn box — border and/or shading, no text.' :
+            isTable ? 'A table of cells — type in each cell, or bind it to a source.' :
             'Typed by the student on the generate screen.'}
         </p>
       </div>
@@ -169,7 +175,7 @@ export default function FieldMappingPanel({
         </div>
       )}
 
-      {!isAuto && !isStatic && !isImage && !isLine && !isBox && (
+      {!isAuto && !isStatic && !isImage && !isLine && !isBox && !isTable && (
         <>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={Boolean(field.required)} onChange={(e) => set({ required: e.target.checked })} />
@@ -180,6 +186,17 @@ export default function FieldMappingPanel({
             <input value={field.defaultValue || ''} onChange={(e) => set({ defaultValue: e.target.value })} className={inputClass} />
           </div>
         </>
+      )}
+
+      {/* ---------- Table ---------- */}
+      {isTable && (
+        <div className="border-t border-slate-100 pt-3">
+          <TableEditor
+            table={field.table}
+            meta={meta}
+            onChange={(table) => set({ table })}
+          />
+        </div>
       )}
 
       {/* ---------- Position & size ---------- */}
@@ -225,8 +242,8 @@ export default function FieldMappingPanel({
         </div>
       </div>
 
-      {/* ---------- Typeface (text and rules) ---------- */}
-      {isTextual && (
+      {/* ---------- Typeface (text, tables and rules) ---------- */}
+      {wantsTypography && (
         <div className="border-t border-slate-100 pt-3 space-y-3">
           <label className="block text-xs font-semibold text-slate-500">Text</label>
 

@@ -235,3 +235,57 @@ describe('renderHtml — Word-like styling', () => {
     assert.match(html, /background-color:#f1f5f9/);
   });
 });
+
+describe('renderHtml — table elements', () => {
+  const TABLE = {
+    key: 'info', type: 'TABLE', x: 20, y: 40, width: 150, height: 45, fontSize: 11, borderWidth: 0.25,
+    table: {
+      rows: 2, cols: 3, headerRow: true, headerBackground: '#f1f5f9', cellPadding: 1.5,
+      columnWidths: [1, 1, 1], rowHeights: [1, 1],
+      cells: ['Name', 'ID', 'Batch', '', '', ''],
+      cellSources: ['', '', '', 'student.name', 'student.studentId', 'student.batch'],
+    },
+  };
+
+  test('draws a real table with one cell per row × col', () => {
+    const html = renderHtml({ ...VERSION, fields: [TABLE] }, {});
+    assert.match(html, /<table class="doc-table"/);
+    assert.equal((html.match(/<col /g) || []).length, 3);
+    assert.equal((html.match(/<td /g) || []).length, 6);
+    assert.match(html, />Name</);
+    assert.match(html, /left:20mm/);
+    assert.match(html, /width:150mm/);
+  });
+
+  test('the resolved grid fills the cells, official sources included', () => {
+    const values = { info: JSON.stringify([['Name', 'ID', 'Batch'], ['Rahim', '221', 'CSE-1']]) };
+    const html = renderHtml({ ...VERSION, fields: [TABLE] }, values);
+    assert.match(html, />Rahim</);
+    assert.match(html, />CSE-1</);
+  });
+
+  test('a header row is shaded and bold', () => {
+    const html = renderHtml({ ...VERSION, fields: [TABLE] }, {});
+    assert.match(html, /background-color:#f1f5f9/);
+    assert.match(html, /font-weight:700/);
+  });
+
+  test('cell text cannot inject markup', () => {
+    const values = { info: JSON.stringify([['<script>alert(1)</script>']]) };
+    const html = renderHtml({ ...VERSION, fields: [TABLE] }, values);
+    assert.doesNotMatch(html, /<script>alert/);
+    assert.match(html, /&lt;script&gt;/);
+  });
+
+  test('borders are drawn on the cells, never doubled on the wrapper', () => {
+    const html = renderHtml({ ...VERSION, fields: [TABLE] }, {});
+    assert.match(html, /<td style="border:0\.25mm solid #111111/);
+    // The wrapper div's own style attribute carries no border declaration.
+    assert.doesNotMatch(html, /doc-field" style="[^"]*border:/);
+  });
+
+  test('a table with no grid draws nothing', () => {
+    const html = renderHtml({ ...VERSION, fields: [{ key: 't', type: 'TABLE' }] }, {});
+    assert.doesNotMatch(html, /<table/);
+  });
+});

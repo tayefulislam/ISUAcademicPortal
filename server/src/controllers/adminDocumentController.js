@@ -8,12 +8,22 @@ import { storeTemplateSource, getTemplateSourceStream, deleteTemplateSource } fr
 import { normalizeFields, normalizeStyleConfig } from '../services/documents/normalizeFields.js';
 import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS, FONT_CHOICES, BORDER_STYLES } from '../services/documents/fieldSources.js';
 import { FIELD_BLOCKS } from '../services/documents/documentBlocks.js';
-import { listAssets, readAssetBuffer, assetMimeType, isAssetFileName } from '../services/documents/assets.js';
+import {
+  listAssets,
+  readAssetBuffer,
+  assetMimeType,
+  isDocumentAssetName,
+  saveAsset,
+  deleteAsset,
+} from '../services/documents/assets.js';
 import { getSafeExtension } from '../utils/fileTypes.js';
 
 // A template's reference design may only be a PDF or a raster image — those are
 // the two the admin can map fields onto. Anything else is rejected up front.
 const SOURCE_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+// The asset library's own allowlist: the raster images a design can place, plus
+// PDFs, which are offered as a reference design rather than as an element.
+const ASSET_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']);
 const AUDIENCES = new Set(TEMPLATE_AUDIENCES);
 
 function slugify(value) {
@@ -125,10 +135,11 @@ export const getMetadata = asyncHandler(async (req, res) => {
 });
 
 /**
- * The images a template may place — the university logo and anything else in the
- * server's `img/` folder. Listed by name (not uploaded through a template), so
- * the same logo can be used by many designs and a change to it is a file
- * replacement rather than an edit to each one.
+ * The asset library a template may draw from: the bundled images in the
+ * server's `img/` folder (the university logo) plus anything an admin has
+ * uploaded from the editor. Listed by name so the same logo can be placed on
+ * any number of designs, and `kind`/`source` let the editor offer an uploaded
+ * file a delete button while leaving a bundled one alone.
  */
 export const getAssets = asyncHandler(async (req, res) => {
   const assets = await listAssets();
@@ -141,16 +152,49 @@ export const getAssets = asyncHandler(async (req, res) => {
   });
 });
 
-/** Streams one image for the editor (the canvas background and the picker). */
+/** Streams one asset for the editor (a canvas image, or a PDF preview/reference). */
 export const streamAsset = asyncHandler(async (req, res) => {
   const name = String(req.params.name || '');
-  if (!isAssetFileName(name)) throw new ApiError(400, 'Invalid image name');
+  if (!isDocumentAssetName(name)) throw new ApiError(400, 'Invalid file name');
 
   const buffer = await readAssetBuffer(name);
   res.setHeader('Content-Type', assetMimeType(name));
-  // Private: these are fetched with the caller's token, and a logo rarely changes.
+  // Private: these are fetched with the caller's token, and an asset rarely changes.
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.send(buffer);
+});
+
+/**
+ * Uploads one or more images/PDFs into the library. Each lands under a
+ * collision-free name in the private asset folder, so an upload can never
+ * overwrite the bundled logo or an earlier upload.
+ */
+export const uploadAssets = asyncHandler(async (req, res) => {
+  const files = Array.isArray(req.files) ? req.files : [];
+  if (!files.length) throw new ApiError(400, 'Choose at least one file to upload');
+
+  const saved = [];
+  for (const file of files) {
+    if (!ASSET_MIME.has(file.mimetype)) {
+      throw new ApiError(400, `Unsupported file type: ${file.mimetype || 'unknown'}`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    saved.push(await saveAsset(file.buffer, file.originalname));
+  }
+
+  res.status(201).json({
+    success: true,
+    data: saved.map((asset) => ({
+      ...asset,
+      url: `/api/admin/document-assets/${encodeURIComponent(asset.name)}`,
+    })),
+  });
+});
+
+/** Removes one uploaded asset. A bundled repository file cannot be deleted this way. */
+export const deleteAssetFile = asyncHandler(async (req, res) => {
+  await deleteAsset(String(req.params.name || ''));
+  res.json({ success: true, message: 'File deleted' });
 });
 
 export const listTemplates = asyncHandler(async (req, res) => {

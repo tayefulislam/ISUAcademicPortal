@@ -654,13 +654,22 @@ export const adminDocumentApi = {
   // dropdowns from — served so the client can never drift from the server.
   meta: () => api.get('/admin/document-templates/meta').then((r) => r.data),
   // The image library a design can place (the university logo and anything else
-  // in the server's img/ folder).
+  // in the server's img/ folder) plus any files uploaded from the editor.
   assets: () => api.get('/admin/document-assets').then((r) => r.data),
+  // Uploads one or more images/PDFs into the library (multipart field `files`).
+  uploadAssets: (formData) =>
+    api.post('/admin/document-assets', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  // Removes one uploaded asset. A bundled repository file cannot be deleted.
+  deleteAsset: (name) => api.delete(`/admin/document-assets/${encodeURIComponent(name)}`).then((r) => r.data),
   // Fetched as a blob: the images are served by the authenticated API, never as
   // public URLs, so an <img src> cannot carry the token itself.
   assetUrl: (name) =>
     api.get(`/admin/document-assets/${encodeURIComponent(name)}`, { responseType: 'blob' })
       .then((r) => URL.createObjectURL(r.data)),
+  // The raw bytes, for turning an uploaded file into a File (e.g. to adopt a
+  // library PDF as the design's reference).
+  assetBlob: (name) =>
+    api.get(`/admin/document-assets/${encodeURIComponent(name)}`, { responseType: 'blob' }).then((r) => r.data),
   templates: (params) => api.get('/admin/document-templates', { params }).then((r) => r.data),
   template: (id) => api.get(`/admin/document-templates/${id}`).then((r) => r.data),
   create: (formData) =>

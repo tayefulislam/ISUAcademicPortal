@@ -155,3 +155,42 @@ describe('validateFieldValue', () => {
     assert.doesNotThrow(() => validateFieldValue({ label: 'Name' }, ''));
   });
 });
+
+describe('buildRenderData — table elements', () => {
+  const table = {
+    key: 'info',
+    type: 'TABLE',
+    table: {
+      rows: 2,
+      cols: 2,
+      cells: ['Name', 'ID', '', ''],
+      // The second row is bound to official sources, so a table can print real
+      // record data without the student being able to type it.
+      cellSources: ['', '', 'student.name', 'student.studentId'],
+    },
+  };
+
+  test('resolves a row-major grid, official sources included', () => {
+    const { values, resolved } = buildRenderData({ fields: [table], context: CONTEXT, inputData: {} });
+    assert.deepEqual(resolved.info.value, [['Name', 'ID'], ['Rahim Uddin', '2210000000000001']]);
+    assert.deepEqual(JSON.parse(values.info), [['Name', 'ID'], ['Rahim Uddin', '2210000000000001']]);
+  });
+
+  test('a student cannot supply a cell value through inputData', () => {
+    const { resolved } = buildRenderData({
+      fields: [table],
+      context: CONTEXT,
+      inputData: { info: 'FORGED', 'student.name': 'Someone Else' },
+    });
+    assert.deepEqual(resolved.info.value[1], ['Rahim Uddin', '2210000000000001']);
+  });
+
+  test('an unknown cell source is ignored and the typed text prints instead', () => {
+    const { resolved } = buildRenderData({
+      fields: [{ key: 't', type: 'TABLE', table: { rows: 1, cols: 1, cells: ['Kept'], cellSources: ['student.password'] } }],
+      context: CONTEXT,
+      inputData: {},
+    });
+    assert.deepEqual(resolved.t.value, [['Kept']]);
+  });
+});

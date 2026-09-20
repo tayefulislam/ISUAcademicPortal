@@ -5,17 +5,20 @@ import {
   AlignLeft,
   ArrowLeft,
   Eye,
+  FileText,
   Image as ImageIcon,
   Minus,
   Redo2,
   Save,
   Send,
   Square,
+  Table,
   Trash2,
   Type,
   Undo2,
   Upload,
   Variable,
+  X,
   Zap,
   ZoomIn,
   ZoomOut,
@@ -33,7 +36,8 @@ import FontSelect from '../../components/documents/FontSelect.jsx';
 const PALETTE = [
   { type: 'STATIC', label: 'Text', hint: 'Fixed text', icon: Type },
   { type: 'AUTO', label: 'Dynamic field', hint: 'From the student record', icon: Variable },
-  { type: 'IMAGE', label: 'Image / Logo', hint: 'From the server’s img folder', icon: ImageIcon },
+  { type: 'IMAGE', label: 'Image / Logo', hint: 'From the asset library', icon: ImageIcon },
+  { type: 'TABLE', label: 'Table', hint: 'A grid of cells, like a Word table', icon: Table },
   { type: 'LINE', label: 'Rule / line', hint: 'A divider', icon: Minus },
   { type: 'BOX', label: 'Box / border', hint: 'A rectangle or page frame', icon: Square },
 ];
@@ -74,6 +78,34 @@ function makeElement({ type, asset, x = 20, y = 20, index, z }) {
   }
   if (type === 'LINE') {
     return { ...base, type: 'LINE', label: 'Rule', width: 170, height: 0.5 };
+  }
+  if (type === 'TABLE') {
+    // A 3×3 grid to start with, shaded header row, hairline borders — the same
+    // default a word processor gives you, ready to type into.
+    const rows = 3;
+    const cols = 3;
+    return {
+      ...base,
+      type: 'TABLE',
+      label: 'Table',
+      width: 120,
+      height: 40,
+      fontSize: 11,
+      borderWidth: 0.25,
+      borderStyle: 'solid',
+      borderColor: '#111111',
+      table: {
+        rows,
+        cols,
+        headerRow: true,
+        headerBackground: '#f1f5f9',
+        cellPadding: 1.5,
+        columnWidths: Array.from({ length: cols }, () => 1),
+        rowHeights: Array.from({ length: rows }, () => 1),
+        cells: Array.from({ length: rows * cols }, () => ''),
+        cellSources: Array.from({ length: rows * cols }, () => ''),
+      },
+    };
   }
   if (type === 'BOX') {
     // A drawn rectangle — the admin frames the page or draws a panel. It has no
@@ -125,6 +157,7 @@ export default function DocumentTemplateEditor() {
   const [pageStyle, setPageStyle] = useState({ fontFamily: '', baseFontSize: 12, textColor: '#111111' });
   // The editor's own clipboard, for Ctrl+C / Ctrl+V of one element.
   const clipboard = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   const { data: templateData } = useQuery({
     queryKey: ['admin-document-template', id],
@@ -135,15 +168,20 @@ export default function DocumentTemplateEditor() {
   const { data: metaData } = useQuery({ queryKey: ['admin-document-meta'], queryFn: adminDocumentApi.meta });
   const meta = metaData?.data;
 
-  // The image library (the university logo lives here). Fetched as blobs,
-  // because the images are served by the authenticated API.
+  // The asset library — the bundled university logo plus anything uploaded from
+  // here. Images are fetched as blobs (the library sits behind the authenticated
+  // API) for their previews; a PDF needs none, because it is offered as a
+  // design's reference rather than drawn as an element.
   const { data: assetData } = useQuery({ queryKey: ['admin-document-assets'], queryFn: adminDocumentApi.assets });
   const assetList = assetData?.data || [];
+  const imageList = useMemo(() => assetList.filter((a) => a.kind !== 'pdf'), [assetList]);
+  const pdfList = useMemo(() => assetList.filter((a) => a.kind === 'pdf'), [assetList]);
+
   const { data: assetUrls } = useQuery({
-    queryKey: ['admin-document-asset-urls', assetList.map((a) => a.name).join(',')],
+    queryKey: ['admin-document-asset-urls', imageList.map((a) => a.name).join(',')],
     queryFn: async () => {
       const map = {};
-      for (const asset of assetList) {
+      for (const asset of imageList) {
         try {
           map[asset.name] = await adminDocumentApi.assetUrl(asset.name);
         } catch {
@@ -152,12 +190,12 @@ export default function DocumentTemplateEditor() {
       }
       return map;
     },
-    enabled: assetList.length > 0,
+    enabled: imageList.length > 0,
     staleTime: Infinity,
   });
   const assets = useMemo(
-    () => assetList.map((a) => ({ ...a, name: a.name, url: assetUrls?.[a.name] || '' })),
-    [assetList, assetUrls]
+    () => imageList.map((a) => ({ ...a, name: a.name, url: assetUrls?.[a.name] || '' })),
+    [imageList, assetUrls]
   );
 
   const activeVersion = versionNumber ?? template?.currentVersion ?? null;
@@ -244,6 +282,57 @@ export default function DocumentTemplateEditor() {
     const element = makeElement({ type, asset, x, y, index: fields.length, z: nextZ(fields) });
     history.commit([...fields, element]);
     setSelectedKey(element.key);
+  };
+
+  const refreshAssets = () => {
+    qc.invalidateQueries({ queryKey: ['admin-document-assets'] });
+    qc.invalidateQueries({ queryKey: ['admin-document-asset-urls'] });
+  };
+
+  /** Uploads images/PDFs into the library, ready to use on the page. */
+  const uploadAssets = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    setUploading(true);
+    try {
+      const payload = new FormData();
+      files.forEach((file) => payload.append('files', file));
+      await adminDocumentApi.uploadAssets(payload);
+      toast(`${files.length} file${files.length === 1 ? '' : 's'} uploaded`, 'success');
+      refreshAssets();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Could not upload those files', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAsset = async (asset) => {
+    if (!window.confirm(`Delete “${asset.name}” from the library?`)) return;
+    try {
+      await adminDocumentApi.deleteAsset(asset.name);
+      toast('File deleted', 'success');
+      refreshAssets();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Could not delete that file', 'error');
+    }
+  };
+
+  /**
+   * Adopts a library file as the design's reference. The bytes are fetched (the
+   * library is behind the authenticated API) and handed to the normal reference
+   * flow, so “Save as new version” persists it exactly like a fresh upload.
+   */
+  const useAssetAsReference = async (asset) => {
+    try {
+      const blob = await adminDocumentApi.assetBlob(asset.name);
+      setSourceFile(new File([blob], asset.name, { type: asset.mimeType || blob.type || 'application/pdf' }));
+      toast('Reference set — save as a new version to keep it', 'success');
+    } catch {
+      toast('Could not load that file', 'error');
+    }
   };
 
   /**
@@ -409,7 +498,7 @@ export default function DocumentTemplateEditor() {
   const sampleInput = (list) => {
     const data = {};
     for (const field of list) {
-      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC' || field.type === 'BOX') continue;
+      if (field.type === 'LINE' || field.type === 'IMAGE' || field.type === 'STATIC' || field.type === 'BOX' || field.type === 'TABLE') continue;
       if (field.type === 'DATE') data[field.key] = '2026-09-20';
       else if (field.type === 'NUMBER') data[field.key] = '1';
       else data[field.key] = field.defaultValue || 'Sample';
@@ -568,9 +657,12 @@ export default function DocumentTemplateEditor() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[190px_minmax(0,1fr)_320px] gap-5">
+      {/* Three independently scrolling columns: the middle canvas stays put
+          while either side rail scrolls under the mouse, so the page never
+          slides out of view while an element or its settings is being found. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[190px_minmax(0,1fr)_320px] gap-5 items-start">
         {/* Palette — drag an element onto the page. */}
-        <aside className="bg-white border border-slate-200 rounded-xl p-3 h-fit lg:sticky lg:top-20">
+        <aside className="bg-white border border-slate-200 rounded-xl p-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
           <h2 className="text-sm font-semibold text-slate-700 mb-1">Elements</h2>
           <p className="text-[11px] text-slate-400 mb-3">Drag onto the page, or click to add.</p>
           <div className="space-y-1.5">
@@ -637,13 +729,34 @@ export default function DocumentTemplateEditor() {
             </>
           )}
 
-          {assets.length > 0 && (
-            <>
-              <h3 className="text-[11px] font-semibold text-slate-500 mt-4 mb-2">Images</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {assets.map((asset) => (
+          {/* The asset library: the bundled images plus anything uploaded here.
+              An image is dragged onto the page; a PDF is adopted as the design's
+              reference instead, since only a raster can be drawn as an element. */}
+          <div className="flex items-center justify-between mt-4 mb-2">
+            <h3 className="text-[11px] font-semibold text-slate-500">Assets</h3>
+            <label className="flex items-center gap-1 text-[10px] font-semibold text-brand-600 hover:underline cursor-pointer">
+              <Upload size={11} />
+              {uploading ? 'Uploading…' : 'Upload'}
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                className="hidden"
+                disabled={uploading}
+                onChange={uploadAssets}
+              />
+            </label>
+          </div>
+
+          {assetList.length === 0 && (
+            <p className="text-[10px] text-slate-400">No files yet — upload a logo, image or PDF.</p>
+          )}
+
+          {imageList.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {assets.map((asset) => (
+                <div key={asset.name} className="relative group">
                   <div
-                    key={asset.name}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.effectAllowed = 'copy';
@@ -651,19 +764,58 @@ export default function DocumentTemplateEditor() {
                     }}
                     onClick={() => addFromPalette({ type: 'IMAGE', asset: asset.name })}
                     className="p-1.5 rounded-lg border border-slate-200 cursor-grab active:cursor-grabbing hover:bg-brand-50 hover:border-brand-300"
-                    title={asset.name}
+                    title={`${asset.name} — drag onto the page`}
                   >
                     {asset.url
                       ? <img src={asset.url} alt={asset.name} className="h-10 w-full object-contain" />
                       : <span className="block h-10 text-[10px] text-slate-400 text-center leading-10">no preview</span>}
                   </div>
-                ))}
-              </div>
-            </>
+                  {asset.source === 'uploaded' && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeAsset(asset); }}
+                      className="absolute -top-1 -right-1 hidden group-hover:grid place-items-center w-4 h-4 rounded-full bg-slate-700 text-white"
+                      title="Delete from the library"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pdfList.length > 0 && (
+            <div className="space-y-1 mt-2">
+              {pdfList.map((asset) => (
+                <div key={asset.name} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200">
+                  <FileText size={12} className="text-red-500 shrink-0" />
+                  <span className="truncate flex-1 text-[10px] text-slate-600" title={asset.name}>{asset.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => useAssetAsReference(asset)}
+                    className="shrink-0 text-[10px] font-semibold text-brand-600 hover:underline"
+                    title="Use as the design's reference background"
+                  >
+                    Use
+                  </button>
+                  {asset.source === 'uploaded' && (
+                    <button
+                      type="button"
+                      onClick={() => removeAsset(asset)}
+                      className="shrink-0 p-0.5 rounded text-slate-300 hover:text-red-600"
+                      title="Delete from the library"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </aside>
 
-        <div>
+        <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto">
           <div className="flex items-center justify-between mb-3 gap-3">
             <p className="text-xs text-slate-500">
               Drag to move · drag a <strong>grip</strong> to resize · <kbd className="px-1 border rounded">Ctrl</kbd> for
@@ -710,7 +862,7 @@ export default function DocumentTemplateEditor() {
           )}
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
           {/* Page defaults: the typography the whole document inherits, part of
               the version rather than repeated on every element. */}
           <aside className="bg-white border border-slate-200 rounded-xl p-3">
@@ -786,7 +938,7 @@ export default function DocumentTemplateEditor() {
             </button>
           </aside>
 
-          <aside className="bg-white border border-slate-200 rounded-xl p-4 lg:sticky lg:top-20">
+          <aside className="bg-white border border-slate-200 rounded-xl p-4">
             <h2 className="text-sm font-semibold text-slate-700 mb-3">Element</h2>
             <FieldMappingPanel
               field={selectedField}

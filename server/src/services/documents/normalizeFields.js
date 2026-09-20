@@ -4,6 +4,9 @@ import { isAssetFileName } from './assets.js';
 
 // Bounds so a template cannot define an unbounded page of fields.
 const MAX_FIELDS = 200;
+const MAX_TABLE_ROWS = 40;
+const MAX_TABLE_COLS = 12;
+const MAX_TABLE_CELL_CHARS = 500;
 const ALIGNMENTS = ['left', 'center', 'right'];
 const BORDER_STYLES = ['none', 'solid', 'dashed', 'dotted'];
 const COLOR = /^#[0-9a-fA-F]{3,8}$/;
@@ -16,6 +19,53 @@ function numOr(value, fallback) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+/** Column/row weights: one positive number each, padded to `count`. */
+function normalizeWeights(raw, count) {
+  const list = Array.isArray(raw)
+    ? raw.slice(0, count).map((value) => clamp(numOr(value, 1), 0.1, 100))
+    : [];
+  while (list.length < count) list.push(1);
+  return list;
+}
+
+/**
+ * The grid a TABLE element draws. Cells are stored FLAT (row-major, length
+ * rows × cols) rather than as nested arrays: it is easier to keep exactly
+ * rows × cols on resize, and it maps cleanly onto the Mongoose schema.
+ *
+ * <p>Text cells print as typed; a cell with a `cellSources` entry prints the
+ * official value for that source instead — validated against the same allowlist
+ * an AUTO field uses, so a cell can never read anything else.
+ */
+function normalizeTable(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const rows = clamp(Math.round(numOr(source.rows, 3)), 1, MAX_TABLE_ROWS);
+  const cols = clamp(Math.round(numOr(source.cols, 3)), 1, MAX_TABLE_COLS);
+  const size = rows * cols;
+
+  const cells = Array.isArray(source.cells)
+    ? source.cells.slice(0, size).map((cell) => String(cell ?? '').slice(0, MAX_TABLE_CELL_CHARS))
+    : [];
+  while (cells.length < size) cells.push('');
+
+  const cellSources = Array.isArray(source.cellSources)
+    ? source.cellSources.slice(0, size).map((value) => (FIELD_SOURCES.includes(String(value)) ? String(value) : ''))
+    : [];
+  while (cellSources.length < size) cellSources.push('');
+
+  return {
+    rows,
+    cols,
+    headerRow: Boolean(source.headerRow),
+    headerBackground: COLOR.test(String(source.headerBackground || '')) ? source.headerBackground : '#f1f5f9',
+    cellPadding: clamp(numOr(source.cellPadding, 1.5), 0, 10),
+    columnWidths: normalizeWeights(source.columnWidths, cols),
+    rowHeights: normalizeWeights(source.rowHeights, rows),
+    cells,
+    cellSources,
+  };
 }
 
 /**
@@ -138,6 +188,9 @@ export function normalizeFields(raw) {
       asset: isAssetFileName(field.asset) ? String(field.asset).trim() : '',
       zIndex: clamp(numOr(field.zIndex, index), -999, 999),
       locked: Boolean(field.locked),
+      // Only a TABLE carries a grid; every other type leaves the path unset so a
+      // document is not padded with an empty table on each of its elements.
+      table: type === 'TABLE' ? normalizeTable(field.table) : undefined,
     };
   });
 }

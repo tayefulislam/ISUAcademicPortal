@@ -30,6 +30,24 @@ const formattingSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// A TABLE element's grid. Cells are FLAT and row-major (length rows × cols); a
+// cell's text is printed as typed unless the matching `cellSources` entry names
+// an official source, which wins — see normalizeTable and renderTable.
+const tableSchema = new mongoose.Schema(
+  {
+    rows: { type: Number, default: 0 },
+    cols: { type: Number, default: 0 },
+    headerRow: { type: Boolean, default: false },
+    headerBackground: { type: String, default: '#f1f5f9' },
+    cellPadding: { type: Number, default: 1.5 },
+    columnWidths: { type: [Number], default: [] },
+    rowHeights: { type: [Number], default: [] },
+    cells: { type: [String], default: [] },
+    cellSources: { type: [String], default: [] },
+  },
+  { _id: false }
+);
+
 const fieldSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, trim: true },
@@ -77,6 +95,10 @@ const fieldSchema = new mongoose.Schema(
     // An IMAGE element's file name in the server's `img/` folder (e.g. the
     // university logo). A name, never a path or a URL — see services/documents/assets.js.
     asset: { type: String, default: '' },
+
+    // A TABLE element's grid. Unset on every other element type, so a document
+    // is not padded with an empty table for each of its fields.
+    table: { type: tableSchema, default: undefined },
     // Draw order within the page; a higher number paints on top.
     zIndex: { type: Number, default: 0 },
     // A locked element cannot be dragged or resized on the canvas — the same
