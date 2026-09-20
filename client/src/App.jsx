@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext.jsx';
 import { initAnalytics, trackPageView } from './utils/analytics.js';
-import { initClarity, trackClarityRoute } from './analytics/clarity.js';
+import { trackClarityRoute } from './analytics/clarity.js';
 import MainLayout from './layouts/MainLayout.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import SuperAdminLayout from './layouts/SuperAdminLayout.jsx';
@@ -112,8 +112,8 @@ export default function App() {
   const { user } = useAuth();
   useEffect(() => {
     initAnalytics();
-    // Starts Clarity immediately when the build is configured — no prompt.
-    initClarity();
+    // Microsoft Clarity is started from main.jsx (and its script tag from
+    // index.html's <head>), so it is already running by the time this mounts.
   }, []);
 
   // Listens for the service worker's notificationclick postMessage (spec

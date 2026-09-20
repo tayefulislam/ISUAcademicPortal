@@ -1,4 +1,4 @@
-import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
+import { precacheAndRoute, createHandlerBoundToURL, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
@@ -7,6 +7,12 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 // injectManifest mode: vite-plugin-pwa injects the precache list here at
 // build time — this is the one thing generateSW used to do for us for free.
 precacheAndRoute(self.__WB_MANIFEST);
+
+// Precaches written by an earlier build are dead weight once the new manifest
+// is in place. Without this, a device that has been away for a few releases can
+// keep serving an old app shell — the classic "it works on my PC but not on my
+// phone" report, where the phone simply never picked up the newer bundle.
+cleanupOutdatedCaches();
 
 // generateSW auto-added an index.html SPA navigation fallback (denylisting
 // /uploads/ so a direct link to an uploaded file never gets swapped for the
@@ -98,4 +104,9 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// Take over immediately rather than waiting for every tab to close: a phone
+// that keeps the app in the background for days would otherwise hold the old
+// version indefinitely. (skipWaiting activates this worker; clients.claim hands
+// it the already-open pages, so the next navigation is served fresh.)
 self.skipWaiting();
+self.clients.claim();
