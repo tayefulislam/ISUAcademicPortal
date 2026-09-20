@@ -9,8 +9,13 @@
  * only. It exists so an admin can frame the page (an A4 border) or draw a
  * rectangle, which a text field cannot do: a text field with no value prints
  * nothing at all.
+ *
+ * <p>`TABLE` is a drawn grid — rows and columns of cells, like a Word table. Its
+ * cells carry text of their own, and any cell may instead be bound to one of the
+ * official sources (so a row can print the student's name), which is why it
+ * resolves through the same allowlist an AUTO field does.
  */
-export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC', 'LINE', 'BOX'];
+export const FIELD_TYPES = ['AUTO', 'USER_INPUT', 'TEXT', 'DATE', 'NUMBER', 'IMAGE', 'STATIC', 'LINE', 'BOX', 'TABLE'];
 
 /**
  * Every value a field's `source` may take. Each one is resolved server-side

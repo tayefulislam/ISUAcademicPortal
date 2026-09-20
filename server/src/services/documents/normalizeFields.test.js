@@ -201,3 +201,48 @@ describe('normalizeStyleConfig — the page defaults', () => {
     assert.equal(field.validation.maxLength, 3);
   });
 });
+
+describe('normalizeFields — table elements', () => {
+  test('a grid is normalised to exactly rows × cols flat cells', () => {
+    const [field] = normalizeFields([{
+      key: 'info', label: 'Info', type: 'TABLE',
+      table: { rows: 2, cols: 3, cells: ['a', 'b'], cellSources: ['student.name'] },
+    }]);
+    assert.equal(field.table.rows, 2);
+    assert.equal(field.table.cols, 3);
+    assert.deepEqual(field.table.cells, ['a', 'b', '', '', '', '']);
+    assert.deepEqual(field.table.columnWidths, [1, 1, 1]);
+    assert.deepEqual(field.table.rowHeights, [1, 1]);
+    // Only the whitelisted source survives — the rest print their own text.
+    assert.deepEqual(field.table.cellSources, ['student.name', '', '', '', '', '']);
+  });
+
+  test('rows and columns are clamped, and default to a 3×3 grid', () => {
+    const [huge] = normalizeFields([{ key: 't', label: 'T', type: 'TABLE', table: { rows: 999, cols: 999 } }]);
+    assert.equal(huge.table.rows, 40);
+    assert.equal(huge.table.cols, 12);
+
+    const [fallback] = normalizeFields([{ key: 't', label: 'T', type: 'TABLE' }]);
+    assert.equal(fallback.table.rows, 3);
+    assert.equal(fallback.table.cols, 3);
+  });
+
+  test('a cell source outside the allowlist is dropped, and cell text is capped', () => {
+    const [field] = normalizeFields([{
+      key: 't', label: 'T', type: 'TABLE',
+      table: { rows: 1, cols: 2, cells: ['x'.repeat(600), 'y'], cellSources: ['student.password', 'course.code'] },
+    }]);
+    assert.equal(field.table.cells[0].length, 500);
+    assert.equal(field.table.cellSources[0], '');
+    assert.equal(field.table.cellSources[1], 'course.code');
+  });
+
+  test('a table is never an editable field', () => {
+    assert.equal(normalizeFields([{ key: 't', label: 'T', type: 'TABLE' }])[0].editable, false);
+  });
+
+  test('only a TABLE carries a grid; every other type leaves the path unset', () => {
+    assert.equal(normalizeFields([{ key: 't', label: 'T', type: 'STATIC' }])[0].table, undefined);
+    assert.equal(normalizeFields([{ key: 'b', label: 'B', type: 'BOX' }])[0].table, undefined);
+  });
+});
