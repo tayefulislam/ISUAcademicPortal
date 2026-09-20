@@ -5,6 +5,7 @@ import {
   getTodayRoutine,
   getWeekRoutine,
   getMonthRoutine,
+  downloadTimetablePdf,
   getCurrentNext,
   getInstance,
   listInstances,
@@ -38,6 +39,11 @@ router.get('/my', getMyRoutine);
 router.get('/today', getTodayRoutine);
 router.get('/week', getWeekRoutine);
 router.get('/month', getMonthRoutine);
+
+// The printable weekly routine for any Department/Batch/Semester. Open to every
+// signed-in role (see downloadTimetablePdf) — it is the institution's own class
+// schedule, and the scope is validated server-side.
+router.get('/timetable.pdf', downloadTimetablePdf);
 
 // Which faculty member teaches a course, so the routine form can preselect them.
 router.get('/faculty', getFacultyForCourse);
