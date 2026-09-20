@@ -46,6 +46,12 @@ export const NOTIFICATION_TYPES = [
   'STUDENT_ID_APPROVED',
   'STUDENT_ID_REJECTED',
 
+  // Content moderation (the Report/Flag system). CONTENT_REPORTED goes to the
+  // moderators (CR/Admin/Administrator/Super Admin); REPORT_UPDATE goes back to
+  // the reporter when a moderator changes their report's status.
+  'CONTENT_REPORTED',
+  'REPORT_UPDATE',
+
   // A generated document (cover page etc.) finished rendering and is ready to
   // download. Carries the document id, never a URL — the client asks for a fresh
   // signed URL after authorization.

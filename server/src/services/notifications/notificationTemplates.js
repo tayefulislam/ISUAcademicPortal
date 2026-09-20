@@ -188,6 +188,19 @@ export const TEMPLATES = {
     // The document's own screen, which mints a signed download URL on demand.
     url: (v) => `/documents/${v.documentId}`,
   },
+  CONTENT_REPORTED: {
+    title: () => "New Content Report",
+    // Names the reporter only inside the moderator-facing notification (the
+    // report itself never exposes the reporter to anyone but moderators).
+    message: (v) =>
+      `${v.reporterName || "A user"} reported a ${String(v.entityType || "item").toLowerCase()} — ${v.reason}`,
+    url: () => "/admin/reports",
+  },
+  REPORT_UPDATE: {
+    title: () => "Report Update",
+    message: (v) => `Your report was marked ${v.status}`,
+    url: () => "/notifications",
+  },
   SYSTEM: {
     title: (v) => v.title || "System Notification",
     message: (v) => v.message || "",

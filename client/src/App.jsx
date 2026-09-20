@@ -86,6 +86,7 @@ import FacultyChapterTopics from './pages/faculty/FacultyChapterTopics.jsx';
 import FacultyUpload from './pages/faculty/FacultyUpload.jsx';
 
 import ReviewQueue from './pages/shared/ReviewQueue.jsx';
+import ReportsQueue from './pages/shared/ReportsQueue.jsx';
 import NoticeManager from './pages/shared/NoticeManager.jsx';
 import AssignmentManager from './pages/shared/AssignmentManager.jsx';
 import QuestionBank from './pages/shared/QuestionBank.jsx';
@@ -369,6 +370,7 @@ export default function App() {
           <Route path="upload" element={<AdminUpload />} />
           <Route path="approvals" element={<AdminStudentApprovals />} />
           <Route path="reviews" element={<ReviewQueue />} />
+          <Route path="reports" element={<ReportsQueue />} />
           <Route path="notices" element={<NoticeManager />} />
           <Route path="assignments" element={<AssignmentManager />} />
           <Route path="question-bank" element={<QuestionBank />} />
@@ -402,6 +404,7 @@ export default function App() {
           <Route path="system" element={<SuperAdminSystem />} />
           <Route path="account-deletions" element={<SuperAdminDeletions />} />
           <Route path="feedback" element={<SuperAdminFeedback />} />
+          <Route path="reports" element={<ReportsQueue />} />
           <Route path="error-logs" element={<SuperAdminErrorLogs />} />
           <Route path="messages" element={<Messages />} />
           <Route path="emails" element={<EmailComposer />} />

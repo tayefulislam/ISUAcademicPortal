@@ -1,12 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3, CalendarClock, CalendarDays, FileText } from 'lucide-react';
+import { Sparkles, Clock, Bookmark, FileClock, Megaphone, ClipboardList, FileQuestion, UploadCloud, MessageCircle, User, LogOut, Layers3, CalendarClock, CalendarDays, FileText, Trash2 } from 'lucide-react';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
 import SmartEventWidget from '../components/routine/SmartEventWidget.jsx';
 import { eventIcon, eventTitle, typeLabel, timeRange, locationLine } from '../components/routine/eventMeta.js';
 import { fileApi, noticeApi, assignmentApi, authApi, routineApi, calendarApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import { useDownloadFile } from '../hooks/useDownloadFile.js';
 import { formatDate } from '../utils/format.js';
 
@@ -14,6 +15,8 @@ export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const download = useDownloadFile();
+  const qc = useQueryClient();
+  const { toast } = useToast();
   const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: () => fileApi.dashboard(8) });
   const { data: mine, isLoading: loadingMine } = useQuery({
     queryKey: ['my-submissions'],
@@ -70,6 +73,19 @@ export default function Dashboard() {
   if (isPendingApproval) {
     return <Navigate to="/pending-approval" replace />;
   }
+
+  // The submitter may delete their own material (the server asserts ownership —
+  // a non-owner gets a 403 regardless of this button).
+  const deleteSubmission = async (file) => {
+    if (!confirm(`Delete "${file.title}"? This cannot be undone.`)) return;
+    try {
+      await fileApi.remove(file._id);
+      toast('Material deleted', 'success');
+      qc.invalidateQueries({ queryKey: ['my-submissions'] });
+    } catch (err) {
+      toast(err.response?.data?.message || 'Delete failed', 'error');
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -254,13 +270,22 @@ export default function Dashboard() {
                       {f.departmentCode} &middot; {f.courseId} &middot; {formatDate(f.createdAt)}
                     </p>
                   </div>
-                  <span
-                    className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${
-                      f.approvalStatus === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
-                    }`}
-                  >
-                    {f.approvalStatus === 'pending' ? 'Pending review' : 'Approved'}
-                  </span>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        f.approvalStatus === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                      }`}
+                    >
+                      {f.approvalStatus === 'pending' ? 'Pending review' : 'Approved'}
+                    </span>
+                    <button
+                      onClick={() => deleteSubmission(f)}
+                      title="Delete this submission"
+                      className="p-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
-import { courseApi, categoryApi, chapterApi, topicApi, fileApi, authApi } from '../api/endpoints.js';
+import { courseApi, categoryApi, chapterApi, topicApi, semesterApi, fileApi, authApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import { UploadTypeToggle, ExternalUrlField, isValidHttpsUrl, UPLOAD_TYPE_FILE, UPLOAD_TYPE_EXTERNAL } from '../components/MaterialSource.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { formatBytes } from '../utils/format.js';
@@ -16,21 +17,29 @@ const initialState = {
   chapterId: '',
   topicId: '',
   keywords: '',
+  // '' = no semester filter (every reachable course, exactly as before). A
+  // concrete value is a Semester.name and matches Course.semester.
+  semester: '',
+  visibility: 'login_required',
+  uploadType: UPLOAD_TYPE_FILE,
+  externalUrl: '',
 };
 
 const MAX_FILES = 10;
 
 // Simplified upload form for students (and a "CR"-tier admin account acting
-// as one) — no visibility/restriction/batch controls (those stay a reviewer
-// decision). Everything submitted here lands as approvalStatus:'pending' and
-// is invisible to everyone else until an Admin/Super Admin/Faculty reviewer
-// approves it.
+// as one) — no restriction/batch controls (those stay a reviewer decision).
+// Everything submitted here lands as approvalStatus:'pending' and is invisible
+// to everyone else until an Admin/Super Admin/Faculty reviewer approves it.
+//
+// Course options depend on BOTH the selected Department and the selected
+// Semester: only courses that belong to the chosen semester are offered, and a
+// course with a different (or no) semester is hidden once one is picked.
 //
 // Department/Course are NOT freely pickable — only courses the submitter can
-// actually reach (their own department's courses, plus any course they hold
-// an active CourseEnrollment for) are offered, via GET /courses/mine. The
-// server enforces the same rule independently (fileController.js's
-// submitStudentFile) — this is a UX convenience, not the real gate.
+// actually reach (via GET /courses/mine) are offered. The server enforces the
+// same rules independently (fileController.js's submitStudentFile) — this is a
+// UX convenience, not the real gate.
 export default function StudentSubmitMaterial() {
   const [form, setForm] = useState(initialState);
   const [files, setFiles] = useState([]);
@@ -45,25 +54,33 @@ export default function StudentSubmitMaterial() {
   // enforced independently in submitStudentFile) — a pending/rejected
   // student can't submit material until an Admin approves their Student ID.
   const approvalBlocked = user?.role === 'student' && !!settings?.data?.studentApprovalEnabled && user?.approvalStatus !== 'approved';
+  const isExternal = form.uploadType === UPLOAD_TYPE_EXTERNAL;
 
   const { data: myCourses } = useQuery({ queryKey: ['my-reachable-courses'], queryFn: courseApi.mine, enabled: enabled && !approvalBlocked });
   const allMyCourses = myCourses?.data || [];
 
-  // Departments derived from the reachable course list itself, so the
-  // Department dropdown never offers a department with no reachable course
-  // in it (a plain department picker would let a student "select" a
-  // department they have zero courses in, only to find an empty Course list).
+  const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list, enabled });
+
+  // Courses belonging to the selected semester. With no semester chosen this is
+  // the full reachable set — the pre-existing behaviour, unchanged.
+  const semesterCourses = useMemo(
+    () => (form.semester ? allMyCourses.filter((c) => c.semester === form.semester) : allMyCourses),
+    [allMyCourses, form.semester]
+  );
+
+  // Departments derived from the (semester-filtered) reachable course list, so
+  // the Department dropdown never offers a department with no selectable course.
   const myDepartments = useMemo(() => {
     const byId = new Map();
-    for (const c of allMyCourses) {
+    for (const c of semesterCourses) {
       if (c.department?._id) byId.set(c.department._id, c.department);
     }
     return [...byId.values()];
-  }, [allMyCourses]);
+  }, [semesterCourses]);
 
   const coursesInSelectedDept = useMemo(
-    () => allMyCourses.filter((c) => String(c.department?._id) === String(form.departmentId)),
-    [allMyCourses, form.departmentId]
+    () => semesterCourses.filter((c) => String(c.department?._id) === String(form.departmentId)),
+    [semesterCourses, form.departmentId]
   );
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list, enabled });
@@ -105,13 +122,17 @@ export default function StudentSubmitMaterial() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!files.length) return toast('Please select at least one file', 'error');
+    if (isExternal) {
+      if (!isValidHttpsUrl(form.externalUrl)) return toast('Enter a valid https:// link', 'error');
+    } else if (!files.length) {
+      return toast('Please select at least one file', 'error');
+    }
 
     setSubmitting(true);
     setProgress(0);
     try {
       const fd = new FormData();
-      files.forEach((f) => fd.append('files', f));
+      if (!isExternal) files.forEach((f) => fd.append('files', f));
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       const res = await fileApi.submit(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
       toast(res.message || 'Submitted for review', 'success');
@@ -172,37 +193,47 @@ export default function StudentSubmitMaterial() {
       </p>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-        <label
-          className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            addFiles(e.dataTransfer.files);
-          }}
-        >
-          <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
-          <UploadCloud className="mx-auto text-slate-400 mb-2" size={32} />
-          <p className="text-sm text-slate-600">
-            {files.length ? `${files.length} file(s) selected — click to add more` : 'Click to choose files/images, or drag and drop'}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP &middot; up to {MAX_FILES} at once</p>
-        </label>
+        <Field label="How are you submitting this?">
+          <UploadTypeToggle value={form.uploadType} onChange={set('uploadType')} />
+        </Field>
 
-        {files.length > 0 && (
-          <ul className="space-y-1.5">
-            {files.map((f, idx) => (
-              <li key={`${f.name}_${f.size}`} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                <span className="flex items-center gap-2 min-w-0">
-                  <FileIconLucide size={16} className="text-slate-400 shrink-0" />
-                  <span className="truncate">{f.name}</span>
-                  <span className="text-xs text-slate-400 shrink-0">{formatBytes(f.size)}</span>
-                </span>
-                <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0">
-                  <X size={16} />
-                </button>
-              </li>
-            ))}
-          </ul>
+        {isExternal ? (
+          <ExternalUrlField value={form.externalUrl} onChange={set('externalUrl')} />
+        ) : (
+          <>
+            <label
+              className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                addFiles(e.dataTransfer.files);
+              }}
+            >
+              <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+              <UploadCloud className="mx-auto text-slate-400 mb-2" size={32} />
+              <p className="text-sm text-slate-600">
+                {files.length ? `${files.length} file(s) selected — click to add more` : 'Click to choose files/images, or drag and drop'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">PDF, images, DOC, PPT, XLS, TXT, ZIP &middot; up to {MAX_FILES} at once</p>
+            </label>
+
+            {files.length > 0 && (
+              <ul className="space-y-1.5">
+                {files.map((f, idx) => (
+                  <li key={`${f.name}_${f.size}`} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <FileIconLucide size={16} className="text-slate-400 shrink-0" />
+                      <span className="truncate">{f.name}</span>
+                      <span className="text-xs text-slate-400 shrink-0">{formatBytes(f.size)}</span>
+                    </span>
+                    <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0">
+                      <X size={16} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
 
         {submitting && (
@@ -213,6 +244,16 @@ export default function StudentSubmitMaterial() {
 
         <Field label="Title" hint="Leave blank to use the file name">
           <input value={form.title} onChange={(e) => set('title')(e.target.value)} className="input" placeholder="e.g. My Lecture Notes" />
+        </Field>
+
+        <Field label="Semester" hint="Only courses belonging to the selected semester are listed">
+          <SearchableSelect
+            value={form.semester}
+            onChange={(v) => setForm((f) => ({ ...f, semester: v, departmentId: '', courseIdRef: '', chapterId: '', topicId: '' }))}
+            placeholder="All semesters"
+            searchPlaceholder="Search semesters..."
+            options={[{ value: '', label: 'All semesters' }, ...(semesters?.data || []).map((s) => ({ value: s.name, label: s.name }))]}
+          />
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -247,6 +288,12 @@ export default function StudentSubmitMaterial() {
           </Field>
         </div>
 
+        {form.semester && semesterCourses.length === 0 && (
+          <p className="text-sm text-amber-600">
+            You don't have any reachable course in {form.semester}. Pick a different semester or “All semesters”.
+          </p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Chapter">
             <select
@@ -266,6 +313,19 @@ export default function StudentSubmitMaterial() {
             </select>
           </Field>
         </div>
+
+        <Field label="Who can access this?">
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={form.visibility === 'public'} onChange={() => set('visibility')('public')} />
+              Public (anyone, no login)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={form.visibility === 'login_required'} onChange={() => set('visibility')('login_required')} />
+              Login required
+            </label>
+          </div>
+        </Field>
 
         <Field label="Keywords (comma separated)">
           <input value={form.keywords} onChange={(e) => set('keywords')(e.target.value)} className="input" placeholder="graph theory, discrete mathematics" />

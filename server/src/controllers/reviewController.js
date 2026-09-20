@@ -3,7 +3,7 @@ import Chapter from '../models/Chapter.js';
 import Topic from '../models/Topic.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { isFacultyScopedToFile } from '../services/fileQueryBuilder.js';
+import { isReviewerForFile } from '../services/fileQueryBuilder.js';
 import { deleteAllAttachments } from './fileController.js';
 
 // 'admin' and Super Admin see/manage every pending submission. Faculty AND
@@ -26,9 +26,12 @@ function scopeFilter(user) {
   };
 }
 
-function assertReviewAccess(file, user) {
-  if (isUnrestrictedReviewer(user)) return;
-  if (isFacultyScopedToFile(user, file)) return;
+// The same reviewer rule the whole app uses (fileQueryBuilder.isReviewerForFile):
+// the unrestricted reviewer roles see everything, Faculty their assigned
+// Department/Course, and a custom admin-tier role (e.g. "CR") only when it holds
+// the `reviews` permission and the submission is in its own assigned scope.
+async function assertReviewAccess(file, user) {
+  if (await isReviewerForFile(user, file)) return;
   throw new ApiError(403, 'This submission is outside your assigned Department/Course', null, 'FORBIDDEN');
 }
 
@@ -47,7 +50,7 @@ export const getPendingFile = asyncHandler(async (req, res) => {
     .populate('course', 'name courseId')
     .populate('uploadedBy', 'name email rollNo');
   if (!file) throw new ApiError(404, 'Submission not found');
-  assertReviewAccess(file, req.user);
+  await assertReviewAccess(file, req.user);
   res.json({ success: true, data: file });
 });
 
@@ -57,7 +60,7 @@ export const getPendingFile = asyncHandler(async (req, res) => {
 export const approveSubmission = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'Submission not found');
-  assertReviewAccess(file, req.user);
+  await assertReviewAccess(file, req.user);
   if (file.approvalStatus !== 'pending') throw new ApiError(409, 'This file is not pending review');
 
   if (req.body.visibility) {
@@ -100,7 +103,7 @@ export const approveSubmission = asyncHandler(async (req, res) => {
 export const rejectSubmission = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'Submission not found');
-  assertReviewAccess(file, req.user);
+  await assertReviewAccess(file, req.user);
   if (file.approvalStatus !== 'pending') throw new ApiError(409, 'This file is not pending review');
 
   await deleteAllAttachments(file);

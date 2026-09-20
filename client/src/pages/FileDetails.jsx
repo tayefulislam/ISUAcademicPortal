@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { Download, ExternalLink, FileWarning, Heart } from 'lucide-react';
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, ExternalLink, FileWarning, Heart, Trash2 } from 'lucide-react';
 import { fileApi } from '../api/endpoints.js';
 import { useDownloadFile } from '../hooks/useDownloadFile.js';
 import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import { resolveFileUrl, buildPreviewPath, formatBytes, formatDate, formatTime, isOfficeType } from '../utils/format.js';
 import { trackEvent } from '../utils/analytics.js';
 import PdfViewer from '../components/PdfViewer.jsx';
@@ -14,12 +15,16 @@ import OfficeViewer from '../components/OfficeViewer.jsx';
 import FileIcon from '../components/FileIcon.jsx';
 import FileCard from '../components/FileCard.jsx';
 import AttachmentItem from '../components/AttachmentItem.jsx';
+import ReportButton from '../components/ReportButton.jsx';
 
 export default function FileDetails() {
   const { id } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const download = useDownloadFile();
-  const { user } = useAuth();
+  const qc = useQueryClient();
+  const { user, isSuperAdminTier, isFaculty } = useAuth();
+  const { toast } = useToast();
   const bookmarkedIds = useBookmarkedIds();
   const toggleBookmark = useToggleBookmark();
 
@@ -86,6 +91,31 @@ export default function FileDetails() {
   const url = resolveFileUrl(file.fileUrl);
   const attachments = file.attachments?.length ? file.attachments : [];
   const multi = attachments.length > 1;
+  const isExternal = file.uploadType === 'external';
+
+  // A client-side mirror of the server's assertOwnership — the super-admin tier,
+  // the uploader themselves, or a Faculty member assigned to the file's
+  // department/course. The server repeats this on every write, so this only
+  // decides whether to offer the action at all.
+  const idOf = (v) => String(v?._id || v || '');
+  const scopedTo = (assigned, target) => !!target && (assigned || []).some((a) => idOf(a) === idOf(target));
+  const canManage =
+    !!user &&
+    (isSuperAdminTier ||
+      idOf(file.uploadedBy) === idOf(user._id) ||
+      (isFaculty && (scopedTo(user.assignedDepartments, file.department) || scopedTo(user.assignedCourses, file.course))));
+
+  const removeFile = async () => {
+    if (!confirm('Delete this material? This cannot be undone.')) return;
+    try {
+      await fileApi.remove(file._id);
+      toast('Material deleted', 'success');
+      qc.invalidateQueries({ queryKey: ['files'] });
+      navigate(-1);
+    } catch (err) {
+      toast(err.response?.data?.message || 'Delete failed', 'error');
+    }
+  };
 
   const downloadAttachment = (attachment) =>
     download({
@@ -109,18 +139,44 @@ export default function FileDetails() {
           </p>
         </div>
         {user && (
-          <button
-            onClick={() => toggleBookmark(file)}
-            title={bookmarkedIds.has(file._id) ? 'Remove from Favorites' : 'Add to Favorites'}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
-          >
-            <Heart size={16} fill={bookmarkedIds.has(file._id) ? 'currentColor' : 'none'} className={bookmarkedIds.has(file._id) ? 'text-red-500' : 'text-slate-400'} />
-            {bookmarkedIds.has(file._id) ? 'Bookmarked' : 'Add to Favorites'}
-          </button>
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              onClick={() => toggleBookmark(file)}
+              title={bookmarkedIds.has(file._id) ? 'Remove from Favorites' : 'Add to Favorites'}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50"
+            >
+              <Heart size={16} fill={bookmarkedIds.has(file._id) ? 'currentColor' : 'none'} className={bookmarkedIds.has(file._id) ? 'text-red-500' : 'text-slate-400'} />
+              {bookmarkedIds.has(file._id) ? 'Bookmarked' : 'Add to Favorites'}
+            </button>
+            <ReportButton entityType="FILE" entityId={file._id} />
+            {canManage && (
+              <button
+                onClick={removeFile}
+                title="Delete this material"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                <Trash2 size={16} /> Delete
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {multi ? (
+      {isExternal ? (
+        <div className="mb-6 bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center text-center gap-3">
+          <ExternalLink className="text-sky-500" size={44} />
+          <p className="text-slate-700 font-medium">This material is an external link.</p>
+          <p className="text-xs text-slate-400 break-all max-w-lg">{file.externalUrl}</p>
+          <a
+            href={file.externalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700"
+          >
+            <ExternalLink size={18} /> Open external link
+          </a>
+        </div>
+      ) : multi ? (
         <div className="mb-6 space-y-2">
           <p className="text-sm font-medium text-slate-500 mb-2">{attachments.length} files in this upload</p>
           {attachments.map((a) => (
@@ -174,8 +230,8 @@ export default function FileDetails() {
         <Detail label="Semester" value={file.semester || '-'} />
         <Detail label="Academic Year" value={file.academicYear || '-'} />
         <Detail label="Category" value={file.category?.name || file.categoryName} />
-        <Detail label="File Type" value={file.fileType?.toUpperCase()} />
-        <Detail label="File Size" value={formatBytes(file.fileSize)} />
+        <Detail label="File Type" value={isExternal ? 'External link' : file.fileType?.toUpperCase()} />
+        <Detail label="File Size" value={isExternal ? '—' : formatBytes(file.fileSize)} />
         <Detail label="Uploaded Date" value={formatDate(file.createdAt)} />
         <Detail label="Uploaded Time" value={formatTime(file.createdAt)} />
         {file.description && (

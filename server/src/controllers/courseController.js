@@ -39,6 +39,15 @@ export const getMyCourses = asyncHandler(async (req, res) => {
     .sort({ name: 1 });
 
   if (req.query.grouped !== 'true' && req.query.grouped !== '1') {
+    // Optional semester narrowing: Course.semester is a free-text label that
+    // matches Semester.name, and it is the only link between the two the data
+    // has. Supplying a semester returns only its courses (a course with no/other
+    // semester is excluded); omitting it returns the full reachable set exactly
+    // as before, so this is purely additive.
+    const semesterFilter = typeof req.query.semester === 'string' ? req.query.semester.trim() : '';
+    if (semesterFilter) {
+      return res.json({ success: true, data: courses.filter((course) => course.semester === semesterFilter) });
+    }
     return res.json({ success: true, data: courses });
   }
 

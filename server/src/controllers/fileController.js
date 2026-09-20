@@ -9,7 +9,7 @@ import Topic from '../models/Topic.js';
 import Bookmark from '../models/Bookmark.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { storeUploadedFile, deleteStoredFile, deleteStoredFileStrict } from '../services/storage/storageService.js';
 import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
 import { resolveDocumentType } from '../utils/fileTypes.js';
 import {
@@ -31,6 +31,7 @@ import { logger } from '../utils/logger.js';
 import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAccessService.js';
 import { assertBatchesForCourse } from '../services/teachingService.js';
 import { isSuperAdminTier, getRole } from '../models/Role.js';
+import { isValidHttpsUrl } from '../utils/externalUrl.js';
 
 // Fire-and-forget: never blocks the response, never throws into the
 // controller — a notification failure must not fail a file upload.
@@ -192,9 +193,47 @@ async function resolveUploadMetadata(body) {
   return { department, course, category, chapter, topic, batches, batchCodes, allBatches, keywordList, visibility, restrictions };
 }
 
+// The selected course must belong to the selected semester. Course.semester is
+// a free-text label that matches Semester.name (the only link between the two
+// the data has), and Course.semester is often empty on legacy rows — so an
+// empty course semester is deliberately grandfathered rather than rejected,
+// while a course that does declare a semester must match exactly. This is what
+// stops a client from posting a course outside the semester it offered in the
+// dropdown; the client list is a convenience, never the enforcement point.
+function assertSemesterMatchesCourse(course, semester) {
+  const label = typeof semester === 'string' ? semester.trim() : '';
+  if (!label) return;
+  const courseSemester = typeof course?.semester === 'string' ? course.semester.trim() : '';
+  if (courseSemester && courseSemester !== label) {
+    throw new ApiError(400, 'The selected course does not belong to the selected semester', null, 'SEMESTER_MISMATCH');
+  }
+}
+
+// An external-link submission: no upload, just a validated HTTPS URL. It gets
+// one synthetic attachment descriptor so every consumer that expects
+// attachments[] to be non-empty (cards, viewers, preview, delete) keeps working
+// — with storageProvider 'external' there is simply no object to delete.
+function buildExternalSubmission(externalUrl, title) {
+  const attachment = {
+    originalName: title || 'External link',
+    fileName: externalUrl,
+    fileType: 'other',
+    mimeType: 'text/uri-list',
+    fileSize: 0,
+    fileUrl: externalUrl,
+    storageProvider: 'external',
+    storageRef: '',
+  };
+  return {
+    uploadType: 'external',
+    externalUrl,
+    attachments: [attachment],
+  };
+}
+
 // Creates one File entry (with an `attachments[]` of one or more physical
 // files) from already-prepared attachment descriptors + shared metadata.
-async function createGroupedFile({ attachments, title, description, semester, academicYear, meta, uploadedBy, approvalStatus }) {
+async function createGroupedFile({ attachments, title, description, semester, academicYear, meta, uploadedBy, approvalStatus, uploadType = 'file', externalUrl = '' }) {
   const primary = attachments[0];
   const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
 
@@ -210,6 +249,8 @@ async function createGroupedFile({ attachments, title, description, semester, ac
     storageRef: primary.storageRef,
     attachments,
     fileCount: attachments.length,
+    uploadType,
+    externalUrl,
     department: meta.department._id,
     departmentCode: meta.department.code,
     course: meta.course._id,
@@ -266,11 +307,38 @@ export async function assertUploadScope(user, meta) {
 // title instead of once per uploaded file.
 export const uploadFiles = asyncHandler(async (req, res) => {
   const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
-  if (!files.length) throw new ApiError(400, 'At least one file is required');
+  const isExternal = req.body.uploadType === 'external';
 
   const { title, description, semester, academicYear } = req.body;
   const meta = await resolveUploadMetadata(req.body);
   await assertUploadScope(req.user, meta);
+  assertSemesterMatchesCourse(meta.course, semester);
+
+  // An external-link material has no uploaded bytes — the URL is the material.
+  // A file upload still requires at least one file, exactly as before.
+  let externalUrl = '';
+  if (isExternal) {
+    externalUrl = typeof req.body.externalUrl === 'string' ? req.body.externalUrl.trim() : '';
+    if (!isValidHttpsUrl(externalUrl)) {
+      throw new ApiError(400, 'The external link must be a valid https:// URL');
+    }
+    const { attachments } = buildExternalSubmission(externalUrl, title);
+    const file = await createGroupedFile({
+      attachments,
+      title,
+      description,
+      semester,
+      academicYear,
+      meta,
+      uploadedBy: req.user._id,
+      uploadType: 'external',
+      externalUrl,
+    });
+    notifyCourseMaterial(file, req.user, 'COURSE_MATERIAL');
+    return res.status(201).json({ success: true, data: file });
+  }
+
+  if (!files.length) throw new ApiError(400, 'At least one file is required');
 
   const attachments = [];
   const failed = [];
@@ -326,6 +394,7 @@ export const attachUploadcareFiles = asyncHandler(async (req, res) => {
 
   const meta = await resolveUploadMetadata(req.body);
   await assertUploadScope(req.user, meta);
+  assertSemesterMatchesCourse(meta.course, semester);
 
   const attachments = files.map((f) => {
     if (!f.uuid) throw new ApiError(400, 'Each file needs an Uploadcare uuid');
@@ -383,21 +452,54 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
   }
 
   const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
-  if (!files.length) throw new ApiError(400, 'At least one file is required');
+  const isExternal = req.body.uploadType === 'external';
 
-  const { title, description } = req.body;
+  const { title, description, semester, academicYear } = req.body;
   const meta = await resolveUploadMetadata(req.body);
 
   const effectiveCourseIds = await getEffectiveCourseIds(req.user);
   if (!effectiveCourseIds.includes(String(meta.course._id))) {
     throw new ApiError(403, 'You can only submit material for a course in your own department or one you are enrolled in', null, 'FORBIDDEN');
   }
+  assertSemesterMatchesCourse(meta.course, semester);
 
-  meta.visibility = 'login_required';
+  // The submitter now chooses the access setting (Public / Login Required), so
+  // it is honoured here rather than forced — but the submission still lands
+  // approvalStatus:'pending', so a reviewer still gates when it becomes visible.
+  // Fine-grained restrictions stay the reviewer's decision.
+  meta.visibility = req.body.visibility === 'public' ? 'public' : 'login_required';
   meta.restrictions = { departments: [], batches: [], semesters: [], courses: [] };
   meta.batches = [];
   meta.batchCodes = [];
   meta.allBatches = false;
+
+  if (isExternal) {
+    const externalUrl = typeof req.body.externalUrl === 'string' ? req.body.externalUrl.trim() : '';
+    if (!isValidHttpsUrl(externalUrl)) {
+      throw new ApiError(400, 'The external link must be a valid https:// URL');
+    }
+    const { attachments } = buildExternalSubmission(externalUrl, title);
+    const file = await createGroupedFile({
+      attachments,
+      title,
+      description,
+      semester,
+      academicYear,
+      meta,
+      uploadedBy: req.user._id,
+      approvalStatus: 'pending',
+      uploadType: 'external',
+      externalUrl,
+    });
+    notifyReviewRequest(file, req.user);
+    return res.status(201).json({
+      success: true,
+      message: 'Submitted — pending review before it becomes available',
+      data: file,
+    });
+  }
+
+  if (!files.length) throw new ApiError(400, 'At least one file is required');
 
   const attachments = [];
   const failed = [];
@@ -424,6 +526,8 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
     attachments,
     title,
     description,
+    semester,
+    academicYear,
     meta,
     uploadedBy: req.user._id,
     approvalStatus: 'pending',
@@ -624,11 +728,11 @@ export const updateFile = asyncHandler(async (req, res) => {
   if (!file) throw new ApiError(404, 'File not found');
   assertOwnership(file, req.user); // own-files-only unless super_admin — same gate covers visibility/restrictions
 
-  // The uploader acting as a student may edit what describes their upload and
-  // nothing else. Visibility, restrictions, status and the chapter/topic
-  // placement are the reviewer's decision at approval time (submitStudentFile
-  // deliberately does not accept them either) — allowing them here would let a
-  // submitter publish their own material without review.
+  // The uploader acting as a student may edit what describes their upload, plus
+  // its access setting (Public / Login Required). Fine-grained restrictions,
+  // status and the chapter/topic placement remain the reviewer's decision at
+  // approval time (submitStudentFile does not accept them either) — allowing
+  // those here would let a submitter publish their own material without review.
   const fullEdit = await hasFullFileEdit(req.user);
 
   const allowed = fullEdit
@@ -641,7 +745,12 @@ export const updateFile = asyncHandler(async (req, res) => {
     file.keywords = String(req.body.keywords).split(',').map((k) => k.trim()).filter(Boolean);
   }
 
-  if (fullEdit && req.body.visibility) {
+  if (req.body.visibility) {
+    // The access setting (Public / Login Required) belongs to the material's
+    // owner as much as to a reviewer — a submitter picks it at upload time and
+    // may correct it on their own item. Fine-grained restrictions and `status`
+    // stay staff-only (see `allowed` above), so this is not a way to widen
+    // access to specific people.
     if (!['public', 'login_required'].includes(req.body.visibility)) {
       throw new ApiError(400, 'visibility must be "public" or "login_required"');
     }
@@ -776,13 +885,41 @@ export async function deleteAllAttachments(file) {
   await Promise.all(attachments.map((a) => deleteStoredFile(a).catch(() => null)));
 }
 
+// The delete flow's storage step: throws if ANY stored object could not be
+// removed, so the caller can leave the database record in place to be retried.
+// An external-link material (or anything with no storageRef) is a no-op — it has
+// no object to remove — so it always succeeds here.
+export async function deleteAllAttachmentsStrict(file) {
+  const attachments = file.attachments?.length ? file.attachments : [file];
+  await Promise.all(attachments.map((a) => deleteStoredFileStrict(a)));
+}
+
+// Removes a material completely: its stored object(s), the document, and the
+// references to it (bookmarks). Authorization is assertOwnership — the real
+// gate — so a Student/CR may delete their own upload, Faculty their own/scoped
+// material, and the super-admin tier anything. Storage goes FIRST: if it fails,
+// the document is kept so the delete can be retried rather than leaving an
+// orphaned object nothing points at.
+export async function deleteFileRecord(file) {
+  try {
+    await deleteAllAttachmentsStrict(file);
+  } catch (err) {
+    logger.error(err, {
+      source: 'fileController.deleteFileRecord',
+      meta: { action: 'FILE_DELETE_STORAGE_FAILED', targetId: file._id },
+    });
+    throw new ApiError(502, 'The stored file could not be removed, so nothing was deleted. Please retry.');
+  }
+  await Bookmark.deleteMany({ file: file._id });
+  await file.deleteOne();
+}
+
 export const deleteFile = asyncHandler(async (req, res) => {
   const file = await File.findById(req.params.id);
   if (!file) throw new ApiError(404, 'File not found');
   assertOwnership(file, req.user);
 
-  await deleteAllAttachments(file);
-  await file.deleteOne();
+  await deleteFileRecord(file);
 
   res.json({ success: true, message: 'File deleted' });
 });
@@ -794,8 +931,9 @@ export const bulkDeleteFiles = asyncHandler(async (req, res) => {
   const files = await File.find({ _id: { $in: ids } });
   for (const f of files) assertOwnership(f, req.user);
 
-  await Promise.all(files.map((f) => deleteAllAttachments(f)));
-  await File.deleteMany({ _id: { $in: files.map((f) => f._id) } });
+  for (const f of files) {
+    await deleteFileRecord(f);
+  }
 
   res.json({ success: true, message: `${files.length} file(s) deleted` });
 });

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-export const FEEDBACK_CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'Other'];
+export const FEEDBACK_CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'App', 'Other'];
 export const FEEDBACK_STATUSES = ['new', 'reviewed', 'resolved'];
 
 const feedbackSchema = new mongoose.Schema(

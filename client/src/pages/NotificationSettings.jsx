@@ -34,6 +34,10 @@ const TYPE_LABELS = {
   CLASS_CANCELLED: 'Class Cancellations',
   CLASS_RESCHEDULED: 'Rescheduled Classes',
   CLASS_ROOM_CHANGED: 'Room Changes',
+  // Content moderation (Report/Flag). CONTENT_REPORTED reaches the moderators;
+  // REPORT_UPDATE goes back to whoever filed the report.
+  CONTENT_REPORTED: 'Content Reports',
+  REPORT_UPDATE: 'Report Updates',
 };
 
 function Toggle({ checked, onChange, disabled }) {

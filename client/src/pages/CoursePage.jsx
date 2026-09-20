@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import ReportButton from '../components/ReportButton.jsx';
 import { formatDate } from '../utils/format.js';
 import { trackClarityEvent } from '../analytics/clarity.js';
 
@@ -208,6 +209,11 @@ export default function CoursePage() {
                   </button>
                 </div>
               )}
+
+              {/* Report the course itself (a signed-out visitor sees nothing —
+                  reporting requires an account, and the server records the
+                  reporter from the authenticated user). */}
+              <ReportButton entityType="COURSE" entityId={course._id} />
             </div>
           </div>
 

@@ -65,6 +65,10 @@ export async function storeUploadedFile(buffer, originalName, mimeType) {
  * @param {{storageProvider:string, storageRef:string}} file
  */
 export async function deleteStoredFile(file) {
+  // An external-link material has no stored object — nothing to delete.
+  if (!file || file.storageProvider === 'external' || !file.storageRef) {
+    return undefined;
+  }
   if (file.storageProvider === 'imgbb') {
     return deleteImageFromImgbb(file.storageRef);
   }
@@ -73,6 +77,31 @@ export async function deleteStoredFile(file) {
   }
   if (file.storageProvider === 's3') {
     return deleteDocumentS3(file.storageRef);
+  }
+  return deleteDocumentLocal(file.storageRef);
+}
+
+/**
+ * The same delete, but it THROWS when the object could not be removed. Used by
+ * the material-delete flow, which must leave the database record in place to be
+ * retried rather than deleting metadata for an object that is still in storage
+ * (which would leave an orphaned file nobody can reach or clean up).
+ *
+ * <p>An external-link material (or anything with no storageRef) is a no-op — it
+ * has no stored object to fail over.
+ */
+export async function deleteStoredFileStrict(file) {
+  if (!file || file.storageProvider === 'external' || !file.storageRef) {
+    return undefined;
+  }
+  if (file.storageProvider === 'imgbb') {
+    return deleteImageFromImgbb(file.storageRef);
+  }
+  if (file.storageProvider === 'uploadcare') {
+    return deleteFromUploadcare(file.storageRef);
+  }
+  if (file.storageProvider === 's3') {
+    return deleteObjectS3Strict(file.storageRef);
   }
   return deleteDocumentLocal(file.storageRef);
 }

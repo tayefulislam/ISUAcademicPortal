@@ -5,6 +5,7 @@ import { FileUploaderRegular } from '@uploadcare/react-uploader';
 import '@uploadcare/react-uploader/core.css';
 import { departmentApi, courseApi, batchApi, categoryApi, chapterApi, topicApi, semesterApi, adminApi, fileApi } from '../../api/endpoints.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import { UploadTypeToggle, ExternalUrlField, isValidHttpsUrl, UPLOAD_TYPE_FILE, UPLOAD_TYPE_EXTERNAL } from '../../components/MaterialSource.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { formatBytes } from '../../utils/format.js';
@@ -25,6 +26,8 @@ const initialState = {
   allBatches: false,
   batches: [],
   visibility: 'login_required',
+  uploadType: UPLOAD_TYPE_FILE,
+  externalUrl: '',
   restrictEnabled: false,
   restrictDepartments: [],
   restrictBatches: [],
@@ -76,7 +79,12 @@ export default function AdminUpload() {
   );
 
   const departmentOptions = scoped ? myDepartments : departments?.data || [];
-  const courseOptions = scoped ? myCoursesInSelectedDept : courses?.data || [];
+  // Course options depend on the selected Semester: only courses belonging to it
+  // are offered, and a course with a different (or no) semester is hidden once
+  // one is chosen. With no semester picked the full list is shown (unchanged).
+  const bySemester = (list) => (form.semester ? list.filter((c) => c.semester === form.semester) : list);
+  const courseOptions = bySemester(scoped ? myCoursesInSelectedDept : courses?.data || []);
+  const isExternal = form.uploadType === UPLOAD_TYPE_EXTERNAL;
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list });
   const { data: chapters } = useQuery({
@@ -167,13 +175,20 @@ export default function AdminUpload() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (mode === 'direct' && !files.length) return toast('Please select at least one file or image', 'error');
-    if (mode === 'uploadcare' && !ucFiles.length) return toast('Please upload at least one file first', 'error');
+    if (isExternal) {
+      if (!isValidHttpsUrl(form.externalUrl)) return toast('Enter a valid https:// link', 'error');
+    } else if (mode === 'direct' && !files.length) {
+      return toast('Please select at least one file or image', 'error');
+    } else if (mode === 'uploadcare' && !ucFiles.length) {
+      return toast('Please upload at least one file first', 'error');
+    }
 
     setSubmitting(true);
     setProgress(0);
     try {
-      const res = mode === 'direct' ? await submitDirect() : await submitUploadcare();
+      // An external link is saved through the same multipart endpoint (with no
+      // file parts); Uploadcare only applies to the file-upload path.
+      const res = !isExternal && mode === 'uploadcare' ? await submitUploadcare() : await submitDirect();
       reportSuccess(res);
     } catch (err) {
       toast(err.response?.data?.message || 'Upload failed', 'error');
@@ -187,7 +202,11 @@ export default function AdminUpload() {
       <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload Files</h1>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-        {UPLOADCARE_PUBKEY && (
+        <Field label="How are you submitting this?">
+          <UploadTypeToggle value={form.uploadType} onChange={set('uploadType')} />
+        </Field>
+
+        {!isExternal && UPLOADCARE_PUBKEY && (
           <div className="flex gap-2 p-1 bg-slate-100 rounded-lg w-fit">
             <button
               type="button"
@@ -210,7 +229,9 @@ export default function AdminUpload() {
           </div>
         )}
 
-        {mode === 'uploadcare' && UPLOADCARE_PUBKEY ? (
+        {isExternal ? (
+          <ExternalUrlField value={form.externalUrl} onChange={set('externalUrl')} />
+        ) : mode === 'uploadcare' && UPLOADCARE_PUBKEY ? (
           <div>
             <FileUploaderRegular
               apiRef={uploaderRef}
@@ -350,8 +371,12 @@ export default function AdminUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Semester">
-            <select value={form.semester} onChange={(e) => set('semester')(e.target.value)} className="input">
+          <Field label="Semester" hint="Course options follow the selected semester">
+            <select
+              value={form.semester}
+              onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value, courseIdRef: '', chapterId: '', topicId: '' }))}
+              className="input"
+            >
               <option value="">Select semester</option>
               {(semesters?.data || []).map((s) => (
                 <option key={s._id} value={s.name}>{s.name}</option>
@@ -434,12 +459,16 @@ export default function AdminUpload() {
 
         <button disabled={submitting} className="w-full h-11 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700 disabled:opacity-60">
           {submitting
-            ? mode === 'direct'
-              ? `Uploading... ${progress}%`
-              : 'Saving...'
-            : (mode === 'direct' ? files.length : ucFiles.length) > 1
-            ? `Upload ${mode === 'direct' ? files.length : ucFiles.length} Files`
-            : 'Upload File'}
+            ? isExternal
+              ? 'Saving...'
+              : mode === 'direct'
+                ? `Uploading... ${progress}%`
+                : 'Saving...'
+            : isExternal
+              ? 'Submit link'
+              : (mode === 'direct' ? files.length : ucFiles.length) > 1
+                ? `Upload ${mode === 'direct' ? files.length : ucFiles.length} Files`
+                : 'Upload File'}
         </button>
       </form>
 

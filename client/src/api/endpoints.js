@@ -149,6 +149,9 @@ export const fileApi = {
       .post('/files/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: onProgress })
       .then((r) => r.data),
   mine: (params) => api.get('/files/mine', { params }).then((r) => r.data),
+  // Deletes a material the caller owns (the server scopes this to the uploader /
+  // their assigned scope via assertOwnership — the button is only a convenience).
+  remove: (id) => api.delete(`/files/${id}`).then((r) => r.data),
 };
 
 // ----- Admin (own files only — enforced server-side) -----
@@ -391,6 +394,21 @@ export const feedbackApi = {
     a.remove();
     URL.revokeObjectURL(url);
   },
+};
+
+// ----- Report / Flag (content moderation) -----
+// Anyone signed in may report content they can reach; the moderation queue is
+// admin-tier (the `reports` permission). The server re-checks access to the
+// reported item and rejects duplicates — nothing here is trusted as given.
+export const reportApi = {
+  // `data`: { entityType, entityId, reason, description?, platform }
+  submit: (data) => api.post('/reports', data).then((r) => r.data),
+  mine: () => api.get('/reports/mine').then((r) => r.data),
+  list: (params) => api.get('/reports', { params }).then((r) => r.data),
+  get: (id) => api.get(`/reports/${id}`).then((r) => r.data),
+  updateStatus: (id, status, resolutionNote) =>
+    api.patch(`/reports/${id}/status`, { status, ...(resolutionNote ? { resolutionNote } : {}) }).then((r) => r.data),
+  remove: (id) => api.delete(`/reports/${id}`).then((r) => r.data),
 };
 
 // ----- Search -----

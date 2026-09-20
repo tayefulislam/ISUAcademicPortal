@@ -13,6 +13,7 @@ export const PERMISSION_MODULES = [
   { key: 'files', label: 'File Management', description: 'Upload, edit, delete files and manage file versions.' },
   { key: 'approvals', label: 'Student Approvals', description: 'Review and approve/reject pending student ID photos.' },
   { key: 'reviews', label: 'Material Review', description: 'Review student-submitted materials before publishing.' },
+  { key: 'reports', label: 'Reports & Moderation', description: 'Review user-submitted content reports/flags and change their status.' },
   { key: 'notices', label: 'Notices & Announcements', description: 'Create and manage notices.' },
   { key: 'assignments', label: 'Assignments', description: 'Create, grade, and manage assignments.' },
   { key: 'question_bank', label: 'Question Bank', description: 'Manage the shared question bank.' },
