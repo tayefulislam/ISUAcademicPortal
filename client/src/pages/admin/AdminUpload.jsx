@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide, CloudUpload, HardDrive } from 'lucide-react';
 import { FileUploaderRegular } from '@uploadcare/react-uploader';
@@ -85,6 +85,43 @@ export default function AdminUpload() {
   const bySemester = (list) => (form.semester ? list.filter((c) => c.semester === form.semester) : list);
   const courseOptions = bySemester(scoped ? myCoursesInSelectedDept : courses?.data || []);
   const isExternal = form.uploadType === UPLOAD_TYPE_EXTERNAL;
+
+  // A scoped account (e.g. "CR") may only use its own reachable courses, so its
+  // semester picker lists just the semesters those courses declare and defaults
+  // to the user's own — the same scope My Courses shows.
+  const mySemesterId = user?.semester && typeof user.semester === 'object' ? user.semester._id : user?.semester;
+  const userSemesterName = useMemo(() => {
+    const match = (semesters?.data || []).find((s) => String(s._id) === String(mySemesterId));
+    return match?.name || (typeof user?.semester === 'object' ? user.semester?.name : '') || '';
+  }, [semesters, mySemesterId, user]);
+
+  const scopedSemesterOptions = useMemo(() => {
+    const names = new Set();
+    for (const c of allMyCourses) {
+      if (c.semester) names.add(c.semester);
+    }
+    const order = (semesters?.data || []).map((s) => s.name);
+    return [...names].sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [allMyCourses, semesters]);
+
+  useEffect(() => {
+    if (!scoped || !myCourses) return;
+    setForm((f) => {
+      if (f.semester && scopedSemesterOptions.includes(f.semester)) return f;
+      const next = scopedSemesterOptions.includes(userSemesterName) ? userSemesterName : (scopedSemesterOptions[0] || '');
+      return next === f.semester ? f : { ...f, semester: next, courseIdRef: '', chapterId: '', topicId: '' };
+    });
+  }, [scoped, myCourses, scopedSemesterOptions, userSemesterName]);
+
+  const semesterOptions = (scoped ? scopedSemesterOptions : (semesters?.data || []).map((s) => s.name))
+    .map((name) => ({ value: name, label: name }));
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list });
   const { data: chapters } = useQuery({
@@ -371,15 +408,15 @@ export default function AdminUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Semester" hint="Course options follow the selected semester">
+          <Field label="Semester" hint={scoped ? 'Course options follow your semester' : 'Course options follow the selected semester'}>
             <select
               value={form.semester}
               onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value, courseIdRef: '', chapterId: '', topicId: '' }))}
               className="input"
             >
-              <option value="">Select semester</option>
-              {(semesters?.data || []).map((s) => (
-                <option key={s._id} value={s.name}>{s.name}</option>
+              {!scoped && <option value="">Select semester</option>}
+              {semesterOptions.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
           </Field>
