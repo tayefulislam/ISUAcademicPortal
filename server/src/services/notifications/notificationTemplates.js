@@ -5,6 +5,19 @@
 // Adding a new notification type later is: add a key to Notification.js's
 // NOTIFICATION_TYPES + one entry here.
 
+/**
+ * The location line for a class, honouring its delivery mode
+ * (OFFLINE | ONLINE | HYBRID): "Room 501", "Online", "Room 501 · Online", or
+ * "" when the class has neither a room nor an online link yet.
+ */
+function classWhere(v) {
+  const online = v.mode === 'ONLINE' || v.mode === 'HYBRID';
+  if (v.room && online) return `Room ${v.room} · Online`;
+  if (online) return 'Online';
+  if (v.room) return `Room ${v.room}`;
+  return '';
+}
+
 export const TEMPLATES = {
   FILE_UPLOADED: {
     title: () => "New Course Material",
@@ -73,14 +86,18 @@ export const TEMPLATES = {
   // rather than the reader's.
   CLASS_REMINDER: {
     title: () => "Class Reminder",
-    message: (v) =>
-      `${v.courseCode || v.courseName || "Your class"} starts in ${v.minutesBefore} minutes${v.when ? ` at ${v.when}` : ""}${v.room ? ` — Room ${v.room}` : ""}`,
+    message: (v) => {
+      const where = classWhere(v);
+      return `${v.courseCode || v.courseName || "Your class"} starts in ${v.minutesBefore} minutes${v.when ? ` at ${v.when}` : ""}${where ? ` — ${where}` : ""}`;
+    },
     url: () => "/routine",
   },
   CLASS_STARTING: {
     title: () => "Class Starting Now",
-    message: (v) =>
-      `${v.courseCode || v.courseName || "Your class"} is starting now${v.room ? ` — Room ${v.room}` : ""}`,
+    message: (v) => {
+      const where = classWhere(v);
+      return `${v.courseCode || v.courseName || "Your class"} is starting now${where ? ` — ${where}` : ""}`;
+    },
     url: () => "/routine",
   },
   CLASS_CANCELLED: {

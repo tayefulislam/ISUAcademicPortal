@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatDate } from '../utils/format.js';
 import DeleteAccountCard from '../components/DeleteAccountCard.jsx';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 const ROLE_LABEL = { student: 'Student', admin: 'Admin', super_admin: 'Super Admin' };
 
@@ -14,6 +15,10 @@ export default function Profile() {
   const { updateUser, applyToken, isAdminTier } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  useEffect(() => {
+    trackClarityEvent('profile_viewed');
+  }, []);
 
   const { data, isLoading } = useQuery({ queryKey: ['my-profile'], queryFn: profileApi.get });
   const profile = data?.data;

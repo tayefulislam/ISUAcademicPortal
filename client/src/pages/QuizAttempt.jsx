@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import MathText from '../components/MathText.jsx';
 import AnswerInput from '../components/exam/AnswerInput.jsx';
 import { useCountdown } from '../components/exam/useCountdown.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 export default function QuizAttempt() {
   const { id: quizId, attemptId } = useParams();
@@ -37,6 +38,7 @@ export default function QuizAttempt() {
         for (const a of res.data.answers || []) byQ[a.question] = a;
         setAnswers(byQ);
         setLoading(false);
+        trackClarityEvent('quiz_started');
       })
       .catch((err) => {
         toast(err.response?.data?.message || 'Could not load attempt', 'error');
@@ -57,6 +59,7 @@ export default function QuizAttempt() {
       setSubmitting(true);
       try {
         const res = await quizApi.submitAttempt(quizId, attemptId);
+        trackClarityEvent('quiz_submitted');
         if (!silent) toast('Quiz submitted', 'success');
         navigate(`/quizzes/${quizId}/result/${attemptId}`, { replace: true });
         return res;

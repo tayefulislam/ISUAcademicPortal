@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search, Video, MapPin, User as UserIcon } from 'lucide-react';
 import { routineApi } from '../api/endpoints.js';
@@ -9,6 +9,7 @@ import {
   eventState, dayLabel, dhakaDate,
 } from '../components/routine/eventMeta.js';
 import { dhakaInputToIso } from '../utils/format.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 // The academic calendar: Day / Week / Month / Agenda (spec §12, §13).
 //
@@ -79,6 +80,10 @@ export default function Routine() {
   const [anchor, setAnchor] = useState(today);
   const [typeFilter, setTypeFilter] = useState('all');
   const [term, setTerm] = useState('');
+
+  useEffect(() => {
+    trackClarityEvent('routine_viewed');
+  }, []);
 
   const { from, to } = useMemo(() => windowFor(view, anchor), [view, anchor]);
 

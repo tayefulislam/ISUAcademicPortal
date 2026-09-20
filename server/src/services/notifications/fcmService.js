@@ -13,6 +13,17 @@ const FCM_BASE_DELAY_MS = 250;
 // silently downgrade it to the "Other" channel.
 export const ANDROID_CHANNEL_ID = 'isu_academic_portal';
 
+/**
+ * How long a class/exam reminder stays deliverable. A reminder is only true for
+ * a few minutes: without a TTL, FCM keeps a queued message for up to four weeks
+ * and a phone that was offline at T-10 receives "starts in 10 minutes" long
+ * after the class began — duplicating the reminder the app already raised
+ * locally while offline. Anything still undelivered after this window is
+ * dropped by FCM, and the app's own offline path owns that reminder instead.
+ */
+const REMINDER_TTL_SECONDS = 5 * 60;
+const REMINDER_TYPES = ['CLASS_REMINDER', 'CLASS_STARTING', 'EXAM_REMINDER'];
+
 // FCM data values must ALL be strings, and null/undefined values are rejected
 // outright — so a payload is filtered to strings rather than stringified
 // wholesale (which would send the literal "null").
@@ -36,6 +47,10 @@ const DATA_KEYS = [
   'routineId',
   'eventId',
   'eventType',
+  // The delivery mode and join link of a class, so an online reminder can offer
+  // to join instead of showing an empty "Room".
+  'mode',
+  'onlineLink',
 ];
 
 let messaging = null;
@@ -167,11 +182,16 @@ export async function sendToUserDevices(userId, payload = {}) {
     if (typeof value === 'string' && value) safeData[key] = value;
   }
 
+  // A reminder is short-lived; everything else keeps FCM's default lifetime.
+  const isReminder = REMINDER_TYPES.includes(safeData.type);
+
   const message = {
     notification: { title: String(title ?? ''), body: String(body ?? '') },
     data: safeData,
     android: {
       priority: 'high',
+      // `ttl` must be a string like "300s" (or an integer number of seconds).
+      ...(isReminder ? { ttl: `${REMINDER_TTL_SECONDS}s` } : {}),
       notification: {
         channelId: ANDROID_CHANNEL_ID,
         sound: 'default',

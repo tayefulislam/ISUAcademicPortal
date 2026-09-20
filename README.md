@@ -8,7 +8,9 @@ institution's users and settings from role-scoped dashboards.
 
 **Stack:** React 18 (Vite) + Tailwind · Node.js/Express · MongoDB/Mongoose ·
 JWT auth · pluggable file storage (local disk / S3-compatible / Uploadcare) ·
-Web Push (VAPID) + installable PWA · Google Analytics 4.
+Web Push (VAPID) + installable PWA · Google Analytics 4 · Microsoft Clarity
+(optional, consent-gated behavioural analytics — see
+[`docs/CLARITY_ANALYTICS.md`](docs/CLARITY_ANALYTICS.md)).
 
 ---
 
@@ -119,6 +121,7 @@ database on each request (never trusts the JWT payload alone) — see
 isucloud/
 ├── client/                          React frontend (Vite)
 │   └── src/
+│       ├── analytics/                 clarity.js (the only Microsoft Clarity integration point)
 │       ├── api/                       axios instance + one typed *Api object per resource (endpoints.js)
 │       ├── components/
 │       │   ├── exam/                    AnswerInput, ResultView, useCountdown
@@ -250,6 +253,8 @@ proxy as the API) and point `VITE_API_URL` at the deployed API's `/api` URL.
 | `REMINDER_CRON_SECRET` | Shared secret for the class/exam reminder cron target (`POST /api/internal/reminders/run`). The endpoint refuses to run at all while this is unset, rather than being left open; pair it with an external cron hitting that URL every minute |
 | `VITE_API_URL` | Frontend → backend base URL, e.g. `http://localhost:7050/api` |
 | `VITE_GA_MEASUREMENT_ID` | Google Analytics 4 measurement ID (`G-XXXXXXXXXX`) |
+| `VITE_CLARITY_PROJECT_ID` | Microsoft Clarity project ID (session recordings, heatmaps). Blank disables Clarity. See [`docs/CLARITY_ANALYTICS.md`](docs/CLARITY_ANALYTICS.md) |
+| `VITE_CLARITY_ENABLED` | `false` switches Clarity off for one environment without removing the project ID (default `true`) |
 | `VITE_UPLOADCARE_PUBLIC_KEY` | Enables the Uploadcare widget on upload pages |
 
 ---
