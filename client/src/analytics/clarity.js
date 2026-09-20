@@ -8,8 +8,13 @@ import Clarity from '@microsoft/clarity';
  * best-effort: analytics must never throw, never block rendering, and never
  * prevent login, API calls, navigation or any other feature from working.
  *
- * Clarity starts as soon as the app loads (no prompt, no gate). Sensitive
- * fields are masked and no personal data is ever sent — see below.
+ * Clarity starts as soon as the app loads (no prompt, no gate). The SDK's script
+ * tag is added by index.html's <head> — the earliest point available, so it
+ * loads alongside the app bundle instead of after React has mounted — and this
+ * module is the API layer on top of it: identity, tags, events and page names.
+ * It never injects the script unless that head snippet was somehow absent.
+ *
+ * Sensitive fields are masked and no personal data is ever sent — see below.
  *
  * Configuration (Vite inlines these at build time):
  *   VITE_CLARITY_ENABLED     "false" disables Clarity for this build
@@ -46,8 +51,12 @@ export function isClarityConfigured() {
 }
 
 /**
- * Initializes Clarity exactly once. Returns true when Clarity is (or already
- * was) active. Never throws.
+ * Finishes Clarity setup. Returns true when Clarity is (or already was) active.
+ *
+ * The script itself is normally already loading from index.html's <head>; this
+ * only signals consent and tags the landing page, and falls back to injecting
+ * the script itself in the one case where that head snippet did not run. Never
+ * throws, and is safe to call more than once.
  */
 export function initClarity() {
   if (initialized) return true;
@@ -58,14 +67,17 @@ export function initClarity() {
     return false;
   }
 
-  // Set before the call so React StrictMode's double-invoked effects (and any
-  // re-render) can never inject the script twice.
   initialized = true;
   try {
-    Clarity.init(PROJECT_ID);
+    // Fallback only — index.html's snippet has already added the tag (and the
+    // npm wrapper's own injector would no-op on it anyway).
+    if (!document.getElementById('clarity-script')) {
+      Clarity.init(PROJECT_ID);
+    }
     // No consent gate: signal that the cookie may be set so recording starts.
     Clarity.consent(true);
-    // Tag the landing page straight away: the route tracker has not run yet.
+    // Tag the landing page straight away; the route tracker takes over from the
+    // first navigation.
     Clarity.setTag('page', clarityScreenName(window.location.pathname));
     return true;
   } catch (error) {

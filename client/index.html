@@ -14,6 +14,43 @@
     <meta name="mobile-web-app-capable" content="yes" />
 
     <title>Academic File Portal</title>
+
+    <!--
+      Microsoft Clarity is loaded HERE, in <head>, and not from the app code.
+
+      This is Microsoft's recommended integration, and it matters most on a
+      phone: the app bundle is megabytes and can take seconds to parse and
+      mount on a slow connection, so a Clarity that only starts from a React
+      effect misses the beginning of the visit — and misses short visits
+      entirely. An async, deferring-free tag in <head> starts the SDK in
+      parallel with the bundle instead.
+
+      The project ID and switch are injected at build time from the environment
+      (VITE_CLARITY_PROJECT_ID / VITE_CLARITY_ENABLED). When the ID is blank —
+      or the flag is "false", or the placeholder was not replaced because no
+      value was configured — nothing is loaded at all, and no request leaves the
+      browser. Nothing sensitive is ever passed: the SDK only gets an internal,
+      non-sensitive identifier from src/analytics/clarity.js, and input content
+      is masked.
+    -->
+    <script>
+      (function () {
+        var projectId = '%VITE_CLARITY_PROJECT_ID%';
+        var enabled = '%VITE_CLARITY_ENABLED%';
+        if (!projectId || projectId.charAt(0) === '%' || enabled === 'false') return;
+        (function (c, l, a, r, i, t, y) {
+          if (l.getElementById('clarity-script')) return;
+          c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+          t = l.createElement(r);
+          t.async = 1;
+          t.src = 'https://www.clarity.ms/tag/' + i;
+          t.id = 'clarity-script';
+          y = l.getElementsByTagName(r)[0];
+          if (y && y.parentNode) y.parentNode.insertBefore(t, y);
+          else l.head.appendChild(t);
+        })(window, document, 'clarity', 'script', projectId);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
