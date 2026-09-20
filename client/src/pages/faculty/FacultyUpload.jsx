@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { UploadCloud, X, FileIcon as FileIconLucide, ArrowLeft } from 'lucide-react';
 import { facultyApi, batchApi, categoryApi, chapterApi, topicApi, semesterApi } from '../../api/endpoints.js';
+import { UploadTypeToggle, ExternalUrlField, isValidHttpsUrl, UPLOAD_TYPE_FILE, UPLOAD_TYPE_EXTERNAL } from '../../components/MaterialSource.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
 
@@ -19,6 +20,8 @@ const initialState = {
   allBatches: false,
   batches: [],
   visibility: 'login_required',
+  uploadType: UPLOAD_TYPE_FILE,
+  externalUrl: '',
   restrictEnabled: false,
   restrictDepartments: [],
   restrictBatches: [],
@@ -80,6 +83,15 @@ export default function FacultyUpload() {
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
 
   const selectedCourse = (myCourses?.data || []).find((c) => c._id === form.courseIdRef);
+  const isExternal = form.uploadType === UPLOAD_TYPE_EXTERNAL;
+  // Course options follow the selected semester (a course with a different/no
+  // semester is hidden once one is picked); with none selected, every assigned
+  // course is offered exactly as before. The list is already scoped to this
+  // faculty member's own courses by GET /faculty/courses.
+  const courseOptions = useMemo(
+    () => (myCourses?.data || []).filter((c) => !form.semester || c.semester === form.semester),
+    [myCourses, form.semester]
+  );
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
   const toggleBatch = (id) => setForm((f) => ({ ...f, batches: f.batches.includes(id) ? f.batches.filter((b) => b !== id) : [...f.batches, id] }));
@@ -106,14 +118,18 @@ export default function FacultyUpload() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!files.length) return toast('Please select at least one file or image', 'error');
     if (!selectedCourse) return toast('Please select a course', 'error');
+    if (isExternal) {
+      if (!isValidHttpsUrl(form.externalUrl)) return toast('Enter a valid https:// link', 'error');
+    } else if (!files.length) {
+      return toast('Please select at least one file or image', 'error');
+    }
 
     setSubmitting(true);
     setProgress(0);
     try {
       const fd = new FormData();
-      files.forEach((f) => fd.append('files', f));
+      if (!isExternal) files.forEach((f) => fd.append('files', f));
       fd.append('departmentId', selectedCourse.department._id);
       Object.entries(form).forEach(([k, v]) => {
         if (k === 'restrictEnabled') return;
@@ -144,6 +160,14 @@ export default function FacultyUpload() {
       <h1 className="text-2xl font-bold text-slate-800 mb-6">Upload Material</h1>
 
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+        <Field label="How are you submitting this?">
+          <UploadTypeToggle value={form.uploadType} onChange={set('uploadType')} />
+        </Field>
+
+        {isExternal ? (
+          <ExternalUrlField value={form.externalUrl} onChange={set('externalUrl')} />
+        ) : (
+          <>
         <label
           className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400"
           onDragOver={(e) => e.preventDefault()}
@@ -169,7 +193,9 @@ export default function FacultyUpload() {
                 <button type="button" onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-600 shrink-0"><X size={16} /></button>
               </li>
             ))}
-          </ul>
+            </ul>
+        )}
+          </>
         )}
 
         {submitting && (
@@ -200,7 +226,7 @@ export default function FacultyUpload() {
                 required
               >
                 <option value="">Select</option>
-                {(myCourses?.data || []).map((c) => (
+                {(courseOptions).map((c) => (
                   <option key={c._id} value={c._id}>{c.name} ({c.courseId}) — {c.department.code}</option>
                 ))}
               </select>
@@ -230,8 +256,12 @@ export default function FacultyUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Semester">
-            <select value={form.semester} onChange={(e) => set('semester')(e.target.value)} className="input">
+          <Field label="Semester" hint="Course options follow the selected semester">
+            <select
+              value={form.semester}
+              onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value, courseIdRef: '', chapterId: '', topicId: '' }))}
+              className="input"
+            >
               <option value="">Select semester</option>
               {(semesters?.data || []).map((s) => <option key={s._id} value={s.name}>{s.name}</option>)}
             </select>
@@ -299,7 +329,15 @@ export default function FacultyUpload() {
         </Field>
 
         <button disabled={submitting} className="w-full h-11 rounded-lg bg-brand-600 text-white font-semibold hover:bg-brand-700 disabled:opacity-60">
-          {submitting ? `Uploading... ${progress}%` : files.length > 1 ? `Upload ${files.length} Files` : 'Upload File'}
+          {submitting
+            ? isExternal
+              ? 'Saving...'
+              : `Uploading... ${progress}%`
+            : isExternal
+              ? 'Submit link'
+              : files.length > 1
+                ? `Upload ${files.length} Files`
+                : 'Upload File'}
         </button>
       </form>
 

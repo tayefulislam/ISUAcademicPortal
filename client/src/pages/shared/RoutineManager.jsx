@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarPlus, Plus, Trash2, CalendarX, Clock, X, Pencil, RotateCcw } from 'lucide-react';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import {
-  departmentApi, batchApi, semesterApi, courseApi, routineApi, calendarApi,
+  departmentApi, batchApi, semesterApi, courseApi, routineApi, calendarApi, facultyApi,
 } from '../../api/endpoints.js';
 import { CLASS_TYPE_LABELS, MODE_LABELS, typeLabel, eventTitle, dhakaDate, clock } from '../../components/routine/eventMeta.js';
 
@@ -50,6 +51,14 @@ const input = 'w-full h-11 sm:h-10 rounded-lg border border-slate-300 px-3 text-
 export default function RoutineManager() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user, isSuperAdminTier } = useAuth();
+
+  // Admin-tier and super-admin manage institution-wide; everyone else (Faculty,
+  // and a custom admin-tier role such as "CR") is held to their own assigned
+  // scope. The server already enforces this on every read and write — this is
+  // the matching UI so the pickers never offer a department/course the request
+  // would then refuse.
+  const broadScope = isSuperAdminTier || user?.role === 'admin';
 
   const today = dhakaDate();
   const [date, setDate] = useState(today);
@@ -59,7 +68,7 @@ export default function RoutineManager() {
   const [rescheduling, setRescheduling] = useState(null);
   const [editingRoutine, setEditingRoutine] = useState(null);
 
-  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list });
+  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: departmentApi.list, enabled: broadScope });
   const { data: batches } = useQuery({ queryKey: ['batches'], queryFn: () => batchApi.list() });
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list });
   const { data: courses } = useQuery({
@@ -69,17 +78,37 @@ export default function RoutineManager() {
     queryFn: () => courseApi.list(scope.department
       ? { department: scope.department, limit: 500 }
       : { limit: 500 }),
+    enabled: broadScope,
+  });
+  // A scoped manager's own courses/departments — the same set GET /faculty/courses
+  // returns, reused as the source for both pickers.
+  const { data: myFacultyCourses } = useQuery({
+    queryKey: ['faculty-courses'],
+    queryFn: facultyApi.courses,
+    enabled: !broadScope,
   });
   const { data: groupsData } = useQuery({ queryKey: ['routine', 'groups'], queryFn: routineApi.groups });
 
-  const departmentOptions = (departments?.data || []).map((d) => ({ value: d._id, label: `${d.code} — ${d.name}` }));
+  const myDepartments = useMemo(() => {
+    const byId = new Map();
+    for (const c of myFacultyCourses?.data || []) {
+      if (c.department?._id) byId.set(c.department._id, c.department);
+    }
+    return [...byId.values()];
+  }, [myFacultyCourses]);
+
+  const departmentOptions = broadScope
+    ? (departments?.data || []).map((d) => ({ value: d._id, label: `${d.code} — ${d.name}` }))
+    : myDepartments.map((d) => ({ value: d._id, label: `${d.code} — ${d.name}` }));
   // Batches carry their own department, so they are filtered here rather than
   // asking the server for another endpoint.
   const batchOptions = (batches?.data || [])
     .filter((b) => !scope.department || !b.department || String(b.department?._id || b.department) === String(scope.department))
     .map((b) => ({ value: b._id, label: b.code || b.name }));
   const semesterOptions = (semesters?.data || []).map((s) => ({ value: s._id, label: s.name }));
-  const courseOptions = (courses?.data || []).map((c) => ({ value: c._id, label: `${c.courseId} — ${c.name}` }));
+  const courseOptions = (broadScope ? courses?.data || [] : myFacultyCourses?.data || [])
+    .filter((c) => !scope.department || String(c.department?._id || c.department) === String(scope.department))
+    .map((c) => ({ value: c._id, label: `${c.courseId} — ${c.name}` }));
   const groupOptions = (groupsData?.data?.groups || ['BOTH']).map((g) => ({ value: g, label: g === 'BOTH' ? 'Both (whole batch)' : g }));
 
   const { data: instancesData, isLoading } = useQuery({

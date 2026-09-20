@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Eye, Download, Files, Heart, Lock } from 'lucide-react';
+import { Eye, Download, Files, Heart, Lock, ExternalLink } from 'lucide-react';
 import FileIcon from './FileIcon.jsx';
 import { formatBytes, formatDate } from '../utils/format.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -7,6 +7,7 @@ import { useBookmarkedIds, useToggleBookmark } from '../hooks/useBookmarks.js';
 
 export default function FileCard({ file, onDownload, folderControl }) {
   const multi = (file.fileCount ?? 1) > 1;
+  const isExternal = file.uploadType === 'external';
   const { user } = useAuth();
   const bookmarkedIds = useBookmarkedIds();
   const toggleBookmark = useToggleBookmark();
@@ -50,6 +51,11 @@ export default function FileCard({ file, onDownload, folderControl }) {
             <Lock size={12} /> Login Required
           </span>
         )}
+        {isExternal && (
+          <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 text-xs font-medium">
+            <ExternalLink size={12} /> External link
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-1.5 text-xs">
@@ -74,7 +80,7 @@ export default function FileCard({ file, onDownload, folderControl }) {
       <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
         <span className="uppercase font-medium text-slate-500">{file.fileType}</span>
         <span>&bull;</span>
-        <span>{formatBytes(file.fileSize)}</span>
+        <span>{isExternal ? 'External link' : formatBytes(file.fileSize)}</span>
         <span>&bull;</span>
         <span>{formatDate(file.createdAt)}</span>
       </div>
@@ -110,7 +116,14 @@ export default function FileCard({ file, onDownload, folderControl }) {
               >
                 View
               </Link>
-              {multi ? (
+              {isExternal ? (
+                <Link
+                  to={`/files/${file._id}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"
+                >
+                  <ExternalLink size={13} /> Open
+                </Link>
+              ) : multi ? (
                 <Link
                   to={`/files/${file._id}`}
                   className="px-3 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white hover:bg-brand-700"

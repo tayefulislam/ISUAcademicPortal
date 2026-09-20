@@ -14,7 +14,10 @@ export const FILE_TYPES = [
   'other',
 ];
 
-export const STORAGE_PROVIDERS = ['local', 'imgbb', 'uploadcare', 's3'];
+// 'external' is not a real object store — it marks a material submitted as a
+// link (Google Drive, OneDrive, Dropbox, …) rather than an uploaded file, so
+// there is nothing to delete from storage for it.
+export const STORAGE_PROVIDERS = ['local', 'imgbb', 'uploadcare', 's3', 'external'];
 
 // One physical file within a File entry. A single upload with a shared
 // title can bundle several of these (e.g. a lecture note PDF plus its
@@ -49,6 +52,14 @@ const fileSchema = new mongoose.Schema(
     fileUrl: { type: String, required: true },
     storageProvider: { type: String, enum: STORAGE_PROVIDERS, required: true },
     storageRef: { type: String, default: '' },
+
+    // 'file' = an uploaded/attached object (the default, unchanged); 'external'
+    // = a material submitted as an HTTPS link instead of an upload. An external
+    // entry still carries one synthetic attachment descriptor (fileType 'other',
+    // storageProvider 'external') so every consumer that assumes attachments[]
+    // is non-empty keeps working — there is simply no object to delete.
+    uploadType: { type: String, enum: ['file', 'external'], default: 'file' },
+    externalUrl: { type: String, default: '' },
 
     attachments: {
       type: [attachmentSchema],
@@ -175,5 +186,6 @@ fileSchema.index({ visibility: 1 });
 fileSchema.index({ 'restrictions.departments': 1 });
 fileSchema.index({ 'restrictions.batches': 1 });
 fileSchema.index({ approvalStatus: 1 });
+fileSchema.index({ uploadType: 1 });
 
 export default mongoose.model('File', fileSchema);

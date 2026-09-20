@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark, CalendarDays, CalendarClock, FileText } from 'lucide-react';
+import { LayoutDashboard, FileStack, Upload, UserCheck, ClipboardCheck, Flag, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers3, BookOpen, PenSquare, HelpCircle, UploadCloud, Bookmark, CalendarDays, CalendarClock, FileText } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -8,6 +8,7 @@ const links = [
   { to: '/admin/upload', label: 'Upload File', icon: Upload, permission: 'files' },
   { to: '/admin/approvals', label: 'Student Approvals', icon: UserCheck, permission: 'approvals' },
   { to: '/admin/reviews', label: 'Material Submissions', icon: ClipboardCheck, permission: 'reviews' },
+  { to: '/admin/reports', label: 'Reports', icon: Flag, permission: 'reports' },
   { to: '/admin/notices', label: 'Notices', icon: Megaphone, permission: 'notices' },
   { to: '/admin/assignments', label: 'Assignments', icon: ClipboardList, permission: 'assignments' },
   { to: '/admin/question-bank', label: 'Question Bank', icon: BookMarked, permission: 'question_bank' },

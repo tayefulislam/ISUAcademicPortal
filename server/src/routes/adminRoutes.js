@@ -38,6 +38,10 @@ router.post(
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
     body('categoryId').notEmpty().withMessage('Category is required'),
+    body('visibility').optional().isIn(['public', 'login_required']),
+    body('uploadType').optional().isIn(['file', 'external']),
+    body('externalUrl').optional().isString(),
+    body('semester').optional().isString(),
   ],
   validate,
   uploadFiles

@@ -1,4 +1,5 @@
 import { getEffectiveCourseIds, isBlockedByApproval } from './courseAccessService.js';
+import { getRole } from '../models/Role.js';
 
 /**
  * Builds a MongoDB filter for the File collection from search/list query
@@ -177,6 +178,20 @@ export function attachFileLocks(files, ctx) {
     obj.locked = computeFileLocked(obj, ctx);
     delete obj.restrictions;
     delete obj.visibility;
+    // A locked item must not hand out an external link either — the viewer
+    // cannot open the material, so the third-party URL is withheld along with
+    // the other access fields. (`fileUrl` is left untouched: it is part of the
+    // existing response shape every client already handles.)
+    if (obj.locked) {
+      delete obj.externalUrl;
+      if (Array.isArray(obj.attachments)) {
+        obj.attachments = obj.attachments.map((a) => {
+          const copy = { ...a };
+          if (copy.storageProvider === 'external') delete copy.fileUrl;
+          return copy;
+        });
+      }
+    }
     return obj;
   });
 }
@@ -193,13 +208,12 @@ export async function userCanAccessFile(file, user) {
 
   // Pending submissions are invisible to everyone except the uploader
   // (checked above), super_admin, admin, administrator, or an in-scope
-  // faculty reviewer — regardless of visibility/restrictions, which only
-  // apply once approved.
+  // reviewer (Faculty scoped to the file, or a custom admin-tier role such as
+  // "CR" granted the `reviews` permission and scoped to it) — regardless of
+  // visibility/restrictions, which only apply once approved.
   if (file.approvalStatus === 'pending') {
     if (!user) return false;
-    if (user.role === 'admin') return true;
-    if (user.role === 'faculty') return isFacultyScopedToFile(user, file);
-    return false;
+    return isReviewerForFile(user, file);
   }
 
   if (file.visibility === 'public') return true;
@@ -245,4 +259,29 @@ export function isFacultyScopedToFile(user, file) {
   const depts = (user.assignedDepartments || []).map(String);
   const courses = (user.assignedCourses || []).map(String);
   return depts.includes(String(file.department)) || courses.includes(String(file.course));
+}
+
+/**
+ * Whether `user` may review (and therefore see/preview) this file while it is
+ * still `approvalStatus: 'pending'`. This is the single source of truth for the
+ * review queue's audience — the same rule reviewController's scopeFilter and
+ * recipientResolver's reviewer resolution apply:
+ *   - the unrestricted reviewer roles (`admin`, `super_admin`, `administrator`)
+ *     may review anything;
+ *   - Faculty may review material in their assigned Department/Course;
+ *   - any other admin-tier role (e.g. "CR") may review only when it has been
+ *     granted the `reviews` permission AND the file is in its own assigned
+ *     Department/Course — the same `assignedDepartments`/`assignedCourses`
+ *     fields Faculty uses.
+ * A reviewer needs this to open the submitted file before accepting/rejecting
+ * it (see userCanAccessFile, which routes pending access through here).
+ */
+export async function isReviewerForFile(user, file) {
+  if (!user || !file) return false;
+  if (user.role === 'admin' || user.role === 'super_admin' || user.role === 'administrator') return true;
+  if (user.role === 'faculty') return isFacultyScopedToFile(user, file);
+
+  const role = await getRole(user.role);
+  if (!role || !role.permissions.includes('reviews')) return false;
+  return isFacultyScopedToFile(user, file);
 }

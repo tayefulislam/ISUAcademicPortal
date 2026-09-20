@@ -201,6 +201,30 @@ export async function resolveReviewersForCourse(course, { includeFaculty = false
   return User.find({ $or: or }).distinct('_id');
 }
 
+/**
+ * The role keys whose holders moderate content reports: the unrestricted
+ * 'admin' role, the super-admin tier, plus any custom admin-tier role (e.g.
+ * "CR") that has been granted the `reports` permission. Mirrors
+ * reviewerRoleKeys — the same "seeded role + granted custom roles" pattern.
+ */
+async function moderatorRoleKeys() {
+  await getRole('admin'); // lazily seeds the admin role, if it isn't yet
+  const granted = await Role.find({ permissions: 'reports' }).distinct('key');
+  return [...new Set([...granted, 'admin', 'super_admin', 'administrator'])];
+}
+
+/**
+ * Everyone who should hear about a newly submitted content report: the CR
+ * (reports-granted) / Admin / Administrator / Super Admin accounts. Faculty are
+ * deliberately excluded — moderation is an admin-tier responsibility, not a
+ * teaching one.
+ */
+export async function resolveModerators() {
+  const roles = await moderatorRoleKeys();
+  if (!roles.length) return [];
+  return User.find({ role: { $in: roles }, status: 'active' }).distinct('_id');
+}
+
 /** Faculty assigned to (or overseeing) a course — for staff-facing events. */
 export async function resolveFacultyForCourse(course) {
   const courseDoc = await resolveCourseDoc(course);

@@ -14,6 +14,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
 import { ApiError } from '../utils/ApiError.js';
+import { assertFacultyCourseAccess } from '../services/teachingService.js';
 
 const router = Router();
 
@@ -22,17 +23,22 @@ const router = Router();
 // enforce that scope internally via assertOwnership (see fileController.js).
 router.use(authenticate, requireRole('faculty'));
 
-// Faculty may only upload into a department/course they're actually
-// assigned to — the body is client-supplied, so this is re-checked here
-// against the authenticated user's own assignment, never trusted as-is.
-function assertUploadScope(req, res, next) {
-  const deptIds = new Set((req.user.assignedDepartments || []).map(String));
-  const courseIds = new Set((req.user.assignedCourses || []).map(String));
-  const { departmentId, courseIdRef } = req.body;
-  if (!deptIds.has(String(departmentId)) && !courseIds.has(String(courseIdRef))) {
-    return next(new ApiError(403, 'You can only upload materials for your assigned Department/Course', null, 'FORBIDDEN'));
+// Faculty may only upload into a course they're actually assigned to — either
+// directly, or because it sits in a department assigned to them wholesale. This
+// is the same rule GET /faculty/courses (and every other faculty write) uses, so
+// the offered course list and the accepted upload can never disagree. The body
+// is client-supplied, so it is re-checked here against the authenticated user's
+// own assignment, never trusted as-is. (The department/course pairing itself is
+// verified afterwards by resolveUploadMetadata, which requires the course to
+// belong to the submitted department.)
+async function assertUploadScope(req, res, next) {
+  try {
+    await assertFacultyCourseAccess(req.user, req.body.courseIdRef);
+    next();
+  } catch (err) {
+    if (err instanceof ApiError) return next(err);
+    next(new ApiError(403, 'You can only upload materials for your assigned Department/Course', null, 'FORBIDDEN'));
   }
-  next();
 }
 
 router.get('/courses', getFacultyCourses);
@@ -47,6 +53,10 @@ router.post(
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
     body('categoryId').notEmpty().withMessage('Category is required'),
+    body('visibility').optional().isIn(['public', 'login_required']),
+    body('uploadType').optional().isIn(['file', 'external']),
+    body('externalUrl').optional().isString(),
+    body('semester').optional().isString(),
   ],
   validate,
   assertUploadScope,

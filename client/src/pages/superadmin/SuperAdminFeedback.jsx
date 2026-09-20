@@ -7,7 +7,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 import { formatDate } from '../../utils/format.js';
 import Pagination from '../../components/Pagination.jsx';
 
-const CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'Other'];
+const CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'App', 'Other'];
 const STATUS_STYLE = {
   new: 'bg-amber-50 text-amber-700',
   reviewed: 'bg-brand-50 text-brand-700',

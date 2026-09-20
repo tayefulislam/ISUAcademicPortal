@@ -5,7 +5,7 @@ import { feedbackApi, authApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
-const CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'Other'];
+const CATEGORIES = ['Website', 'Academic Material', 'Faculty', 'Technical Issue', 'Suggestion', 'App', 'Other'];
 
 const initialForm = { name: '', email: '', category: 'Website', subject: '', message: '' };
 

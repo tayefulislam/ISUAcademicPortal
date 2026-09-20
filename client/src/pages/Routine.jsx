@@ -181,6 +181,28 @@ export default function Routine() {
         </div>
 
         <div className="flex items-center gap-1 ml-auto">
+          {/* Custom date: jump the calendar straight to any day. Bound directly
+              to `anchor` so Prev/Today/Next and the view tabs keep it in step.
+              A bare date is validated as a real YYYY-MM-DD and interpreted in
+              the institution's clock, exactly like the other views. */}
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 mr-1">
+            <span className="hidden sm:inline">Custom</span>
+            <input
+              type="date"
+              value={anchor}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (
+                  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+                  !Number.isNaN(new Date(`${value}T00:00:00+06:00`).getTime())
+                ) {
+                  setAnchor(value);
+                }
+              }}
+              aria-label="Custom date"
+              className="px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-600"
+            />
+          </label>
           <button onClick={() => shiftAnchor(-1)} className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Previous">
             <ChevronLeft size={16} />
           </button>

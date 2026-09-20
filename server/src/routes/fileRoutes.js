@@ -50,6 +50,10 @@ router.post(
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
     body('categoryId').notEmpty().withMessage('Category is required'),
+    body('visibility').optional().isIn(['public', 'login_required']),
+    body('uploadType').optional().isIn(['file', 'external']),
+    body('externalUrl').optional().isString(),
+    body('semester').optional().isString(),
   ],
   validate,
   uploadFiles
@@ -78,6 +82,10 @@ router.post(
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
     body('categoryId').notEmpty().withMessage('Category is required'),
+    body('visibility').optional().isIn(['public', 'login_required']),
+    body('uploadType').optional().isIn(['file', 'external']),
+    body('externalUrl').optional().isString(),
+    body('semester').optional().isString(),
   ],
   validate,
   submitStudentFile
@@ -93,7 +101,12 @@ router.post(
 router.patch('/:id', authenticate, updateFile);
 
 router.put('/:id', authenticate, requirePermission('files'), updateFile);
-router.delete('/:id', authenticate, requirePermission('files'), deleteFile);
+// Deleting the caller's OWN material. Like PATCH above, there is deliberately
+// no requirePermission('files'): assertOwnership inside the controller is the
+// real gate — the uploader (Student/CR/Faculty) may delete what they uploaded,
+// Faculty any material in their assigned scope, super-admin anything, and
+// everyone else is refused. A non-owner still gets a 403.
+router.delete('/:id', authenticate, deleteFile);
 router.post('/bulk-delete', authenticate, requirePermission('files'), bulkDeleteFiles);
 
 export default router;
