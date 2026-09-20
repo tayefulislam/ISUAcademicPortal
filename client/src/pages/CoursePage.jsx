@@ -12,6 +12,7 @@ import FileCard from '../components/FileCard.jsx';
 import FileGridSkeleton from '../components/FileGridSkeleton.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { formatDate } from '../utils/format.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 const TABS = [
   { key: 'files', label: 'Files', icon: FileText },
@@ -39,6 +40,11 @@ export default function CoursePage() {
   const { user, isFaculty, isAdmin, hasPermission } = useAuth();
   const { toast } = useToast();
   const download = useDownloadFile();
+
+  // Product analytics only — the course id itself is never sent.
+  useEffect(() => {
+    if (courseId) trackClarityEvent('course_opened');
+  }, [courseId]);
 
   const [tab, setTab] = useState('files');
   const [busy, setBusy] = useState(false);

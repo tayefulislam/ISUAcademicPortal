@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authApi } from '../api/endpoints.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 const AuthContext = createContext(null);
 
@@ -39,6 +40,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
+    trackClarityEvent('login_success');
     return data.user;
   }, []);
 
@@ -50,6 +52,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
+      trackClarityEvent('register_success');
     }
     return data;
   }, []);
@@ -58,12 +61,14 @@ export function AuthProvider({ children }) {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(sessionUser));
     setUser(sessionUser);
+    trackClarityEvent('login_success');
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    trackClarityEvent('logout');
   }, []);
 
   // Applying a fresh token (e.g. after a password change) without a full

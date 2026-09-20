@@ -18,6 +18,12 @@ export function eventVars(entry, extra = {}) {
     courseName,
     title: courseName || courseCode || 'Class',
     room: entry.roomNumber || '',
+    // An online/hybrid class has no room (or a room only for the in-person
+    // half), so the delivery mode has to travel with the reminder — otherwise
+    // an online reminder reads as if it were in a room. `onlineLink` rides along
+    // so a client can offer to join straight from the notification.
+    mode: entry.deliveryMode || '',
+    onlineLink: entry.onlineLink || '',
     // Reminders want the clock ("at 10:00"); cancellation/reschedule want the
     // full Dhaka timestamp so "which day" is never ambiguous.
     when: isInstance ? `${entry.date} ${dhakaClock(entry.startAt)}` : formatInAppTimezone(entry.startAt),

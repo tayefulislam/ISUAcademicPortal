@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext.jsx';
 import { initAnalytics, trackPageView } from './utils/analytics.js';
+import { initClarity, trackClarityRoute } from './analytics/clarity.js';
 import MainLayout from './layouts/MainLayout.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import SuperAdminLayout from './layouts/SuperAdminLayout.jsx';
@@ -97,9 +98,13 @@ import FacultyEnrollmentDashboard from './pages/faculty/FacultyEnrollmentDashboa
 
 function AnalyticsTracker() {
   const location = useLocation();
+  const { user } = useAuth();
   useEffect(() => {
     trackPageView(location.pathname + location.search);
-  }, [location]);
+    // Tags the Clarity page and keeps its identity in step with the signed-in
+    // user, so a previous user's identity is never left on the session.
+    trackClarityRoute(location.pathname, user);
+  }, [location, user]);
   return null;
 }
 
@@ -107,6 +112,8 @@ export default function App() {
   const { user } = useAuth();
   useEffect(() => {
     initAnalytics();
+    // Starts Clarity immediately when the build is configured — no prompt.
+    initClarity();
   }, []);
 
   // Listens for the service worker's notificationclick postMessage (spec

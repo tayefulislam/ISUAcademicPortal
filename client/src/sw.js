@@ -71,6 +71,11 @@ self.addEventListener('push', (event) => {
       badge: '/icons/icon-192.png',
       data: { url: payload.url },
       tag: payload.type || undefined,
+      // Same-type notifications share a tag, so a later one replaces an earlier
+      // one instead of stacking in the tray. Without renotify the replacement is
+      // silent — which is how the 10-minute class reminder could land without the
+      // student noticing anything at all.
+      renotify: true,
     })
   );
 });

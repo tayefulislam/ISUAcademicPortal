@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Paperclip, Megaphone } from 'lucide-react';
 import { noticeApi } from '../api/endpoints.js';
 import { formatDate } from '../utils/format.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 
 const PRIORITY_STYLE = {
   low: 'bg-slate-100 text-slate-600',
@@ -13,6 +15,10 @@ const PRIORITY_STYLE = {
 export default function Notices() {
   const { data, isLoading } = useQuery({ queryKey: ['notices'], queryFn: noticeApi.list });
   const notices = data?.data || [];
+
+  useEffect(() => {
+    trackClarityEvent('notices_viewed');
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">

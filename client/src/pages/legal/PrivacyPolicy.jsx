@@ -98,9 +98,9 @@ export default function PrivacyPolicy() {
             items={[
               'Device and browser information (browser type/version and operating system), collected as part of your request to the server and stored in security logs.',
               'IP address, recorded at sign-in and in server logs for security, abuse prevention and troubleshooting.',
-              'Secure session information: after you sign in, a signed authentication token and a cached copy of your basic profile are stored in your browser. The portal does not use tracking cookies.',
+              'Secure session information: after you sign in, a signed authentication token and a cached copy of your basic profile are stored in your browser. The portal does not use advertising or third-party tracking cookies; the optional analytics cookie is described in section 7.',
               'Web Push subscription data, if you enable notifications — a browser/device-specific push endpoint and its keys, plus device type and browser, so the portal can deliver notifications to that device.',
-              'Analytics information, only if the university has configured a Google Analytics 4 measurement ID for the portal.',
+              'Analytics information, if the university has enabled analytics for the portal: aggregate usage from Google Analytics 4, and anonymised session recordings, heatmaps and click/navigation insights from Microsoft Clarity. Analytics begins automatically when you use the portal; the portal sends only internal, non-sensitive identifiers and never your name, email, Student ID, password, one-time codes or authentication tokens.',
             ]}
           />
 
@@ -162,7 +162,7 @@ export default function PrivacyPolicy() {
               'A cloud hosting provider that runs the portal and its database.',
               'A file storage provider for uploaded documents and images (for example local university storage, an S3-compatible object store, or an image/file CDN service).',
               'An email delivery provider used to send verification codes, password-reset links and broadcast emails.',
-              'Google Analytics 4, if the university enables analytics for the portal.',
+              'Google Analytics 4 and Microsoft Clarity, if the university enables analytics for the portal. Clarity records anonymised sessions and heatmaps to help us find confusing or broken screens.',
               'The browser push service used to deliver notifications to subscribed devices.',
             ]}
           />
@@ -216,16 +216,22 @@ export default function PrivacyPolicy() {
 
         <LegalSection id="cookies" title="7. Cookies, Local Storage & Analytics">
           <p>
-            <strong>Local storage.</strong> The portal does not use advertising or tracking cookies. After you sign in,
+            <strong>Local storage.</strong> The portal does not use advertising or third-party tracking cookies — the one
+            optional analytics cookie is described below. After you sign in,
             it stores a signed authentication token and a cached copy of your basic profile in your browser&apos;s local
             storage so you stay signed in and the interface can load quickly. Clearing your browser storage signs you
             out. A service worker may also cache the app’s files so it can load reliably; this cache contains no personal
             data.
           </p>
           <p>
-            <strong>Analytics.</strong> If the university configures analytics, the portal uses Google Analytics 4 to
-            understand aggregate usage, such as which pages are visited. Analytics is disabled unless a measurement ID
-            is set, and the portal does not send names or email addresses to analytics.
+            <strong>Analytics.</strong> If the university configures analytics, the portal uses Google Analytics 4 for
+            aggregate usage (such as which pages are visited) and Microsoft Clarity for behavioural analytics —
+            anonymised session recordings, heatmaps and click/navigation insights that help us find confusing or broken
+            parts of the portal. Both are disabled unless the university sets the matching measurement/project ID, and
+            both begin automatically when you use the portal. Clarity sets a first-party cookie. The portal never sends
+            names, email addresses, Student IDs, passwords, one-time codes or authentication tokens to analytics, user
+            identification uses an internal non-sensitive identifier, and Clarity masks input fields and other sensitive
+            content.
           </p>
         </LegalSection>
 

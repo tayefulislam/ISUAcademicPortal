@@ -5,6 +5,7 @@ import {
   ArrowLeft, Copy, Download, FileText, FileType2, Loader2, Redo2, RotateCcw, Save, Sparkles, Undo2, Wand2,
 } from 'lucide-react';
 import { applicationApi } from '../api/endpoints.js';
+import { trackClarityEvent } from '../analytics/clarity.js';
 import { useToast } from '../context/ToastContext.jsx';
 import CreditBadge from '../components/CreditBadge.jsx';
 import SearchableSelect from '../components/SearchableSelect.jsx';
@@ -104,6 +105,10 @@ export default function WriteApplication() {
   const [structured, setStructured] = useState({});
   const [busy, setBusy] = useState('');
   const [suggestions, setSuggestions] = useState([]);
+
+  useEffect(() => {
+    trackClarityEvent('application_started');
+  }, []);
 
   const typesQuery = useQuery({ queryKey: ['application-types'], queryFn: applicationApi.types });
   const recipientsQuery = useQuery({ queryKey: ['application-recipients'], queryFn: applicationApi.recipients });
@@ -239,6 +244,7 @@ export default function WriteApplication() {
         ? await applicationApi.update(application.id, { ...payload(), editedContent: editor.value })
         : await applicationApi.create(payload());
       setApplication(res.data);
+      trackClarityEvent('application_submitted');
       toast('Saved', 'success');
       qc.invalidateQueries({ queryKey: ['applications'] });
     } catch (err) {
