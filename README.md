@@ -237,6 +237,7 @@ proxy as the API) and point `VITE_API_URL` at the deployed API's `/api` URL.
 | `PORT` | API port |
 | `CLIENT_URL` | Frontend origin(s), comma-separated — used for CORS |
 | `MONGODB_URI` | MongoDB connection string |
+| `TEST_MONGODB_URI` | Optional, tests only — the MongoDB the test suite runs against. Defaults to `127.0.0.1:27017`; point it at Atlas where there is no local server. Each file creates and drops its own `notif_test_*` database. |
 | `JWT_SECRET` | Secret used to sign JWTs — must be long/random in production |
 | `JWT_EXPIRES_IN` | Token lifetime, e.g. `7d` |
 | `FILE_STORAGE_PROVIDER` | `local` \| `s3` — storage for documents |
@@ -535,9 +536,22 @@ dependency. Server suites:
   retried event never double-notifies, but a genuinely different event
   isn't wrongly deduped), and per-type notification-preference enforcement.
 
-Requires a local MongoDB reachable at `127.0.0.1:27017` (same as the app
-itself) — no mocking layer, since correctness of these queries is the whole
-point.
+Requires a MongoDB the suite can create and drop throwaway databases on. It
+defaults to `127.0.0.1:27017` (the same as the app itself) — no mocking layer,
+since correctness of these queries is the whole point. Where there is no local
+server (e.g. a deploy box whose database is Atlas), set `TEST_MONGODB_URI` to
+the cluster's connection string:
+
+```bash
+TEST_MONGODB_URI="mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true" \
+  npm --prefix server test
+```
+
+Each file creates its own `notif_test_<label>_<random>` database and drops it
+afterwards. Any database named in `TEST_MONGODB_URI` is replaced by that
+throwaway name, so the suite can never touch the application's own data — even
+if the URI points straight at it. (When using Atlas, allow the running machine's
+IP in **Network Access**.)
 
 ---
 
