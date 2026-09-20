@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
 import { courseApi, categoryApi, chapterApi, topicApi, semesterApi, fileApi, authApi } from '../api/endpoints.js';
@@ -61,6 +61,47 @@ export default function StudentSubmitMaterial() {
 
   const { data: semesters } = useQuery({ queryKey: ['semesters'], queryFn: semesterApi.list, enabled });
 
+  // The user's own semester, resolved from the Semester collection: the cached
+  // session user carries a bare ObjectId for `semester`, so its name is looked up
+  // here (the same reason My Courses reads the profile for the populated names).
+  const mySemesterId = user?.semester && typeof user.semester === 'object' ? user.semester._id : user?.semester;
+  const userSemesterName = useMemo(() => {
+    const match = (semesters?.data || []).find((s) => String(s._id) === String(mySemesterId));
+    if (match?.name) return match.name;
+    return typeof user?.semester === 'object' ? user.semester?.name || '' : '';
+  }, [semesters, mySemesterId, user]);
+
+  // Only the semesters that actually hold a course this user can reach, so the
+  // picker can never offer an empty filter. Ordered by the Semester collection
+  // (1st → 8th) where the labels line up with it.
+  const semesterOptions = useMemo(() => {
+    const names = new Set();
+    for (const c of allMyCourses) {
+      if (c.semester) names.add(c.semester);
+    }
+    const order = (semesters?.data || []).map((s) => s.name);
+    return [...names].sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [allMyCourses, semesters]);
+
+  // Scope the form to the user's own semester by default — the same "running"
+  // courses My Courses shows — falling back to the first available semester, and
+  // to no filter at all when none of the reachable courses declares one.
+  useEffect(() => {
+    if (!myCourses) return;
+    setForm((f) => {
+      if (f.semester && semesterOptions.includes(f.semester)) return f;
+      const next = semesterOptions.includes(userSemesterName) ? userSemesterName : (semesterOptions[0] || '');
+      return next === f.semester ? f : { ...f, semester: next, departmentId: '', courseIdRef: '', chapterId: '', topicId: '' };
+    });
+  }, [myCourses, semesterOptions, userSemesterName]);
+
   // Courses belonging to the selected semester. With no semester chosen this is
   // the full reachable set — the pre-existing behaviour, unchanged.
   const semesterCourses = useMemo(
@@ -77,6 +118,16 @@ export default function StudentSubmitMaterial() {
     }
     return [...byId.values()];
   }, [semesterCourses]);
+
+  // Default the Department to the user's own when it has a course in the chosen
+  // semester, so the form opens on their own scope rather than asking twice.
+  const myDepartmentId = user?.department && typeof user.department === 'object' ? user.department._id : user?.department;
+  useEffect(() => {
+    if (!myCourses || form.departmentId) return;
+    const own = myDepartments.find((d) => String(d._id) === String(myDepartmentId));
+    const pick = own?._id || myDepartments[0]?._id || '';
+    if (pick) setForm((f) => ({ ...f, departmentId: pick, courseIdRef: '', chapterId: '', topicId: '' }));
+  }, [myCourses, myDepartments, myDepartmentId, form.departmentId]);
 
   const coursesInSelectedDept = useMemo(
     () => semesterCourses.filter((c) => String(c.department?._id) === String(form.departmentId)),
@@ -250,9 +301,9 @@ export default function StudentSubmitMaterial() {
           <SearchableSelect
             value={form.semester}
             onChange={(v) => setForm((f) => ({ ...f, semester: v, departmentId: '', courseIdRef: '', chapterId: '', topicId: '' }))}
-            placeholder="All semesters"
+            placeholder="Select"
             searchPlaceholder="Search semesters..."
-            options={[{ value: '', label: 'All semesters' }, ...(semesters?.data || []).map((s) => ({ value: s.name, label: s.name }))]}
+            options={semesterOptions.map((name) => ({ value: name, label: name }))}
           />
         </Field>
 
@@ -290,7 +341,7 @@ export default function StudentSubmitMaterial() {
 
         {form.semester && semesterCourses.length === 0 && (
           <p className="text-sm text-amber-600">
-            You don't have any reachable course in {form.semester}. Pick a different semester or “All semesters”.
+            You don't have any reachable course in {form.semester}. Pick a different semester.
           </p>
         )}
 

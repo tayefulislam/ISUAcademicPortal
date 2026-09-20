@@ -46,6 +46,18 @@ const OVERRIDE_LABELS = {
 };
 const overrideLabel = (field) => OVERRIDE_LABELS[field] || field;
 
+/**
+ * The one way a course is written on this screen: "Course Name (CSE-203)",
+ * matching every other picker and list in the app (Submit Material, Upload,
+ * My Courses). Falls back to whichever half exists so a course without a code
+ * still reads as something.
+ */
+function formatCourse(course, fallback = '') {
+  if (!course) return fallback;
+  if (course.name && course.courseId) return `${course.name} (${course.courseId})`;
+  return course.name || course.courseId || fallback;
+}
+
 const input = 'w-full h-11 sm:h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500';
 
 export default function RoutineManager() {
@@ -108,7 +120,7 @@ export default function RoutineManager() {
   const semesterOptions = (semesters?.data || []).map((s) => ({ value: s._id, label: s.name }));
   const courseOptions = (broadScope ? courses?.data || [] : myFacultyCourses?.data || [])
     .filter((c) => !scope.department || String(c.department?._id || c.department) === String(scope.department))
-    .map((c) => ({ value: c._id, label: `${c.courseId} — ${c.name}` }));
+    .map((c) => ({ value: c._id, label: formatCourse(c) }));
   const groupOptions = (groupsData?.data?.groups || ['BOTH']).map((g) => ({ value: g, label: g === 'BOTH' ? 'Both (whole batch)' : g }));
 
   const { data: instancesData, isLoading } = useQuery({
@@ -236,7 +248,7 @@ export default function RoutineManager() {
             {templates.map((routine) => (
               <div key={routine._id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-800">{routine.course?.courseId || routine.course?.name || 'Course'}</p>
+                  <p className="font-medium text-slate-800">{formatCourse(routine.course, 'Course')}</p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {weekdayNames(routine.days)} · {clock(routine.startTime)} – {clock(routine.endTime)}
                     {' · '}{routine.roomNumber || 'No room'}
@@ -319,7 +331,7 @@ export default function RoutineManager() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800">{row.course?.courseId || row.course?.name}</p>
+                      <p className="font-medium text-slate-800">{formatCourse(row.course, '—')}</p>
                       <p className="text-xs text-slate-400">{typeLabel({ classType: row.classType })} · {MODE_LABELS[row.deliveryMode]}</p>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell text-slate-600">{row.faculty?.name || '—'}</td>
@@ -611,7 +623,7 @@ function EditRoutineDialog({ template, groupOptions, onClose, onDone }) {
   const [notifyStudents, setNotifyStudents] = useState(false);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
-  const courseLabel = [template.course?.courseId, template.course?.name].filter(Boolean).join(' — ');
+  const courseLabel = formatCourse(template.course);
 
   const save = useMutation({
     mutationFn: () => routineApi.updateTemplate(template._id, {
