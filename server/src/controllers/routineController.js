@@ -19,6 +19,8 @@ import {
   getMonthEvents,
   getCurrentAndNext,
 } from '../services/academicEventService.js';
+import { buildTimetable, timetableFileName } from '../services/timetableService.js';
+import { renderTimetablePdf } from '../services/timetablePdf.js';
 import { resolveGroup, getAcademicGroups } from '../utils/groups.js';
 import { CLASS_TYPES, DELIVERY_MODES, INHERITED_FIELDS, APPLY_SCOPES } from '../utils/academicEventTypes.js';
 import { parseAsDhakaTime, isDateOnly, isTimeOnly, combineDhakaDateTime, endOfDhakaDay, formatInAppTimezone } from '../utils/academicSchedule.js';
@@ -147,6 +149,35 @@ export const getWeekRoutine = asyncHandler(async (req, res) => {
 export const getMonthRoutine = asyncHandler(async (req, res) => {
   await assertRoutineEnabled();
   respondWith(res, await getMonthEvents(req.user, { month: req.query.month }));
+});
+
+/**
+ * GET /routine/timetable.pdf?department=&batch=&semester= — the weekly class
+ * routine as a printable PDF (days across the top, class-time slots down the
+ * side).
+ *
+ * <p>Open to any signed-in user, as asked for: a department's timetable is the
+ * institution's own class schedule, not anyone's private data. It is still behind
+ * authentication (never anonymous) and the scope is validated server-side against
+ * real Department/Batch/Semester documents — the client only ever chooses which
+ * timetable to print, never what is in it.
+ */
+export const downloadTimetablePdf = asyncHandler(async (req, res) => {
+  await assertRoutineEnabled();
+
+  const timetable = await buildTimetable({
+    departmentId: req.query.department,
+    batchId: req.query.batch,
+    semesterId: req.query.semester,
+  });
+
+  const pdf = renderTimetablePdf(timetable);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${timetableFileName(timetable.scope)}"`);
+  res.setHeader('Content-Length', pdf.length);
+  // Per-user (the identity is in the token), so never a shared cache.
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  res.send(pdf);
 });
 
 /**

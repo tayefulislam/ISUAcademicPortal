@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search, Video, MapPin, User as UserIcon } from 'lucide-react';
 import { routineApi } from '../api/endpoints.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import RoutinePdfDialog from '../components/routine/RoutinePdfDialog.jsx';
 import SmartEventWidget from '../components/routine/SmartEventWidget.jsx';
 import {
   eventIcon, eventTitle, eventSubtitle, typeLabel, timeRange, locationLine, hasOnline, clock,
@@ -32,6 +34,9 @@ const TYPE_FILTERS = [
 ];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** The id behind a reference the server may send populated or bare. */
+const refId = (value) => (value && typeof value === 'object' ? value._id : value) || '';
 
 /** ISO instant for a Dhaka date + time. */
 const atDhaka = (dateStr, time = '00:00') => dhakaInputToIso(`${dateStr}T${time}`);
@@ -76,6 +81,7 @@ function windowFor(view, anchor) {
 
 export default function Routine() {
   const today = dhakaDate();
+  const { user } = useAuth();
   const [view, setView] = useState('day');
   const [anchor, setAnchor] = useState(today);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -157,6 +163,15 @@ export default function Routine() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Calendar</h1>
           <p className="text-sm text-slate-500 mt-0.5">Your classes, exams and academic events.</p>
+          {/* Anyone can print a timetable: the scope picker defaults to the
+              signed-in user's own department/batch/semester. */}
+          <div className="mt-3">
+            <RoutinePdfDialog
+              defaultDepartment={refId(user?.department)}
+              defaultBatch={refId(user?.batch)}
+              defaultSemester={refId(user?.semester)}
+            />
+          </div>
         </div>
         <div className="w-full sm:w-80">
           <SmartEventWidget mode="compact" />

@@ -600,6 +600,25 @@ export const routineApi = {
   groups: () => api.get('/routine/groups').then((r) => r.data),
   facultyForCourse: (course) => api.get('/routine/faculty', { params: { course } }).then((r) => r.data),
 
+  // The printable weekly routine for any Department/Batch/Semester. Fetched as a
+  // blob (the endpoint needs the Authorization header, which a plain <a href>
+  // can't send) and saved through a temporary object URL — the same pattern as
+  // feedbackApi.export. Open to every signed-in role.
+  downloadTimetable: async (params) => {
+    const res = await api.get('/routine/timetable.pdf', { params, responseType: 'blob' });
+    const disposition = res.headers?.['content-disposition'] || '';
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+    const fileName = match ? decodeURIComponent(match[1]) : 'class-routine.pdf';
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
   // Recurring rules (management).
   templates: (params) => api.get('/routine/templates', { params }).then((r) => r.data),
   create: (data) => api.post('/routine', data).then((r) => r.data),

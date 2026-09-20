@@ -5,6 +5,7 @@ import SearchableSelect from '../../components/SearchableSelect.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import RoutinePdfDialog from '../../components/routine/RoutinePdfDialog.jsx';
 import {
   departmentApi, batchApi, semesterApi, courseApi, routineApi, calendarApi, facultyApi,
 } from '../../api/endpoints.js';
@@ -196,6 +197,13 @@ export default function RoutineManager() {
           >
             <CalendarPlus size={15} /> Add exam
           </button>
+          {/* Prints the scope currently picked below, so what is downloaded is
+              what is on screen. */}
+          <RoutinePdfDialog
+            defaultDepartment={scope.department}
+            defaultBatch={scope.batch}
+            defaultSemester={scope.semester}
+          />
         </div>
       </div>
 
