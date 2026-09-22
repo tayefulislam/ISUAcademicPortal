@@ -467,11 +467,15 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
   // it is honoured here rather than forced — but the submission still lands
   // approvalStatus:'pending', so a reviewer still gates when it becomes visible.
   // Fine-grained restrictions stay the reviewer's decision.
+  //
+  // The optional batch the submitter picked is targeting only — a grouping and
+  // filter axis, never a permission (that is what `restrictions` above is, and
+  // it stays empty here). resolveUploadMetadata has already validated it
+  // against this course's department, so anything that survived that check is
+  // safe to keep. No batch picked is the common case: the metadata then carries
+  // the empty `batches`/`batchCodes` and false `allBatches` it always did.
   meta.visibility = req.body.visibility === 'public' ? 'public' : 'login_required';
   meta.restrictions = { departments: [], batches: [], semesters: [], courses: [] };
-  meta.batches = [];
-  meta.batchCodes = [];
-  meta.allBatches = false;
 
   if (isExternal) {
     const externalUrl = typeof req.body.externalUrl === 'string' ? req.body.externalUrl.trim() : '';
