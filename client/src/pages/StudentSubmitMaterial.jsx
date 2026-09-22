@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UploadCloud, X, FileIcon as FileIconLucide } from 'lucide-react';
-import { courseApi, categoryApi, chapterApi, topicApi, semesterApi, fileApi, authApi } from '../api/endpoints.js';
+import { courseApi, categoryApi, chapterApi, topicApi, semesterApi, batchApi, fileApi, authApi } from '../api/endpoints.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import { UploadTypeToggle, ExternalUrlField, isValidHttpsUrl, UPLOAD_TYPE_FILE, UPLOAD_TYPE_EXTERNAL } from '../components/MaterialSource.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -20,6 +20,11 @@ const initialState = {
   // '' = no semester filter (every reachable course, exactly as before). A
   // concrete value is a Semester.name and matches Course.semester.
   semester: '',
+  // Optional batch targeting — the batches of the selected department. Empty is
+  // the normal case and means "no batch", exactly the record this form created
+  // before the picker existed. Targeting only: it groups/filters the material
+  // and never grants access, which stays the reviewer's decision.
+  batches: [],
   visibility: 'login_required',
   uploadType: UPLOAD_TYPE_FILE,
   externalUrl: '',
@@ -98,7 +103,7 @@ export default function StudentSubmitMaterial() {
     setForm((f) => {
       if (f.semester && semesterOptions.includes(f.semester)) return f;
       const next = semesterOptions.includes(userSemesterName) ? userSemesterName : (semesterOptions[0] || '');
-      return next === f.semester ? f : { ...f, semester: next, departmentId: '', courseIdRef: '', chapterId: '', topicId: '' };
+      return next === f.semester ? f : { ...f, semester: next, departmentId: '', courseIdRef: '', chapterId: '', topicId: '', batches: [] };
     });
   }, [myCourses, semesterOptions, userSemesterName]);
 
@@ -126,7 +131,7 @@ export default function StudentSubmitMaterial() {
     if (!myCourses || form.departmentId) return;
     const own = myDepartments.find((d) => String(d._id) === String(myDepartmentId));
     const pick = own?._id || myDepartments[0]?._id || '';
-    if (pick) setForm((f) => ({ ...f, departmentId: pick, courseIdRef: '', chapterId: '', topicId: '' }));
+    if (pick) setForm((f) => ({ ...f, departmentId: pick, courseIdRef: '', chapterId: '', topicId: '', batches: [] }));
   }, [myCourses, myDepartments, myDepartmentId, form.departmentId]);
 
   const coursesInSelectedDept = useMemo(
@@ -135,6 +140,16 @@ export default function StudentSubmitMaterial() {
   );
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list, enabled });
+  // The batches of the selected department, for the optional targeting picker.
+  // Department-scoped rather than course-scoped: a Batch belongs to a department
+  // (the server checks the chosen one belongs to the course's department), and
+  // the course-scoped endpoint only returns the most recent eight — which would
+  // hide a student's own batch on a course that has run for years.
+  const { data: batches } = useQuery({
+    queryKey: ['batches', form.departmentId],
+    queryFn: () => batchApi.list({ department: form.departmentId }),
+    enabled: enabled && !!form.departmentId,
+  });
   const { data: chapters } = useQuery({
     queryKey: ['chapters', form.courseIdRef],
     queryFn: () => chapterApi.list({ course: form.courseIdRef }),
@@ -147,6 +162,12 @@ export default function StudentSubmitMaterial() {
   });
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const toggleBatch = (id) =>
+    setForm((f) => ({
+      ...f,
+      batches: f.batches.includes(id) ? f.batches.filter((x) => x !== id) : [...f.batches, id],
+    }));
 
   const addFiles = (fileList) => {
     const incoming = Array.from(fileList || []);
@@ -184,7 +205,12 @@ export default function StudentSubmitMaterial() {
     try {
       const fd = new FormData();
       if (!isExternal) files.forEach((f) => fd.append('files', f));
-      Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+      // `batches` is the one array field — appended once per id so the server
+      // reads it back as an array, the same way the admin/faculty upload forms
+      // send theirs. Everything else is a plain scalar.
+      const { batches: selectedBatches, ...fields } = form;
+      Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+      (selectedBatches || []).forEach((id) => fd.append('batches', id));
       const res = await fileApi.submit(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
       toast(res.message || 'Submitted for review', 'success');
       setForm(initialState);
@@ -300,7 +326,7 @@ export default function StudentSubmitMaterial() {
         <Field label="Semester" hint="Only courses belonging to the selected semester are listed">
           <SearchableSelect
             value={form.semester}
-            onChange={(v) => setForm((f) => ({ ...f, semester: v, departmentId: '', courseIdRef: '', chapterId: '', topicId: '' }))}
+            onChange={(v) => setForm((f) => ({ ...f, semester: v, departmentId: '', courseIdRef: '', chapterId: '', topicId: '', batches: [] }))}
             placeholder="Select"
             searchPlaceholder="Search semesters..."
             options={semesterOptions.map((name) => ({ value: name, label: name }))}
@@ -312,7 +338,7 @@ export default function StudentSubmitMaterial() {
             <SearchableSelect
               required
               value={form.departmentId}
-              onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '' }))}
+              onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '', batches: [] }))}
               placeholder="Select"
               searchPlaceholder="Search departments..."
               options={myDepartments.map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
@@ -338,6 +364,31 @@ export default function StudentSubmitMaterial() {
             </select>
           </Field>
         </div>
+
+        {/* Optional, and never a permission: the batch just files the material
+            under that cohort for later filtering. Leaving every chip unselected
+            keeps the record exactly as it was before this picker existed. */}
+        <Field label="Batch" hint="Optional — leave empty to not file it under a specific batch">
+          <div className="flex flex-wrap gap-2">
+            {(batches?.data || []).map((b) => (
+              <button
+                type="button"
+                key={b._id}
+                onClick={() => toggleBatch(b._id)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                  form.batches.includes(b._id)
+                    ? 'bg-brand-600 text-white border-brand-600'
+                    : 'border-slate-300 text-slate-600 hover:border-brand-400'
+                }`}
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+          {form.departmentId && (batches?.data || []).length === 0 && (
+            <p className="text-xs text-slate-400 mt-1">No batches found for this department.</p>
+          )}
+        </Field>
 
         {form.semester && semesterCourses.length === 0 && (
           <p className="text-sm text-amber-600">

@@ -51,7 +51,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight">Find every academic file, instantly.</h1>
           <p className="mt-4 text-brand-100 text-base sm:text-lg max-w-2xl mx-auto">
-            Lecture notes, assignments, question papers, and more — organized by department, course, and batch.
+            Lecture notes, assignments, question papers, and more - organized by department, course, and batch.
           </p>
 
           <div className="mt-8 max-w-2xl mx-auto">
