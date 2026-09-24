@@ -45,6 +45,21 @@ async function studentsWithCourseAccess(course) {
 }
 
 /**
+ * Students explicitly enrolled in `course` beyond their own cohort — the
+ * additional-course types (retake/extra/backlog/improvement/advance). A stored
+ * `regular` enrollment is left out deliberately: it is housekeeping for a course
+ * the student already reaches by department, so it must not widen anything.
+ */
+async function additionalEnrolleeIds(courseId) {
+  if (!courseId) return [];
+  return CourseEnrollment.find({
+    course: courseId,
+    status: { $in: ACCESS_GRANTING_STATUSES },
+    enrollmentType: { $ne: 'regular' },
+  }).distinct('student');
+}
+
+/**
  * Resolves recipients for content scoped like File/Assignment/Quiz
  * targeting — AND across non-empty axes (department implied by course,
  * batches/semesters further narrow it), OR within an axis. Pass whichever
@@ -134,8 +149,9 @@ export async function resolveRoutineAudience({
   groups = [],
 }) {
   let studentIds;
+  let courseDoc = null;
   if (course) {
-    const courseDoc = await resolveCourseDoc(course);
+    courseDoc = await resolveCourseDoc(course);
     if (!courseDoc) return [];
     studentIds = await studentsWithCourseAccess(courseDoc);
   } else if (department) {
@@ -155,7 +171,28 @@ export async function resolveRoutineAudience({
   }
 
   const students = await User.find(extraFilter).select('_id');
-  return students.map((s) => s._id);
+  const recipients = new Map(students.map((s) => [String(s._id), s._id]));
+
+  // A student explicitly enrolled in this course beyond their own cohort
+  // (retake/extra/backlog/improvement/advance) sees the class in their routine
+  // whatever batch/semester it was scheduled for — see
+  // academicEventService.audienceFilterFor, whose course clause this mirrors.
+  // The reminder follows the routine, so those students are added here too,
+  // under the same rule (only the group axis still applies). Purely additive:
+  // it can only ever add a recipient.
+  if (courseDoc) {
+    const extraIds = await additionalEnrolleeIds(courseDoc._id);
+    if (extraIds.length) {
+      const extraQuery = { _id: { $in: extraIds }, role: 'student', status: 'active' };
+      if (groups.length) {
+        extraQuery.$or = [{ group: { $in: groups } }, { group: GROUP_BOTH }];
+      }
+      const extraStudents = await User.find(extraQuery).select('_id');
+      extraStudents.forEach((s) => recipients.set(String(s._id), s._id));
+    }
+  }
+
+  return [...recipients.values()];
 }
 
 /** The role keys whose holders work the material-review queue. */

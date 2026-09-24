@@ -1,7 +1,7 @@
 import ScheduleInstance from '../models/ScheduleInstance.js';
 import AcademicEvent from '../models/AcademicEvent.js';
 import { getRole, isSuperAdminTier } from '../models/Role.js';
-import { getEffectiveCourseIds } from './courseAccessService.js';
+import { getEffectiveCourseIds, getAdditionalCourseIds } from './courseAccessService.js';
 import { groupFilterFor } from '../utils/groups.js';
 import { eventStateFor, eventTypeForClassType } from '../utils/academicEventTypes.js';
 import {
@@ -66,6 +66,18 @@ export async function audienceFilterFor(user) {
     return null;
   }
 
+  const groupFilter = groupFilterFor(user);
+
+  // The student's own cohort — batch and semester are the two axes everything
+  // scheduled for their placement carries, so they stay a hard match here.
+  // `group` is absent when the student is in BOTH: they are in the whole batch,
+  // so no entry is excluded on the group axis.
+  const cohort = {
+    batch: user.batch,
+    semester: user.semester,
+    ...(groupFilter ? { group: groupFilter } : {}),
+  };
+
   const scope = [];
   if (user.department) scope.push({ department: user.department });
   const courseIds = await getEffectiveCourseIds(user);
@@ -75,16 +87,27 @@ export async function audienceFilterFor(user) {
   // impossible clause is clearer than returning every entry.
   if (!scope.length) return { _id: null };
 
-  const groupFilter = groupFilterFor(user);
+  const clauses = [{ ...cohort, $or: scope }];
 
-  return {
-    batch: user.batch,
-    semester: user.semester,
-    // Absent when the student is in BOTH — they are in the whole batch, so no
-    // entry is excluded on the group axis.
-    ...(groupFilter ? { group: groupFilter } : {}),
-    $or: scope,
-  };
+  // A course the student is explicitly enrolled in *additionally*
+  // (retake/extra/backlog/improvement/advance) is its own grant — the
+  // enrollment itself puts them in that course, so the cohort axes must not
+  // filter the class back out. That is the whole point of such an enrollment:
+  // it is taken "out of sync" with the student's own batch/semester, and the
+  // class is therefore scheduled under a different cohort than theirs. Only the
+  // course axis survives here, and the clause is purely additive — everything
+  // the cohort clause already matched stays matched, and nothing else is
+  // widened (a department course in another semester is still invisible unless
+  // it is one of these explicit enrollments).
+  const additionalCourseIds = await getAdditionalCourseIds(user);
+  if (additionalCourseIds.length) {
+    clauses.push({
+      course: { $in: additionalCourseIds },
+      ...(groupFilter ? { group: groupFilter } : {}),
+    });
+  }
+
+  return clauses.length === 1 ? clauses[0] : { $or: clauses };
 }
 
 /** One shape for both collections, so a client never needs to know the source. */

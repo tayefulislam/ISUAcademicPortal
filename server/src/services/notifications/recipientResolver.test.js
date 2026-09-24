@@ -16,6 +16,7 @@ import {
   resolveAllEligibleUsers,
   resolveDepartmentRecipients,
   resolveReviewersForCourse,
+  resolveRoutineAudience,
 } from './recipientResolver.js';
 
 // This suite is the "smart recipient detection" contract: given a course/
@@ -271,5 +272,59 @@ describe('resolveReviewersForCourse', () => {
 
     const ids = (await resolveReviewersForCourse(course)).map(String);
     assert.ok(!ids.includes(String(user._id)));
+  });
+});
+
+// The reminder half of the additional-course rule: a student enrolled in a
+// course outside their own cohort sees that class in their routine (see
+// academicEventService.audienceFilterFor), so the notice for it has to reach
+// them too — otherwise a class appears on their calendar that never alerts them.
+describe('resolveRoutineAudience — additional-course enrollments', () => {
+  test('includes an enrolled student from another batch/semester for that course', async () => {
+    // The class is scheduled for batch A / semester 1; the enrolled retake
+    // student sits in batch B / semester 2.
+    const ids = (await resolveRoutineAudience({
+      course,
+      batches: [batchA._id],
+      semesters: [semester1._id],
+      groups: [],
+    })).map(String);
+
+    assert.ok(ids.includes(String(studentInDept._id)), 'the cohort student is still included');
+    assert.ok(ids.includes(String(studentOutsideDeptEnrolled._id)), 'the enrolled student must be included');
+    assert.ok(!ids.includes(String(studentOutsideDeptNotEnrolled._id)), 'a non-enrolled student must not be');
+    assert.ok(!ids.includes(String(blockedStudentInDept._id)), 'a blocked student is still excluded');
+  });
+
+  test('a stored regular enrollment does not bypass the cohort axes', async () => {
+    await CourseEnrollment.create({
+      student: studentOutsideDeptNotEnrolled._id,
+      course: course._id,
+      enrollmentType: 'regular',
+      status: 'active',
+      academicYear: '2025-2026',
+      semester: semester2._id,
+    });
+
+    const ids = (await resolveRoutineAudience({
+      course,
+      batches: [batchA._id],
+      semesters: [semester1._id],
+      groups: [],
+    })).map(String);
+
+    assert.ok(!ids.includes(String(studentOutsideDeptNotEnrolled._id)));
+  });
+
+  test('an entry with no course still resolves by department alone', async () => {
+    const ids = (await resolveRoutineAudience({
+      department: dept._id,
+      batches: [],
+      semesters: [],
+      groups: [],
+    })).map(String);
+
+    assert.ok(ids.includes(String(studentInDept._id)));
+    assert.ok(!ids.includes(String(studentOutsideDeptEnrolled._id)), 'another department is not swept in');
   });
 });

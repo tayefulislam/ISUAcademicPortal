@@ -6,6 +6,7 @@ import Department from '../models/Department.js';
 import Course from '../models/Course.js';
 import Batch from '../models/Batch.js';
 import Semester from '../models/Semester.js';
+import CourseEnrollment from '../models/CourseEnrollment.js';
 import Settings, { getSettings } from '../models/Settings.js';
 import ScheduleInstance from '../models/ScheduleInstance.js';
 import AcademicEvent from '../models/AcademicEvent.js';
@@ -259,5 +260,101 @@ describe('audience filter', () => {
     const filter = await audienceFilterFor(rahman);
     assert.equal(String(filter.faculty), String(rahman._id));
     assert.equal(filter.department, undefined);
+  });
+});
+
+// A student enrolled in a course *additionally* (retake/extra/backlog/
+// improvement/advance) takes it "out of sync" — the class is scheduled under a
+// different batch and semester than their own, which is exactly what a
+// department+batch+semester filter would otherwise hide. The enrollment itself
+// is the grant, so that class must reach them.
+describe('additional-course enrollment — out-of-cohort classes', () => {
+  let otherBatch;
+  let otherSemester;
+
+  /** An EEE retake class: another department, batch and semester entirely. */
+  const outOfCohortClass = (extra = {}) => makeInstance({
+    department: eee._id, course: eee101._id, batch: otherBatch._id, semester: otherSemester._id, ...extra,
+  });
+
+  const enrol = (student, { type = 'retake', status = 'active' } = {}) => CourseEnrollment.create({
+    student: student._id,
+    course: eee101._id,
+    enrollmentType: type,
+    status,
+    academicYear: '2026',
+    semester: otherSemester._id,
+    batch: otherBatch._id,
+  });
+
+  const enrolledStudent = (email, overrides = {}) => makeUser(email, {
+    role: 'student', department: cse._id, batch: batch14._id, semester: sem1._id, ...overrides,
+  });
+
+  beforeEach(async () => {
+    otherBatch = await Batch.create({ name: 'BATCH-13', code: 'BATCH-13', department: eee._id });
+    otherSemester = await Semester.create({ name: '3rd Semester', code: 'SEM-3' });
+  });
+
+  test('the enrolled course’s class appears alongside the student’s own cohort', async () => {
+    const student = await enrolledStudent('retake@test.local');
+    await enrol(student);
+
+    const extra = await outOfCohortClass();
+    const own = await makeInstance({ startTime: '12:00', endTime: '13:30' });
+
+    const ids = (await resolveVisibleEvents(student)).map((e) => e.id);
+    assert.ok(ids.includes(String(extra._id)), 'the enrolled course class must be visible');
+    assert.ok(ids.includes(String(own._id)), 'the student’s own cohort visibility is unchanged');
+  });
+
+  test('without any enrollment that class stays invisible (no widening)', async () => {
+    const student = await enrolledStudent('plain@test.local');
+    const extra = await outOfCohortClass();
+    await makeInstance({});
+
+    const ids = (await resolveVisibleEvents(student)).map((e) => e.id);
+    assert.ok(!ids.includes(String(extra._id)));
+  });
+
+  test('a pending or rejected enrollment grants nothing', async () => {
+    const pending = await enrolledStudent('pending-enrol@test.local');
+    await enrol(pending, { status: 'pending' });
+    const extra = await outOfCohortClass();
+
+    const ids = (await resolveVisibleEvents(pending)).map((e) => e.id);
+    assert.ok(!ids.includes(String(extra._id)), 'only active/approved enrollments grant the class');
+  });
+
+  test('a stored regular enrollment does not reopen the cohort axes', async () => {
+    const student = await enrolledStudent('regular-enrol@test.local');
+    await enrol(student, { type: 'regular' });
+    const extra = await outOfCohortClass();
+
+    const ids = (await resolveVisibleEvents(student)).map((e) => e.id);
+    assert.ok(!ids.includes(String(extra._id)), 'a regular enrollment is housekeeping, not a cohort override');
+  });
+
+  test('the group axis still applies to the additional course', async () => {
+    const student = await enrolledStudent('grouped@test.local', { group: 'A1' });
+    await enrol(student);
+
+    const a2 = await outOfCohortClass({ group: 'A2' });
+    const a1 = await outOfCohortClass({ group: 'A1', startTime: '12:00', endTime: '13:30' });
+
+    const ids = (await resolveVisibleEvents(student)).map((e) => e.id);
+    assert.ok(ids.includes(String(a1._id)), 'the student’s own group of the enrolled course is visible');
+    assert.ok(!ids.includes(String(a2._id)), 'another group of it is not');
+  });
+
+  test('a department course in another semester is still excluded (no over-widening)', async () => {
+    const student = await enrolledStudent('dept-other-sem@test.local');
+    // CSE-101 belongs to the student's own department, but nothing enrols them
+    // in it additionally — so the cohort axes must keep hiding this class.
+    const otherSemClass = await makeInstance({ semester: otherSemester._id });
+    await makeInstance({ startTime: '12:00', endTime: '13:30' });
+
+    const ids = (await resolveVisibleEvents(student)).map((e) => e.id);
+    assert.ok(!ids.includes(String(otherSemClass._id)));
   });
 });
