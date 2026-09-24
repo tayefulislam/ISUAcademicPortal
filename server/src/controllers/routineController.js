@@ -217,21 +217,30 @@ export const getInstance = asyncHandler(async (req, res) => {
   res.json({ success: true, data: flat });
 });
 
-/** The stored audience filter, applied in memory to a single loaded document. */
+/**
+ * The stored audience filter, applied in memory to a single loaded document.
+ *
+ * <p>Walks the filter's own shape rather than assuming one: `audienceFilterFor`
+ * returns either a flat clause (faculty, or a student with a single clause) or
+ * an `$or` of clauses, and one of those clauses is itself an `$or` over the
+ * department/course scope. A document is visible when any leaf clause it
+ * reaches matches — the same rule MongoDB applies.
+ */
 function matchesAudience(doc, filter) {
-  // The audience filter only ever constrains these five fields — see
-  // academicEventService.audienceFilterFor.
+  if (!filter) return true;
+  // An unplaced account is kept empty by an impossible clause, not by matching
+  // everything.
+  if (filter._id === null) return false;
+
   if (filter.batch && String(doc.batch) !== String(filter.batch)) return false;
   if (filter.semester && String(doc.semester) !== String(filter.semester)) return false;
   if (filter.faculty && String(doc.faculty) !== String(filter.faculty)) return false;
   if (filter.group?.$in && !filter.group.$in.includes(doc.group)) return false;
+  if (filter.department && String(doc.department) !== String(filter.department)) return false;
+  if (filter.course?.$in && !filter.course.$in.map(String).includes(String(doc.course))) return false;
+
   if (filter.$or) {
-    const matchesScope = filter.$or.some((clause) => {
-      if (clause.department) return String(doc.department) === String(clause.department);
-      if (clause.course?.$in) return clause.course.$in.map(String).includes(String(doc.course));
-      return false;
-    });
-    if (!matchesScope) return false;
+    return filter.$or.some((clause) => matchesAudience(doc, clause));
   }
   return true;
 }

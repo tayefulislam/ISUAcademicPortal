@@ -273,7 +273,7 @@ proxy as the API) and point `VITE_API_URL` at the deployed API's `/api` URL.
 | `Quiz` / `QuizAttempt` | Fixed or random-selection exams; an attempt snapshots its own `questionOrder` + `assignedMarks` so later quiz/question edits never retroactively change a finished attempt. Also backs Public Exams (`examType: 'public'`, guest attempts). |
 | `Conversation` / `Message` | 1:1 Faculty↔Student direct messaging. |
 | `EmailLog` | Broadcast email send history + per-recipient delivery status. |
-| `CourseEnrollment` | The explicit student↔course access layer beyond department membership (retake/extra/backlog/improvement/advance), with a Faculty approval workflow. |
+| `CourseEnrollment` | The explicit student↔course access layer beyond department membership (retake/extra/backlog/improvement/advance), with a Faculty approval workflow. An access-granting enrollment (`active`/`approved`) of an *additional* type is also what lets that course's routine entries and calendar events reach the student even when they are scheduled for another batch/semester — see `audienceFilterFor`. |
 | `Role` | Custom admin-tier roles and their granted permission keys. |
 | `Notification` | In-app notification feed — one row per recipient per event, with a `{recipient, type, entityType, entityId, slot}` unique index for idempotency. `slot` is used by class/exam reminders (the offset plus the effective start instant), so one class legitimately produces several reminders and a moved class gets a fresh one instead of colliding with the reminder already sent for its old time. |
 | `PushSubscription` | One row per subscribed browser/device per user. |
@@ -314,7 +314,7 @@ exhaustive spec.
 | `/course-enrollments` | Request/approve/reject/manage additional-course enrollment |
 | `/notifications` | Self-service list/read/preferences/push-subscribe |
 | `/admin/notifications` | Super Admin stats/logs/ad-hoc send |
-| `/routine` | Recurring rules and their dated occurrences — `PATCH /routine/templates/:id` is the one edit that brings every future class into line, with an `applyFrom` scope |
+| `/routine` | Recurring rules and their dated occurrences — `PATCH /routine/templates/:id` is the one edit that brings every future class into line, with an `applyFrom` scope. The audience is derived from the caller (`audienceFilterFor`): their own department/batch/semester/group, **plus** every course they hold an access-granting additional enrollment for, whose classes show even when scheduled under another cohort |
 | `/calendar`, `/exams`, `/events` | One-off academic events and exams; `/events/my/current-next` is the schedule widget's single call |
 | `/internal/reminders` | The cron target that fires due class/exam reminders (secret-header auth, deliberately not JWT) |
 | `/admin`, `/super-admin` | Admin/Super Admin management surfaces (users, faculty, files, settings, etc.) |

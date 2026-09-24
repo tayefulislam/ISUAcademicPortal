@@ -28,6 +28,30 @@ export async function getEffectiveCourseIds(user) {
 }
 
 /**
+ * Course ids a student has been explicitly enrolled in *beyond* their own
+ * department's course list — the additional-course types (retake, extra,
+ * backlog, improvement, advance). A stored `regular` enrollment is excluded on
+ * purpose: it is administrative housekeeping for a course the student already
+ * reaches by department, so it must not reopen the cohort axes (see
+ * academicEventService.audienceFilterFor, which treats these as their own grant
+ * and lets the scheduled class appear whatever batch/semester it sits in).
+ *
+ * @param {{_id}} user
+ * @returns {Promise<string[]>} course id strings
+ */
+export async function getAdditionalCourseIds(user) {
+  if (!user) return [];
+
+  const ids = await CourseEnrollment.find({
+    student: user._id,
+    status: { $in: ACCESS_GRANTING_STATUSES },
+    enrollmentType: { $ne: 'regular' },
+  }).distinct('course');
+
+  return ids.map(String);
+}
+
+/**
  * Reusable authorization helper for anywhere that just needs a yes/no on one
  * specific student+course pair, rather than a full effective-course-id list.
  */
