@@ -66,7 +66,7 @@ async function main() {
   // 2 — what do the recent rows say?
   await connectDB();
   const recent = await StoredFile.find({}).sort({ createdAt: -1 }).limit(8)
-    .select('originalName category processingStatus processingMethod originalSize storedSize savedBytes errorCode errorMessage source.kind createdAt')
+    .select('originalName category processingStatus processingMethod processingReason originalSize storedSize savedBytes errorCode errorMessage source.kind createdAt')
     .lean();
 
   if (!recent.length) {
@@ -78,9 +78,10 @@ async function main() {
   console.log('Most recent uploads:');
   for (const row of recent) {
     const when = row.createdAt ? new Date(row.createdAt).toISOString() : '?';
+    const why = row.processingReason || row.errorMessage || '';
     const note = row.processingStatus === 'COMPLETED'
-      ? `${mb(row.originalSize)} -> ${mb(row.storedSize)} (${row.processingMethod || 'none'})`
-      : `${mb(row.originalSize)} [${row.processingStatus}]${row.errorMessage ? ` — ${row.errorMessage}` : ''}`;
+      ? `${mb(row.originalSize)} -> ${mb(row.storedSize)} (${row.processingMethod || 'none'}${why ? `; ${why}` : ''})`
+      : `${mb(row.originalSize)} [${row.processingStatus}]${why ? ` — ${why}` : ''}`;
     console.log(`  ${when}  ${row.source?.kind || 'standalone'}/${row.category}  ${row.originalName}  ${note}`);
   }
   console.log('');

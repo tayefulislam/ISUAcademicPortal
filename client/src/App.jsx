@@ -45,7 +45,6 @@ import PublicExamAttempt from './pages/public/PublicExamAttempt.jsx';
 import PublicExamResult from './pages/public/PublicExamResult.jsx';
 import FeedbackForm from './pages/FeedbackForm.jsx';
 import Documents from './pages/Documents.jsx';
-import Uploads from './pages/Uploads.jsx';
 import DocumentGenerate from './pages/DocumentGenerate.jsx';
 import DocumentDetail from './pages/DocumentDetail.jsx';
 import WriteApplication from './pages/WriteApplication.jsx';
@@ -269,19 +268,6 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          {/* Universal uploads — any signed-in user. Uploads any file, then
-              follows it from upload through background processing, showing what
-              optimizing it actually saved. Distinct from the material flow
-              (/submit-material, /admin/upload), which publishes searchable
-              content; this is the storage pipeline itself. */}
-          <Route
-            path="/uploads"
-            element={
-              <ProtectedRoute>
-                <Uploads />
-              </ProtectedRoute>
-            }
-          />
           <Route
             path="/assignments"
             element={
@@ -416,6 +402,10 @@ export default function App() {
           <Route path="approvals" element={<AdminStudentApprovals />} />
           <Route path="faculty" element={<SuperAdminFaculty />} />
           <Route path="files" element={<SuperAdminFiles />} />
+          {/* Super Admin / Administrator publish material through the same
+              admin upload form — they hold every permission implicitly, so the
+              `/api/admin/files` endpoint accepts them. */}
+          <Route path="upload" element={<AdminUpload />} />
           <Route path="storage" element={<SuperAdminStorage />} />
           <Route path="system" element={<SuperAdminSystem />} />
           <Route path="account-deletions" element={<SuperAdminDeletions />} />

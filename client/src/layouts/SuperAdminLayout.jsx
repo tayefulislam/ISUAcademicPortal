@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, UserCheck, UserX, FileStack, Settings, GraduationCap, MessageSquareText, Flag, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles, HardDrive, UploadCloud } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, UserX, FileStack, Settings, GraduationCap, MessageSquareText, Flag, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles, HardDrive, Upload } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -8,11 +8,12 @@ const links = [
   { to: '/super-admin/approvals', label: 'Student Approvals', icon: UserCheck },
   { to: '/super-admin/faculty', label: 'Faculty', icon: GraduationCap },
   { to: '/super-admin/files', label: 'All Files', icon: FileStack },
-  // The universal upload pipeline: institution-wide storage figures, and the
-  // page where it can be exercised end to end. Distinct from "All Files", which
-  // is the academic-material collection.
+  // Publishing material. Super Admin and Administrator hold every permission
+  // implicitly (the check always passes for them), so `files` is their way in
+  // without switching to the Admin panel.
+  { to: '/super-admin/upload', label: 'Upload File', icon: Upload, permission: 'files' },
+  // The universal pipeline's institution-wide storage figures.
   { to: '/super-admin/storage', label: 'Storage', icon: HardDrive },
-  { to: '/uploads', label: 'Uploads', icon: UploadCloud },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquareText },
   { to: '/super-admin/reports', label: 'Reports', icon: Flag },
   { to: '/super-admin/messages', label: 'Messages', icon: MessageCircle, flag: 'messagingSystemEnabled' },

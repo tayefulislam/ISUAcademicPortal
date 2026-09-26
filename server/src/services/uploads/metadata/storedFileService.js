@@ -35,6 +35,8 @@ export function sanitizeForClient(doc) {
     savedBytes: obj.savedBytes,
     savedPercentage: obj.savedPercentage,
     storedOriginal: obj.storedOriginal,
+    // Plain-words why the outcome is what it is (e.g. "no-reencodable-images").
+    reason: obj.processingReason || undefined,
   };
   delete obj._id;
   return obj;
@@ -147,6 +149,9 @@ export async function completeProcessing(fileId, result) {
         derivatives: result.derivatives || { thumbnail: {}, preview: {} },
         storageProvider: result.storageProvider || (env.fileStorageProvider === 's3' ? 's3' : 'local'),
         tempPath: '',
+        // The decision engine's own words for what happened. Kept on the row so
+        // "why wasn't this compressed?" is answerable long after the log rotated.
+        processingReason: String(result.reason || '').slice(0, 200),
         errorCode: '',
         errorMessage: '',
         lastAttemptAt: new Date(),

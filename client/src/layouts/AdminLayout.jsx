@@ -6,10 +6,6 @@ const links = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/files', label: 'My Files', icon: FileStack, permission: 'files' },
   { to: '/admin/upload', label: 'Upload File', icon: Upload, permission: 'files' },
-  // The universal upload pipeline — uploads ANY file type, verifies its real
-  // type, optimizes it in the background and shows what that saved. Kept
-  // separate from "Upload File" above, which publishes a searchable material.
-  { to: '/uploads', label: 'Uploads', icon: UploadCloud },
   { to: '/admin/approvals', label: 'Student Approvals', icon: UserCheck, permission: 'approvals' },
   { to: '/admin/reviews', label: 'Material Submissions', icon: ClipboardCheck, permission: 'reviews' },
   { to: '/admin/reports', label: 'Reports', icon: Flag, permission: 'reports' },

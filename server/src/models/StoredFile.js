@@ -199,6 +199,12 @@ const storedFileSchema = new mongoose.Schema(
     // swept. Cleared as soon as the object is safely in storage.
     tempPath: { type: String, default: '' },
 
+    // WHY the pipeline did what it did — e.g. `not-worth-it:percent-1.2`,
+    // `no-reencodable-images`, `optimized`, `too-large-to-optimize`. A completed
+    // run that kept the original is otherwise indistinguishable from one that
+    // never ran, which is exactly the question "why wasn't my file compressed?".
+    processingReason: { type: String, default: '' },
+
     // Failure bookkeeping (§26). The original is always still retrievable after
     // a failed optimization — FAILED means "optimization failed", never "your
     // file is gone".
