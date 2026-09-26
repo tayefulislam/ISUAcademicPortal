@@ -10,6 +10,7 @@ import { logger } from '../../../utils/logger.js';
 import { ApiError } from '../../../utils/ApiError.js';
 import * as storage from '../../storage/storageService.js';
 import * as storedFileService from '../metadata/storedFileService.js';
+import { applyOptimizedMaterialAttachment } from '../metadata/materialBridge.js';
 import { buildStorageKey } from '../security/filenameSanitizer.js';
 import { analyzeFile, determineOptimizationStrategy } from './decisionEngine.js';
 import { isWorthKeeping } from './compareSizes.js';
@@ -240,8 +241,19 @@ async function processInternal(record, workDir) {
     analysis,
   };
 
-  // --- Policy refusal: a dangerous file that reached the worker is removed. ---
+  // --- Policy refusal. ---
   if (decision.strategy === 'reject') {
+    // A MATERIAL's object is referenced by a live File document, so it must never
+    // be removed here. The material upload path already refuses anything outside
+    // its own allow-list, so reaching this with a material means a false
+    // positive — and deleting a live material's file over one would be far worse
+    // than leaving it unoptimized.
+    if (record.source?.kind === 'material') {
+      logger.warn(`[uploads] ${record._id}: not optimizing a material flagged ${decision.reason}`, {
+        source: 'processPipeline',
+      });
+      return { ...base, processingMethod: 'none', reason: `material-not-optimizable:${decision.reason}` };
+    }
     await storage.deleteObject(originalKey).catch(() => null);
     throw new ApiError(422, 'This file type is not permitted', { reason: decision.reason }, 'UNSAFE_FILE_TYPE');
   }
@@ -310,6 +322,32 @@ async function processInternal(record, workDir) {
     await storage.deleteObject(optimizedKey).catch(() => null);
     logger.warn(`[uploads] ${record._id}: optimized object failed verification, keeping original`, { source: 'processPipeline' });
     return { ...base, processingMethod: 'none', reason: 'optimized-object-unverified' };
+  }
+
+  // If this file belongs to a MATERIAL, the material must point at the optimized
+  // object BEFORE the original is removed — otherwise there would be a window in
+  // which the material's own URL is dead. A failure here abandons the
+  // optimization and keeps the original, which the material still points at.
+  if (record.source?.kind === 'material') {
+    const repointed = await applyOptimizedMaterialAttachment({
+      fileId: record.source.fileId,
+      attachmentId: record.source.attachmentId,
+      storageKey: optimizedKey,
+      fileUrl: storage.publicObjectUrl(optimizedKey),
+      storedSize: candidateSize,
+      storedFileId: record._id,
+    }).catch((err) => {
+      logger.error(err, { source: 'processPipeline.materialSync', meta: { fileId: String(record._id) } });
+      return false;
+    });
+
+    if (!repointed) {
+      await storage.deleteObject(optimizedKey).catch(() => null);
+      logger.warn(`[uploads] ${record._id}: could not repoint the material, keeping the original`, {
+        source: 'processPipeline',
+      });
+      return { ...base, processingMethod: 'none', reason: 'material-sync-failed' };
+    }
   }
 
   // Only now is the original superseded.

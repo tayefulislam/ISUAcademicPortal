@@ -8,9 +8,11 @@ import Category from '../models/Category.js';
 import Chapter from '../models/Chapter.js';
 import Topic from '../models/Topic.js';
 import Bookmark from '../models/Bookmark.js';
+import StoredFile from '../models/StoredFile.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { storeUploadedFile, deleteStoredFile, deleteStoredFileStrict } from '../services/storage/storageService.js';
+import { queueMaterialOptimization } from '../services/uploads/metadata/materialBridge.js';
 import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
 import { resolveDocumentType } from '../utils/fileTypes.js';
 import {
@@ -445,6 +447,13 @@ export const uploadFiles = asyncHandler(async (req, res) => {
     uploadedBy: req.user._id,
   });
 
+  // Optimize what was just stored — off the request path, and never able to fail
+  // it. The material above is already complete and points at the original, so
+  // this only ever makes it smaller.
+  queueMaterialOptimization(file).catch((err) =>
+    logger.error(err, { req, source: 'fileController.uploadFiles', meta: { action: 'OPTIMIZE_QUEUE_FAILED', targetId: file._id } })
+  );
+
   notifyCourseMaterial(file, req.user, 'COURSE_MATERIAL');
   res.status(201).json({ success: true, data: file, failed: failed.length ? failed : undefined });
 });
@@ -621,6 +630,12 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
     uploadedBy: req.user._id,
     approvalStatus: 'pending',
   });
+
+  // Same as the staff path: the submission is saved and reviewable as-is, and
+  // optimizing its files happens afterwards.
+  queueMaterialOptimization(file).catch((err) =>
+    logger.error(err, { req, source: 'fileController.submitStudentFile', meta: { action: 'OPTIMIZE_QUEUE_FAILED', targetId: file._id } })
+  );
 
   notifyReviewRequest(file, req.user);
 
@@ -958,6 +973,12 @@ export const replaceFileVersion = asyncHandler(async (req, res) => {
     logger.info('Old material file version deleted', { req, source: 'fileController.replaceFileVersion', meta: { action: 'OLD_FILE_DELETED', targetId: file._id } });
   });
 
+  // A replaced version is a new physical file, so it is optimized exactly like a
+  // fresh upload.
+  queueMaterialOptimization(file, { ownerId: req.user._id }).catch((err) =>
+    logger.error(err, { req, source: 'fileController.replaceFileVersion', meta: { action: 'OPTIMIZE_QUEUE_FAILED', targetId: file._id } })
+  );
+
   notifyCourseMaterial(file, req.user, 'FILE_UPDATED');
   res.status(201).json({ success: true, message: 'New version uploaded', data: file, failed: failed.length ? failed : undefined });
 });
@@ -969,9 +990,46 @@ export const getFileVersions = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { versions: file.versions, currentVersion: file.currentVersion } });
 });
 
+/**
+ * Removes the optimization records belonging to attachments that are being
+ * deleted, along with the thumbnail/preview objects they generated.
+ *
+ * <p>Without this, deleting a material would leave its StoredFile rows behind:
+ * counted forever in the storage dashboard, and claiming a COMPLETED
+ * optimization for an object that no longer exists.
+ *
+ * <p>Best-effort on purpose — bookkeeping must never be the reason a delete
+ * fails. The material's own object is removed by the caller; this only clears up
+ * what the pipeline added around it.
+ */
+async function forgetStoredFiles(attachments) {
+  const ids = attachments.map((a) => a.storedFileId).filter(Boolean);
+  if (!ids.length) return;
+
+  try {
+    const records = await StoredFile.find({ _id: { $in: ids } }).select('storageProvider derivatives');
+
+    const derivatives = [];
+    for (const record of records) {
+      for (const name of ['thumbnail', 'preview']) {
+        const key = record.derivatives?.[name]?.key;
+        if (key) derivatives.push({ storageProvider: record.storageProvider, storageRef: key });
+      }
+    }
+    await Promise.all(derivatives.map((target) => deleteStoredFile(target).catch(() => null)));
+
+    await StoredFile.deleteMany({ _id: { $in: ids } });
+  } catch (err) {
+    logger.warn(`[uploads] could not clear the optimization record(s) for a deleted material: ${err.message}`, {
+      source: 'fileController.forgetStoredFiles',
+    });
+  }
+}
+
 export async function deleteAllAttachments(file) {
   const attachments = file.attachments?.length ? file.attachments : [file];
   await Promise.all(attachments.map((a) => deleteStoredFile(a).catch(() => null)));
+  await forgetStoredFiles(attachments);
 }
 
 // The delete flow's storage step: throws if ANY stored object could not be
@@ -981,6 +1039,7 @@ export async function deleteAllAttachments(file) {
 export async function deleteAllAttachmentsStrict(file) {
   const attachments = file.attachments?.length ? file.attachments : [file];
   await Promise.all(attachments.map((a) => deleteStoredFileStrict(a)));
+  await forgetStoredFiles(attachments);
 }
 
 // Removes a material completely: its stored object(s), the document, and the

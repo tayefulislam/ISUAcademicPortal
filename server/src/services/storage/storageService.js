@@ -29,6 +29,7 @@ import {
   putObjectS3,
   getSignedDownloadUrlS3,
   deleteObjectS3Strict,
+  publicUrlForKey,
   uploadStreamS3,
   downloadStreamS3,
   headObjectS3,
@@ -483,25 +484,43 @@ export async function downloadStream(key, opts = {}) {
   return downloadStreamLocal(key, opts);
 }
 
-/** Objects are stored under the private root locally, so `private` is the default there. */
-function objectScope(opts = {}) {
-  return { private: opts.private ?? !isRemoteStorage() };
-}
-
-export async function getObjectMetadata(key, opts = {}) {
+/**
+ * Object metadata without transferring the body.
+ *
+ * <p>On the local provider this resolves under the PUBLIC upload root, because
+ * that is where {@link uploadStream} puts pipeline objects. It previously
+ * defaulted to the private root, which meant the pipeline's own post-upload
+ * verification reported every optimized object as missing and silently kept
+ * every original — on the one provider a developer actually tests with.
+ */
+export async function getObjectMetadata(key) {
   if (isRemoteStorage()) return headObjectS3(key);
-  return headObjectLocal(key, objectScope(opts));
+  return headObjectLocal(key);
 }
 
-export async function objectExists(key, opts = {}) {
-  const meta = await getObjectMetadata(key, opts);
+export async function objectExists(key) {
+  const meta = await getObjectMetadata(key);
   return Boolean(meta.exists);
 }
 
-export async function deleteObject(key, opts = {}) {
+export async function deleteObject(key) {
   if (!key) return undefined;
   if (isRemoteStorage()) return deleteDocumentS3(key);
-  return deleteObjectLocal(key, objectScope(opts));
+  return deleteObjectLocal(key);
+}
+
+/**
+ * The public URL for an object, for a caller that must STORE one rather than
+ * stream it — the academic-material model keeps a `fileUrl` on each attachment.
+ *
+ * <p>S3/R2: the bucket's public base. Local: the statically-served `/uploads`
+ * path, which is where {@link uploadStream} writes. Never used for a private
+ * object — a generated document or a Student ID photo is addressed by key only.
+ */
+export function publicObjectUrl(key) {
+  if (!key) return '';
+  if (isRemoteStorage()) return publicUrlForKey(key);
+  return `/uploads/${key}`;
 }
 
 /** Begins a client-driven multipart upload. */
