@@ -1,9 +1,12 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
+import { createReadStream } from 'node:fs';
 import { Readable } from 'stream';
+import path from 'node:path';
 import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { isImageMime, resolveDocumentType } from '../../utils/fileTypes.js';
+import { buildStorageKey } from '../uploads/security/filenameSanitizer.js';
 import {
   uploadDocumentLocal,
   deleteDocumentLocal,
@@ -77,6 +80,57 @@ export async function storeUploadedFile(buffer, originalName, mimeType) {
 
   const { fileUrl, fileName, storageRef } = await uploadDocumentLocal(buffer, originalName, dir);
   return { fileType, storageProvider: 'local', fileUrl, fileName, storageRef };
+}
+
+/**
+ * The streaming twin of {@link storeUploadedFile}, for a file that has already
+ * been spooled to disk by the universal intake (never buffered in the heap).
+ *
+ * A non-image document is streamed straight from `filePath` to the configured
+ * provider, so a 250 MB PDF costs a 64 KB read buffer rather than 250 MB of RSS.
+ * Images keep the existing ImgBB routing (ImgBB serves them pre-optimized and
+ * has no key-space the pipeline could rewrite), which is why only the image
+ * branch reads the file into memory — bounded by `UPLOAD_MAX_IMAGE_MB`.
+ *
+ * @param {string} filePath      a spooled temp file
+ * @param {string} originalName
+ * @param {string} mimeType
+ * @param {{purpose?:string, ownerId?:string, size?:number}} [options]
+ * @returns {Promise<{fileType:string, storageProvider:string, fileUrl:string, fileName:string, storageRef:string, size:number}>}
+ */
+export async function storeUploadedFileFromPath(filePath, originalName, mimeType, { purpose = 'general', ownerId = '', size = 0 } = {}) {
+  if (isImageMime(mimeType)) {
+    const buffer = await fs.readFile(filePath);
+    const { fileUrl, storageRef } = await uploadImageToImgbb(buffer, originalName);
+    return { fileType: 'image', storageProvider: 'imgbb', fileUrl, fileName: originalName, storageRef, size: buffer.length };
+  }
+
+  const { fileType } = resolveDocumentType(mimeType, originalName);
+  const extension = path.extname(sanitizeOriginalName(originalName)).replace(/^\./, '') || 'bin';
+  const key = buildStorageKey({ purpose, ownerId, extension });
+
+  // A streamed write is what keeps a large upload off the heap. `uploadStream`
+  // writes under the public root (local) or to the bucket (s3) and is the exact
+  // surface the pipeline itself uses, so the object is addressable by the same
+  // `publicObjectUrl(key)` the pipeline later uses to repoint the record.
+  await uploadStream(key, createReadStream(filePath), mimeType, { contentLength: size });
+
+  return {
+    fileType,
+    storageProvider: isRemoteStorage() ? 's3' : 'local',
+    fileUrl: publicObjectUrl(key),
+    fileName: path.basename(key),
+    storageRef: key,
+    size,
+  };
+}
+
+/** The basename, guarding against a path being smuggled in as a name. */
+function sanitizeOriginalName(name) {
+  return String(name || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop() || 'file';
 }
 
 /**
@@ -421,6 +475,25 @@ export async function storeTemplateSource(key, buffer, mimeType) {
   const subDir = key.replace(/\/[^/]+$/, '');
   const name = key.slice(subDir.length + 1) || 'source';
   return uploadPrivateLocal(buffer, name, subDir);
+}
+
+/**
+ * The streaming twin of {@link storeTemplateSource}, for a source file that has
+ * already been spooled to disk by the universal intake. A reference design is an
+ * admin-uploaded PDF/PNG/JPG, so it is streamed rather than buffered — the same
+ * rule every other upload follows — but it keeps the private addressee (a bare
+ * key, read back through the authenticated proxy), because the pipeline's public
+ * object surface is not where a private design belongs.
+ *
+ * @returns {Promise<{storageRef:string}>}
+ */
+export async function storeTemplateSourceFromPath(key, filePath, mimeType, size = 0) {
+  if (isRemoteStorage()) {
+    await uploadStream(key, createReadStream(filePath), mimeType || 'application/octet-stream', { contentLength: size });
+    return { storageRef: key };
+  }
+  const { storageRef } = await uploadPrivateStreamLocal(key, createReadStream(filePath));
+  return { storageRef };
 }
 
 export async function getTemplateSourceStream(key, mimeType) {

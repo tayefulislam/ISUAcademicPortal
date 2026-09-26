@@ -16,7 +16,9 @@ import {
 } from '../controllers/studentApprovalController.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
+
+const materialFiles = receiveUploads({ fields: ['files'], maxFiles: 10, required: false });
 
 const router = Router();
 
@@ -33,7 +35,7 @@ router.get('/files', canFiles, getMyFiles);
 router.post(
   '/files',
   canFiles,
-  upload.array('files', MAX_FILES_PER_UPLOAD),
+  materialFiles,
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
@@ -50,7 +52,7 @@ router.patch('/files/:id', canFiles, updateFile);
 router.delete('/files/:id', canFiles, deleteFile);
 
 router.get('/files/:id/versions', canFiles, getFileVersions);
-router.post('/files/:id/versions', canFiles, upload.array('files', MAX_FILES_PER_UPLOAD), replaceFileVersion);
+router.post('/files/:id/versions', canFiles, materialFiles, replaceFileVersion);
 
 router.get('/students/pending', canApprovals, listPendingStudents);
 router.get('/students/:id/id-photo', canApprovals, getStudentIdPhoto);

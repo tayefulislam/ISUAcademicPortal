@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authenticate, requirePermission } from '../middleware/auth.js';
-import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
+
+const assetFiles = receiveUploads({ fields: ['files'], maxFiles: 10, required: false });
 import {
   getAssets,
   streamAsset,
@@ -16,7 +18,7 @@ const router = Router();
 router.use(authenticate, requirePermission('documents'));
 
 router.get('/', getAssets);
-router.post('/', upload.array('files', MAX_FILES_PER_UPLOAD), uploadAssets);
+router.post('/', assetFiles, uploadAssets);
 router.get('/:name', streamAsset);
 router.delete('/:name', deleteAssetFile);
 

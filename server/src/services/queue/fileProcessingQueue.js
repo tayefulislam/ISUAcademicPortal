@@ -110,6 +110,37 @@ export async function ensureUploadCleanupSchedule() {
   return true;
 }
 
+/**
+ * Whether the queue is actually reachable, and how much work is waiting.
+ *
+ * This is the answer to the silent failure that started all of this: an upload
+ * returns 202 and its file sits in the bucket at full size because Redis is down
+ * and nothing ever tells anyone. Called at boot (a loud warning, below) and
+ * surfaced by the admin storage dashboard, so "is optimization even running?" is
+ * answerable without reading logs.
+ *
+ * @returns {Promise<{reachable:boolean, counts?:object, error?:string}>}
+ */
+export async function checkFileQueueHealth({ timeoutMs = 4000 } = {}) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ reachable: false, error: 'Redis did not respond in time' }), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      getFileQueue()
+        .getJobCounts('waiting', 'active', 'delayed', 'failed')
+        .then((counts) => ({ reachable: true, counts })),
+      timeout,
+    ]);
+  } catch (err) {
+    return { reachable: false, error: err.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function closeFileQueue() {
   if (queue) {
     await queue.close();
@@ -126,5 +157,6 @@ export default {
   fileJobId,
   enqueueFileProcessing,
   ensureUploadCleanupSchedule,
+  checkFileQueueHealth,
   closeFileQueue,
 };

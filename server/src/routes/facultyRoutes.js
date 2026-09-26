@@ -12,9 +12,11 @@ import { getFacultyCourses, setCourseTeachingStatus } from '../controllers/facul
 import { listPendingStudents, getStudentIdPhoto, approveStudent, rejectStudent } from '../controllers/studentApprovalController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
 import { ApiError } from '../utils/ApiError.js';
 import { assertFacultyCourseAccess } from '../services/teachingService.js';
+
+const materialFiles = receiveUploads({ fields: ['files'], maxFiles: 10, required: false });
 
 const router = Router();
 
@@ -48,7 +50,7 @@ router.patch('/courses/:courseId/status', [body('status').notEmpty().withMessage
 router.get('/files', getFacultyScopedFiles);
 router.post(
   '/files',
-  upload.array('files', MAX_FILES_PER_UPLOAD),
+  materialFiles,
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
@@ -65,7 +67,7 @@ router.post(
 router.patch('/files/:id', updateFile);
 router.delete('/files/:id', deleteFile);
 router.get('/files/:id/versions', getFileVersions);
-router.post('/files/:id/versions', upload.array('files', MAX_FILES_PER_UPLOAD), replaceFileVersion);
+router.post('/files/:id/versions', materialFiles, replaceFileVersion);
 
 // Student ID approvals, scoped to this faculty member's assigned
 // Department(s)/Course(s) — enforced inside the controller itself

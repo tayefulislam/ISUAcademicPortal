@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { Readable } from 'stream';
 import File from '../models/File.js';
 import Department from '../models/Department.js';
@@ -11,7 +12,7 @@ import Bookmark from '../models/Bookmark.js';
 import StoredFile from '../models/StoredFile.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { storeUploadedFile, deleteStoredFile, deleteStoredFileStrict } from '../services/storage/storageService.js';
+import { storeUploadedFileFromPath, deleteStoredFile, deleteStoredFileStrict } from '../services/storage/storageService.js';
 import { queueMaterialOptimization } from '../services/uploads/metadata/materialBridge.js';
 import { uploadcareCdnUrl } from '../services/storage/uploadcareStorage.js';
 import { resolveDocumentType } from '../utils/fileTypes.js';
@@ -417,7 +418,12 @@ export const uploadFiles = asyncHandler(async (req, res) => {
 
   for (const uploadedFile of files) {
     try {
-      const stored = await storeUploadedFile(uploadedFile.buffer, uploadedFile.originalname, uploadedFile.mimetype);
+      const stored = await storeUploadedFileFromPath(uploadedFile.path, uploadedFile.originalname, uploadedFile.mimetype, {
+        purpose: 'academic-material',
+        ownerId: String(req.user._id),
+        size: uploadedFile.size,
+      });
+      await fs.rm(uploadedFile.path, { force: true }).catch(() => null);
       attachments.push({
         originalName: uploadedFile.originalname,
         fileName: stored.fileName,
@@ -603,7 +609,12 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
   const failed = [];
   for (const uploadedFile of files) {
     try {
-      const stored = await storeUploadedFile(uploadedFile.buffer, uploadedFile.originalname, uploadedFile.mimetype);
+      const stored = await storeUploadedFileFromPath(uploadedFile.path, uploadedFile.originalname, uploadedFile.mimetype, {
+        purpose: 'academic-material',
+        ownerId: String(req.user._id),
+        size: uploadedFile.size,
+      });
+      await fs.rm(uploadedFile.path, { force: true }).catch(() => null);
       attachments.push({
         originalName: uploadedFile.originalname,
         fileName: stored.fileName,
@@ -903,7 +914,12 @@ export const replaceFileVersion = asyncHandler(async (req, res) => {
   const failed = [];
   for (const uploadedFile of files) {
     try {
-      const stored = await storeUploadedFile(uploadedFile.buffer, uploadedFile.originalname, uploadedFile.mimetype);
+      const stored = await storeUploadedFileFromPath(uploadedFile.path, uploadedFile.originalname, uploadedFile.mimetype, {
+        purpose: 'academic-material',
+        ownerId: String(req.user._id),
+        size: uploadedFile.size,
+      });
+      await fs.rm(uploadedFile.path, { force: true }).catch(() => null);
       attachments.push({
         originalName: uploadedFile.originalname,
         fileName: stored.fileName,

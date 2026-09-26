@@ -24,7 +24,11 @@ import {
 // enforce upload ownership internally regardless of which path is used.
 import { authenticate, optionalAuth, requirePermission, requireStudentOrScopedAdminTier } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { upload, MAX_FILES_PER_UPLOAD } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
+
+// Optional: an external-link material carries no bytes, so the controller—not
+// the intake—is what insists on at least one file for a real upload.
+const materialFiles = receiveUploads({ fields: ['files'], maxFiles: 10, required: false });
 
 const router = Router();
 
@@ -45,7 +49,7 @@ router.post(
   '/',
   authenticate,
   requirePermission('files'),
-  upload.array('files', MAX_FILES_PER_UPLOAD),
+  materialFiles,
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),
@@ -77,7 +81,7 @@ router.post(
   '/submit',
   authenticate,
   requireStudentOrScopedAdminTier,
-  upload.array('files', MAX_FILES_PER_UPLOAD),
+  materialFiles,
   [
     body('departmentId').notEmpty().withMessage('Department is required'),
     body('courseIdRef').notEmpty().withMessage('Course is required'),

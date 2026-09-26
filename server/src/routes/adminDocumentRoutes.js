@@ -2,7 +2,10 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { upload } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
+
+// The reference design is optional on create and on any version endpoint.
+const templateSource = receiveUploads({ fields: ['source'], maxFiles: 1, required: false });
 import {
   listTemplates,
   getTemplate,
@@ -30,7 +33,7 @@ router.get('/', listTemplates);
 router.get('/meta', getMetadata);
 router.post(
   '/',
-  upload.single('source'),
+  templateSource,
   [
     body('name').trim().notEmpty().withMessage('Template name is required'),
     body('category').trim().notEmpty().withMessage('A category is required'),
@@ -48,9 +51,9 @@ router.delete('/:id', deleteTemplate);
 // Versions are append-only: there is deliberately no PUT/PATCH on a version's
 // fields, because a version already used to generate a document must not change
 // under it.
-router.post('/:id/versions', upload.single('source'), createVersion);
+router.post('/:id/versions', templateSource, createVersion);
 router.get('/:id/versions/:version', getVersion);
-router.post('/:id/versions/:version/source', upload.single('source'), uploadSource);
+router.post('/:id/versions/:version/source', templateSource, uploadSource);
 router.get('/:id/versions/:version/source', streamSource);
 
 export default router;

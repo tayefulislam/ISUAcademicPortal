@@ -4,6 +4,7 @@ import { env } from '../../../config/env.js';
 import { logger } from '../../../utils/logger.js';
 import * as storage from '../../storage/storageService.js';
 import * as storedFileService from '../metadata/storedFileService.js';
+import { sweepOrphanedObjects } from './orphanSweep.js';
 
 /**
  * Reclaiming what uploads leave behind (§20).
@@ -18,6 +19,9 @@ import * as storedFileService from '../metadata/storedFileService.js';
  *   4. Incomplete multipart uploads — the expensive one. An abandoned multi-GB
  *      upload is BILLED for every part it leaves behind, on both S3 and R2,
  *      until it is aborted.
+ *   5. Orphaned objects — a stored object no live record references any more
+ *      (a record deleted while MongoDB was down, an aborted upload). See
+ *      orphanSweep.js.
  */
 
 const SPOOL_DIRNAME = 'spool';
@@ -71,7 +75,7 @@ async function sweepDir(dir, olderThanMs) {
 export async function cleanupUploads() {
   const ttlMs = env.uploads.cleanup.tempTtlMinutes * 60 * 1000;
   const staleMs = env.uploads.cleanup.staleJobMinutes * 60 * 1000;
-  const summary = { tempFiles: 0, staleJobs: 0, multipartAborted: 0 };
+  const summary = { tempFiles: 0, staleJobs: 0, multipartAborted: 0, orphansRemoved: 0 };
 
   // 1 & 2 — temp debris.
   summary.tempFiles += await sweepDir(spoolDir(), ttlMs);
@@ -100,9 +104,18 @@ export async function cleanupUploads() {
     logger.warn(`[uploads] multipart sweep failed: ${err.message}`, { source: 'cleanup' });
   }
 
-  if (summary.tempFiles || summary.staleJobs || summary.multipartAborted) {
+  // 5 — objects nothing references. Reference-checked, so running this on every
+  // sweep never touches a live file.
+  try {
+    const orphans = await sweepOrphanedObjects({ olderThanMs: staleMs });
+    summary.orphansRemoved = orphans.removed;
+  } catch (err) {
+    logger.warn(`[uploads] orphan sweep failed: ${err.message}`, { source: 'cleanup' });
+  }
+
+  if (summary.tempFiles || summary.staleJobs || summary.multipartAborted || summary.orphansRemoved) {
     logger.info(
-      `[uploads] cleanup: ${summary.tempFiles} temp file(s), ${summary.staleJobs} stale job(s), ${summary.multipartAborted} multipart abort(s)`,
+      `[uploads] cleanup: ${summary.tempFiles} temp file(s), ${summary.staleJobs} stale job(s), ${summary.multipartAborted} multipart abort(s), ${summary.orphansRemoved} orphan(s)`,
       { source: 'cleanup' }
     );
   }

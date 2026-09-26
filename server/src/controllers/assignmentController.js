@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import Assignment from '../models/Assignment.js';
 import Submission from '../models/Submission.js';
 import Course from '../models/Course.js';
@@ -7,7 +8,8 @@ import { getEffectiveCourseIds, isBlockedByApproval } from '../services/courseAc
 import { assertBatchesMatchCourses } from '../services/teachingService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { storeUploadedFileFromPath, deleteStoredFile } from '../services/storage/storageService.js';
+import { recordDomainOptimization } from '../services/uploads/metadata/recordBridge.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveCourseScopedRecipients, resolveFacultyForCourse } from '../services/notifications/recipientResolver.js';
 
@@ -138,18 +140,50 @@ function assertManageAccess(assignment, user) {
   }
 }
 
-async function storeAttachments(files) {
+/**
+ * Stores spooled attachments without buffering them in the heap.
+ *
+ * Returns the attachment documents AND a parallel `spool` array carrying the
+ * provenance the pipeline needs (provider, key, mime, size). The two are index-
+ * aligned, so after the document is saved the optimization jobs can be recorded
+ * against each attachment's own `_id`.
+ */
+async function storeAttachments(files, ownerId, purpose = 'assignment') {
   const attachments = [];
+  const spool = [];
   for (const file of files || []) {
-    const stored = await storeUploadedFile(file.buffer, file.originalname, file.mimetype);
+    const stored = await storeUploadedFileFromPath(file.path, file.originalname, file.mimetype, {
+      purpose,
+      ownerId: String(ownerId),
+      size: file.size,
+    });
+    await fs.rm(file.path, { force: true }).catch(() => null);
     attachments.push({
       originalName: file.originalname,
       fileUrl: stored.fileUrl,
       storageProvider: stored.storageProvider,
       storageRef: stored.storageRef,
     });
+    spool.push({
+      storageProvider: stored.storageProvider,
+      storageRef: stored.storageRef,
+      mimeType: file.mimetype,
+      originalName: file.originalname,
+      fileSize: stored.size || file.size,
+    });
   }
-  return attachments;
+  return { attachments, spool };
+}
+
+/** Records each saved attachment with the pipeline so it is optimized async. */
+async function queueAttachmentOptimization({ kind, ownerId, recordId, doc, spool }) {
+  const items = [];
+  (doc.attachments || []).forEach((attachment, index) => {
+    const descriptor = spool[index];
+    if (descriptor) items.push({ attachmentId: attachment._id, ...descriptor });
+  });
+  if (!items.length) return;
+  await recordDomainOptimization({ ownerId, kind, recordId, purpose: kind, items }).catch(() => null);
 }
 
 // Extracts a comparable id string whether `v` is a raw ObjectId or an
@@ -211,7 +245,7 @@ export const createAssignment = asyncHandler(async (req, res) => {
   // can never be enrolled in the targeted course.
   await assertBatchesMatchCourses(targeting);
 
-  const attachments = await storeAttachments(req.files);
+  const { attachments, spool } = await storeAttachments(req.files, req.user._id, 'assignment');
 
   const assignment = await Assignment.create({
     title,
@@ -226,6 +260,8 @@ export const createAssignment = asyncHandler(async (req, res) => {
     status: req.body.status === 'published' ? 'published' : 'draft',
     createdBy: req.user._id,
   });
+
+  await queueAttachmentOptimization({ kind: 'assignment', ownerId: req.user._id, recordId: assignment._id, doc: assignment, spool });
 
   if (assignment.status === 'published') notifyAssignmentPublished(assignment, req.user, 'ASSIGNMENT_CREATED');
   res.status(201).json({ success: true, data: assignment });
@@ -254,12 +290,17 @@ export const updateAssignment = asyncHandler(async (req, res) => {
     Object.assign(assignment, targeting);
   }
 
+  let spool = [];
   if (req.files?.length) {
     await Promise.all((assignment.attachments || []).map((a) => deleteStoredFile(a).catch(() => null)));
-    assignment.attachments = await storeAttachments(req.files);
+    const stored = await storeAttachments(req.files, req.user._id, 'assignment');
+    assignment.attachments = stored.attachments;
+    spool = stored.spool;
   }
 
   await assignment.save();
+
+  await queueAttachmentOptimization({ kind: 'assignment', ownerId: req.user._id, recordId: assignment._id, doc: assignment, spool });
 
   if (!wasPublished && assignment.status === 'published') notifyAssignmentPublished(assignment, req.user, 'ASSIGNMENT_CREATED');
   else if (wasPublished && assignment.status === 'published') notifyAssignmentPublished(assignment, req.user, 'ASSIGNMENT_UPDATED');
@@ -386,7 +427,13 @@ export const submitAssignment = asyncHandler(async (req, res) => {
     await Promise.all((existing.attachments || []).map((a) => deleteStoredFile(a).catch(() => null)));
   }
 
-  const attachments = files.length ? await storeAttachments(files) : existing?.attachments || [];
+  let attachments = existing?.attachments || [];
+  let spool = [];
+  if (files.length) {
+    const stored = await storeAttachments(files, req.user._id, 'submission');
+    attachments = stored.attachments;
+    spool = stored.spool;
+  }
   const submittedAt = new Date();
   const status = submittedAt > assignment.deadline ? 'late' : 'submitted';
 
@@ -401,6 +448,8 @@ export const submitAssignment = asyncHandler(async (req, res) => {
     },
     { upsert: true, new: true }
   );
+
+  await queueAttachmentOptimization({ kind: 'submission', ownerId: req.user._id, recordId: submission._id, doc: submission, spool });
 
   notifySubmissionReceived(assignment, submission, req.user).catch((err) =>
     console.error('[notify] assignment submitted', err)

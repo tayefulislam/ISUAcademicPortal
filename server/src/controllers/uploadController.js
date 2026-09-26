@@ -11,7 +11,7 @@ import { assertCanAccess, assertOwnerOrAdmin } from '../services/uploads/access/
 import { buildStorageKey, contentDisposition, safeExtension } from '../services/uploads/security/filenameSanitizer.js';
 import { assertConcurrencyAllowed } from '../services/uploads/security/rateLimit.js';
 import { assertValidProfile } from '../services/uploads/pdf/pdfProfiles.js';
-import { enqueueFileProcessing } from '../services/queue/fileProcessingQueue.js';
+import { enqueueFileProcessing, checkFileQueueHealth } from '../services/queue/fileProcessingQueue.js';
 import { runProcessingJob, persistOriginalAndFail } from '../services/uploads/processing/processPipeline.js';
 import { decompressStream } from '../services/uploads/compression/compressStream.js';
 
@@ -473,7 +473,11 @@ export const retryUpload = asyncHandler(async (req, res) => {
 /** The admin storage dashboard (§24). */
 export const getStorageDashboard = asyncHandler(async (req, res) => {
   const dashboard = await storedFileService.storageDashboard();
-  res.json({ success: true, data: dashboard });
+  // Whether optimization can actually run right now. A queue that is unreachable
+  // is the difference between "N files waiting" and "N files that will never be
+  // optimized", so it is part of the dashboard rather than something to infer.
+  const queueHealth = await checkFileQueueHealth().catch(() => ({ reachable: false, error: 'unavailable' }));
+  res.json({ success: true, data: { ...dashboard, queueHealth } });
 });
 
 export default {

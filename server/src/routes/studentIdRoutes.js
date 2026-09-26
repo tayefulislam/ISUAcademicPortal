@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { submitStudentId, getMyStudentIdStatus } from '../controllers/studentApprovalController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { upload } from '../middleware/upload.js';
+import { receiveUploads } from '../middleware/uploadStream.js';
+
+const studentIdPhoto = receiveUploads({ fields: ['studentIdImage'], maxFiles: 1 });
 
 const router = Router();
 
@@ -17,7 +19,7 @@ router.get('/status', getMyStudentIdStatus);
 // registration itself no longer collects a photo) and a resubmission after
 // rejection — /resubmit kept as an alias so an already-bookmarked/cached
 // client URL keeps working.
-router.post('/submit', upload.single('studentIdImage'), submitStudentId);
-router.post('/resubmit', upload.single('studentIdImage'), submitStudentId);
+router.post('/submit', studentIdPhoto, submitStudentId);
+router.post('/resubmit', studentIdPhoto, submitStudentId);
 
 export default router;

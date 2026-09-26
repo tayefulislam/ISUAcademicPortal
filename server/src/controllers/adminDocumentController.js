@@ -1,10 +1,11 @@
+import fs from 'node:fs/promises';
 import mongoose from 'mongoose';
 import DocumentTemplate, { TEMPLATE_STATUSES, TEMPLATE_AUDIENCES } from '../models/DocumentTemplate.js';
 import DocumentTemplateVersion from '../models/DocumentTemplateVersion.js';
 import DocumentCategory from '../models/DocumentCategory.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { storeTemplateSource, getTemplateSourceStream, deleteTemplateSource } from '../services/storage/storageService.js';
+import { storeTemplateSourceFromPath, getTemplateSourceStream, deleteTemplateSource } from '../services/storage/storageService.js';
 import { normalizeFields, normalizeStyleConfig } from '../services/documents/normalizeFields.js';
 import { FIELD_TYPES, FIELD_SOURCES, SOURCE_LABELS, FONT_CHOICES, BORDER_STYLES } from '../services/documents/fieldSources.js';
 import { FIELD_BLOCKS } from '../services/documents/documentBlocks.js';
@@ -13,7 +14,7 @@ import {
   readAssetBuffer,
   assetMimeType,
   isDocumentAssetName,
-  saveAsset,
+  saveAssetFromPath,
   deleteAsset,
 } from '../services/documents/assets.js';
 import { getSafeExtension } from '../utils/fileTypes.js';
@@ -86,15 +87,22 @@ function parseAudiences(value) {
 function readSourceFile(req) {
   if (!req.file) return null;
   if (!SOURCE_MIME.has(req.file.mimetype)) {
+    discardSpool(req.file).catch(() => null);
     throw new ApiError(400, 'The reference must be a PDF, PNG or JPG');
   }
   return {
-    buffer: req.file.buffer,
+    path: req.file.path,
+    size: req.file.size,
     fileName: req.file.originalname,
     mimeType: req.file.mimetype,
     type: req.file.mimetype === 'application/pdf' ? 'pdf' : 'image',
     ext: getSafeExtension(req.file.originalname) || (req.file.mimetype === 'application/pdf' ? 'pdf' : 'png'),
   };
+}
+
+/** Reclaims a spooled upload once it has been stored (or rejected). */
+async function discardSpool(file) {
+  if (file?.path) await fs.rm(file.path, { force: true }).catch(() => null);
 }
 
 const POPULATE = [
@@ -176,10 +184,14 @@ export const uploadAssets = asyncHandler(async (req, res) => {
   const saved = [];
   for (const file of files) {
     if (!ASSET_MIME.has(file.mimetype)) {
+      // eslint-disable-next-line no-await-in-loop
+      await discardSpool(file);
       throw new ApiError(400, `Unsupported file type: ${file.mimetype || 'unknown'}`);
     }
     // eslint-disable-next-line no-await-in-loop
-    saved.push(await saveAsset(file.buffer, file.originalname));
+    saved.push(await saveAssetFromPath(file.path, file.originalname));
+    // eslint-disable-next-line no-await-in-loop
+    await discardSpool(file);
   }
 
   res.status(201).json({
@@ -262,8 +274,9 @@ export const createTemplate = asyncHandler(async (req, res) => {
   let sourceFile = {};
   if (source) {
     const key = `template-sources/${template._id}/v1.${source.ext}`;
-    const { storageRef } = await storeTemplateSource(key, source.buffer, source.mimeType);
-    sourceFile = { type: source.type, s3Key: storageRef, fileName: source.fileName, mimeType: source.mimeType, size: source.buffer.length };
+    const { storageRef } = await storeTemplateSourceFromPath(key, source.path, source.mimeType, source.size);
+    await discardSpool(req.file);
+    sourceFile = { type: source.type, s3Key: storageRef, fileName: source.fileName, mimeType: source.mimeType, size: source.size };
   }
 
   await DocumentTemplateVersion.create({
@@ -336,8 +349,9 @@ export const createVersion = asyncHandler(async (req, res) => {
   let sourceFile = current.sourceFile ? current.sourceFile.toObject() : {};
   if (source) {
     const key = `template-sources/${template._id}/v${nextVersion}.${source.ext}`;
-    const { storageRef } = await storeTemplateSource(key, source.buffer, source.mimeType);
-    sourceFile = { type: source.type, s3Key: storageRef, fileName: source.fileName, mimeType: source.mimeType, size: source.buffer.length };
+    const { storageRef } = await storeTemplateSourceFromPath(key, source.path, source.mimeType, source.size);
+    await discardSpool(req.file);
+    sourceFile = { type: source.type, s3Key: storageRef, fileName: source.fileName, mimeType: source.mimeType, size: source.size };
   }
 
   const pageSize = String(body.pageSize || current.pageSize || 'A4');
@@ -454,13 +468,14 @@ export const uploadSource = asyncHandler(async (req, res) => {
   }
 
   const key = `template-sources/${template._id}/v${version.version}.${source.ext}`;
-  const { storageRef } = await storeTemplateSource(key, source.buffer, source.mimeType);
+  const { storageRef } = await storeTemplateSourceFromPath(key, source.path, source.mimeType, source.size);
+  await discardSpool(req.file);
   version.sourceFile = {
     type: source.type,
     s3Key: storageRef,
     fileName: source.fileName,
     mimeType: source.mimeType,
-    size: source.buffer.length,
+    size: source.size,
   };
   await version.save();
 

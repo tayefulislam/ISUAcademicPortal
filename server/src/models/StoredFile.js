@@ -144,13 +144,46 @@ const storedFileSchema = new mongoose.Schema(
     // Where this file came from, when something other than the upload screen owns
     // it. A material upload (Submit Material / Upload Material) records the exact
     // File and attachment, so the worker can repoint THAT attachment at the
-    // optimized object once one exists — see materialBridge.
+    // optimized object once one exists — see metadata/recordBridge.js.
     //
-    // 'standalone' is the upload screen's own file, which nothing else references.
+    // Every domain that accepts a file records its provenance here, so the
+    // worker knows which record/field to repoint after optimizing:
+    //   material          -> File.attachments[<attachmentId>]
+    //   assignment        -> Assignment.attachments[<attachmentId>]
+    //   submission        -> Submission.attachments[<attachmentId>]
+    //   notice            -> Notice.<field> (field names the URL/key fields)
+    //   question          -> Question.imageUrl / imageStorageRef
+    //   student-id        -> User.studentIdImage
+    //   document-template -> DocumentTemplateVersion.sourceFile
+    //   document-asset    -> the filesystem asset record
+    //   standalone        -> the upload screen's own file, which nothing else references
     source: {
-      kind: { type: String, enum: ['standalone', 'material'], default: 'standalone' },
+      kind: {
+        type: String,
+        enum: [
+          'standalone',
+          'material',
+          'assignment',
+          'submission',
+          'notice',
+          'question',
+          'student-id',
+          'document-template',
+          'document-asset',
+        ],
+        default: 'standalone',
+      },
+      // The academic-material File, kept as its own typed ref for clarity.
       fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', default: null },
+      // The owning record for every other kind (Assignment/Submission/Notice/
+      // Question/User/DocumentTemplateVersion). Deliberately untyped, since a
+      // single field cannot ref several collections.
+      recordId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      // The exact attachment subdocument for the array-shaped domains.
       attachmentId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      // For single-valued domains (notice attachment, question image), the
+      // logical field this upload fills, so the apply step can be declarative.
+      field: { type: String, default: '' },
     },
 
     uploadMode: { type: String, enum: UPLOAD_MODES, default: 'direct' },

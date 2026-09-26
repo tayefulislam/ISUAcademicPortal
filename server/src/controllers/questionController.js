@@ -1,9 +1,11 @@
+import fs from 'node:fs/promises';
 import Question from '../models/Question.js';
 import Quiz from '../models/Quiz.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination } from '../utils/pagination.js';
-import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { storeUploadedFileFromPath, deleteStoredFile } from '../services/storage/storageService.js';
+import { recordDomainOptimization } from '../services/uploads/metadata/recordBridge.js';
 import { parseDocxQuestions } from '../utils/docxQuestionParser.js';
 import {
   tokenize,
@@ -91,8 +93,9 @@ export const createQuestion = asyncHandler(async (req, res) => {
   validateByType(type, req.body);
 
   let image = { imageUrl: '', imageStorageProvider: '', imageStorageRef: '' };
+  let stored = null;
   if (req.file) {
-    const stored = await storeUploadedFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+    stored = await storeStoredImage(req);
     image = { imageUrl: stored.fileUrl, imageStorageProvider: stored.storageProvider, imageStorageRef: stored.storageRef };
   }
 
@@ -118,8 +121,41 @@ export const createQuestion = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  if (stored) await queueImageOptimization(question, stored, req);
+
   res.status(201).json({ success: true, data: question });
 });
+
+/** Stores a spooled question image without buffering it in the heap. */
+async function storeStoredImage(req) {
+  const stored = await storeUploadedFileFromPath(req.file.path, req.file.originalname, req.file.mimetype, {
+    purpose: 'question',
+    ownerId: String(req.user._id),
+    size: req.file.size,
+  });
+  await fs.rm(req.file.path, { force: true }).catch(() => null);
+  return stored;
+}
+
+/** Records the question image with the pipeline so it is optimized async. */
+async function queueImageOptimization(question, stored, req) {
+  await recordDomainOptimization({
+    ownerId: req.user._id,
+    kind: 'question',
+    recordId: question._id,
+    purpose: 'question',
+    items: [
+      {
+        field: 'image',
+        storageProvider: stored.storageProvider,
+        storageRef: stored.storageRef,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+        fileSize: stored.size || req.file.size,
+      },
+    ],
+  }).catch(() => null);
+}
 
 // POST /questions/import-docx — bulk-creates questions parsed out of a
 // single .docx file (see utils/docxQuestionParser.js for the markup it
@@ -139,7 +175,12 @@ export const importQuestionsFromDocx = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Only .docx files are supported');
   }
 
-  const { results } = await parseDocxQuestions(req.file.buffer);
+  // The parser needs the document in memory (a .docx is a bounded, structured
+  // package), so the spool file is read once here — the single deliberate read
+  // on this route — and reclaimed immediately after.
+  const buffer = await fs.readFile(req.file.path);
+  await fs.rm(req.file.path, { force: true }).catch(() => null);
+  const { results } = await parseDocxQuestions(buffer);
 
   const created = [];
   const skipped = [];
@@ -199,15 +240,19 @@ export const updateQuestion = asyncHandler(async (req, res) => {
   if (req.body.numericalTolerance !== undefined) question.numericalTolerance = Number(req.body.numericalTolerance);
   if (req.body.visibility !== undefined) question.visibility = req.body.visibility === 'public' ? 'public' : 'private';
 
+  let stored = null;
   if (req.file) {
     if (question.imageStorageRef) await deleteStoredFile({ storageProvider: question.imageStorageProvider, storageRef: question.imageStorageRef }).catch(() => null);
-    const stored = await storeUploadedFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+    stored = await storeStoredImage(req);
     question.imageUrl = stored.fileUrl;
     question.imageStorageProvider = stored.storageProvider;
     question.imageStorageRef = stored.storageRef;
   }
 
   await question.save();
+
+  if (stored) await queueImageOptimization(question, stored, req);
+
   res.json({ success: true, data: question });
 });
 

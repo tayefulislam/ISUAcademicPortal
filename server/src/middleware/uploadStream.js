@@ -7,10 +7,10 @@ import { pipeline } from 'node:stream/promises';
 import Busboy from 'busboy';
 
 import { ApiError } from '../utils/ApiError.js';
-import { env } from '../config/env.js';
 import { HARD_MAX_BYTES, limitBytesForCategory, prettyMb } from '../config/uploadLimits.js';
 import { detectFileType, HEADER_BYTES } from '../services/uploads/detection/detectFileType.js';
 import { sanitizeFilename, safeExtension } from '../services/uploads/security/filenameSanitizer.js';
+import { isScanningEnabled, scanFile } from '../services/uploads/security/scan.js';
 import { ensureTempDirs, spoolDir } from '../services/uploads/cleanup/tempSweeper.js';
 
 /**
@@ -35,6 +35,11 @@ import { ensureTempDirs, spoolDir } from '../services/uploads/cleanup/tempSweepe
  *      once, not twice.
  *   3. IDENTITY — magic-byte detection on the same buffer, so a spoofed
  *      extension or Content-Type is caught before the file is ever queued.
+ *
+ * One factory serves every route: the universal pipeline's single `file` field
+ * and the domain routes' `files` / `attachments` / `attachment` / `image` /
+ * `studentIdImage` / `source` fields all flow through {@link receiveUploads}, so
+ * there is one intake implementation rather than one per controller.
  */
 
 /**
@@ -104,27 +109,41 @@ class IngestStream extends Transform {
   }
 }
 
-/** Field names accepted on the multipart form. Anything else is ignored. */
-const FILE_FIELD = 'file';
 const MAX_FIELDS = 60;
+
+/** Removes any spool files a rejected request left behind. */
+function discardSpools(ingests) {
+  for (const ingest of ingests) {
+    if (ingest?.spoolPath) fs.rm(ingest.spoolPath, { force: true }).catch(() => null);
+  }
+}
 
 /**
  * Middleware factory. Populates, on success:
  *
- *   req.body             — the text fields
- *   req.upload = {
- *     tempPath, originalName, extension, clientMime, size, checksum, detection
- *   }
+ *   req.body     — the text fields
+ *   req.uploads  — one descriptor per accepted file:
+ *                  { tempPath, originalName, extension, clientMime, size,
+ *                    checksum, detection, fieldName }
+ *   req.upload   — the first descriptor (the pipeline's single-file shape)
+ *   req.files / req.file — a multer-compatible view ({ path, originalname,
+ *                  mimetype, size, fieldname }) so the domain controllers keep
+ *                  their existing `req.files[0]` handling while the bytes never
+ *                  enter the heap.
  *
- * Nothing is written to anything but the spool directory, and the caller is
- * responsible for removing `tempPath` once the file is stored (the cleanup
- * sweeper is the backstop if it does not).
+ * Nothing is written outside the spool directory, and the caller is responsible
+ * for removing each `tempPath` once the file is stored (the cleanup sweeper is
+ * the backstop if it does not).
+ *
+ * @param {{fields?:string[], maxFiles?:number, required?:boolean}} [options]
  */
-export function receiveUploadFile() {
+export function receiveUploads({ fields = ['file'], maxFiles = 1, required = true } = {}) {
+  const accepted = new Set(fields);
+
   return async function uploadStreamMiddleware(req, res, next) {
     try {
       await ensureTempDirs();
-    } catch (err) {
+    } catch {
       return next(new ApiError(500, 'Server storage is not writable', null, 'TEMP_UNAVAILABLE'));
     }
 
@@ -133,14 +152,14 @@ export function receiveUploadFile() {
     }
 
     let settled = false;
-    let ingest = null;
+    /** @type {IngestStream[]} */
+    const ingests = [];
+    let failure = null;
 
     const fail = (err) => {
       if (settled) return;
       settled = true;
-      // Remove the partially-written spool file — a rejected upload must not
-      // leave debris behind.
-      if (ingest?.spoolPath) fs.rm(ingest.spoolPath, { force: true }).catch(() => null);
+      discardSpools(ingests);
       next(err);
     };
 
@@ -150,9 +169,9 @@ export function receiveUploadFile() {
         headers: req.headers,
         // The hard ceiling here is a coarse backstop; the real, per-category
         // limit is applied inside IngestStream once the type is known.
-        limits: { fileSize: HARD_MAX_BYTES, files: 1, fields: MAX_FIELDS, fieldSize: 100 * 1024 },
+        limits: { fileSize: HARD_MAX_BYTES, files: maxFiles, fields: MAX_FIELDS, fieldSize: 100 * 1024 },
       });
-    } catch (err) {
+    } catch {
       return fail(new ApiError(400, 'Malformed multipart request', null, 'BAD_MULTIPART'));
     }
 
@@ -167,14 +186,15 @@ export function receiveUploadFile() {
       else req.body[name] = [req.body[name], value];
     });
 
-    busboy.on('filesLimit', () => fail(new ApiError(400, 'Only one file may be uploaded per request', null, 'TOO_MANY_FILES')));
+    busboy.on('filesLimit', () => fail(new ApiError(400, `At most ${maxFiles} file(s) may be uploaded per request`, null, 'TOO_MANY_FILES')));
 
     busboy.on('file', (fieldName, fileStream, info) => {
-      if (fieldName !== FILE_FIELD) {
-        fileStream.resume(); // drain an unexpected field rather than stalling
+      // A field we do not accept is drained rather than stalling the request.
+      if (!accepted.has(fieldName)) {
+        fileStream.resume();
         return;
       }
-      if (ingest) {
+      if (ingests.length >= maxFiles) {
         fileStream.resume();
         return;
       }
@@ -183,18 +203,23 @@ export function receiveUploadFile() {
       const extension = safeExtension(path.extname(originalName));
       const spoolPath = path.join(spoolDir(), `${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}.${extension}`);
 
-      ingest = new IngestStream({ originalName, clientMime: info.mimeType || '' });
+      const ingest = new IngestStream({ originalName, clientMime: info.mimeType || '' });
       ingest.spoolPath = spoolPath;
       ingest.originalName = originalName;
       ingest.extension = extension;
+      ingest.fieldName = fieldName;
+      ingests.push(ingest);
 
       const write = pipeline(fileStream, ingest, createWriteStream(spoolPath));
       pending.push(write);
-
-      write.catch((err) => fail(err));
+      write.catch((err) => {
+        if (!failure) failure = err;
+      });
 
       // Busboy reports its own coarse limit separately from ours.
-      fileStream.on('limit', () => fail(new ApiError(413, 'File is too large', null, 'FILE_TOO_LARGE')));
+      fileStream.on('limit', () => {
+        if (!failure) failure = new ApiError(413, 'File is too large', null, 'FILE_TOO_LARGE');
+      });
     });
 
     busboy.on('error', (err) => fail(new ApiError(400, `Malformed upload: ${err.message}`, null, 'BAD_MULTIPART')));
@@ -203,12 +228,23 @@ export function receiveUploadFile() {
       if (settled) return;
       try {
         await Promise.all(pending);
-        if (!ingest || !ingest.detection) {
-          fail(new ApiError(400, 'A file is required', null, 'FILE_REQUIRED'));
+        if (failure) throw failure;
+        if (!ingests.length) {
+          if (required) {
+            fail(new ApiError(400, 'A file is required', null, 'FILE_REQUIRED'));
+          } else {
+            settled = true;
+            req.uploads = [];
+            req.upload = null;
+            req.files = [];
+            req.file = null;
+            next();
+          }
           return;
         }
         settled = true;
-        req.upload = {
+
+        const uploads = ingests.map((ingest) => ({
           tempPath: ingest.spoolPath,
           originalName: ingest.originalName,
           extension: ingest.extension,
@@ -216,7 +252,34 @@ export function receiveUploadFile() {
           size: ingest.bytes,
           checksum: ingest.hash.digest('hex'),
           detection: ingest.detection,
-        };
+          fieldName: ingest.fieldName,
+        }));
+
+        // Optional malware scan, BEFORE anything is stored. It is a no-op unless
+        // UPLOAD_AV_COMMAND is configured, and it fails OPEN on a scanner error
+        // (logged) so a broken scanner cannot block the whole portal — but a
+        // positive detection rejects the upload, and the spools are removed with
+        // it. Scanning here, in the one intake, is what makes it cover every
+        // route rather than the several that remembered to ask for it.
+        if (isScanningEnabled()) {
+          for (const upload of uploads) {
+            // eslint-disable-next-line no-await-in-loop
+            await scanFile(upload.tempPath, { originalName: upload.originalName, mimeType: upload.clientMime });
+          }
+        }
+
+        req.uploads = uploads;
+        req.upload = uploads[0];
+        // The multer-compatible view: `path` is what the controllers now hand to
+        // storeUploadedFileFromPath, so `buffer` is deliberately absent.
+        req.files = uploads.map((u) => ({
+          fieldname: u.fieldName,
+          originalname: u.originalName,
+          mimetype: u.clientMime || u.detection?.mime || 'application/octet-stream',
+          size: u.size,
+          path: u.tempPath,
+        }));
+        req.file = req.files[0];
         next();
       } catch (err) {
         fail(err);
@@ -225,7 +288,7 @@ export function receiveUploadFile() {
 
     // A client that disconnects mid-upload must not leave a dangling spool file.
     req.on('aborted', () => {
-      if (ingest?.spoolPath) fs.rm(ingest.spoolPath, { force: true }).catch(() => null);
+      discardSpools(ingests);
       if (!settled) {
         settled = true;
         next(new ApiError(499, 'Upload aborted', null, 'UPLOAD_ABORTED'));
@@ -236,4 +299,13 @@ export function receiveUploadFile() {
   };
 }
 
-export default { receiveUploadFile };
+/**
+ * The universal pipeline's single-file intake: exactly one file on the `file`
+ * field, populating `req.upload`. Kept as its own name because that is the shape
+ * `POST /api/uploads` is documented around.
+ */
+export function receiveUploadFile() {
+  return receiveUploads({ fields: ['file'], maxFiles: 1 });
+}
+
+export default { receiveUploadFile, receiveUploads };

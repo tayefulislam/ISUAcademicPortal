@@ -10,7 +10,7 @@ import { logger } from '../../../utils/logger.js';
 import { ApiError } from '../../../utils/ApiError.js';
 import * as storage from '../../storage/storageService.js';
 import * as storedFileService from '../metadata/storedFileService.js';
-import { applyOptimizedMaterialAttachment } from '../metadata/materialBridge.js';
+import { applyOptimizedRecord } from '../metadata/recordBridge.js';
 import { buildStorageKey } from '../security/filenameSanitizer.js';
 import { analyzeFile, determineOptimizationStrategy } from './decisionEngine.js';
 import { isWorthKeeping } from './compareSizes.js';
@@ -243,16 +243,16 @@ async function processInternal(record, workDir) {
 
   // --- Policy refusal. ---
   if (decision.strategy === 'reject') {
-    // A MATERIAL's object is referenced by a live File document, so it must never
-    // be removed here. The material upload path already refuses anything outside
-    // its own allow-list, so reaching this with a material means a false
-    // positive — and deleting a live material's file over one would be far worse
-    // than leaving it unoptimized.
-    if (record.source?.kind === 'material') {
-      logger.warn(`[uploads] ${record._id}: not optimizing a material flagged ${decision.reason}`, {
+    // A domain record's object is referenced by a live document (a material, an
+    // assignment attachment, a student ID photo, …), so it must never be removed
+    // here. Reaching this with one means a false positive — and deleting a live
+    // record's file over one would be far worse than leaving it unoptimized.
+    const ownedKind = record.source?.kind;
+    if (ownedKind && ownedKind !== 'standalone') {
+      logger.warn(`[uploads] ${record._id}: not optimizing a ${ownedKind} file flagged ${decision.reason}`, {
         source: 'processPipeline',
       });
-      return { ...base, processingMethod: 'none', reason: `material-not-optimizable:${decision.reason}` };
+      return { ...base, processingMethod: 'none', reason: `domain-not-optimizable:${decision.reason}` };
     }
     await storage.deleteObject(originalKey).catch(() => null);
     throw new ApiError(422, 'This file type is not permitted', { reason: decision.reason }, 'UNSAFE_FILE_TYPE');
@@ -324,29 +324,29 @@ async function processInternal(record, workDir) {
     return { ...base, processingMethod: 'none', reason: 'optimized-object-unverified' };
   }
 
-  // If this file belongs to a MATERIAL, the material must point at the optimized
-  // object BEFORE the original is removed — otherwise there would be a window in
-  // which the material's own URL is dead. A failure here abandons the
-  // optimization and keeps the original, which the material still points at.
-  if (record.source?.kind === 'material') {
-    const repointed = await applyOptimizedMaterialAttachment({
-      fileId: record.source.fileId,
-      attachmentId: record.source.attachmentId,
+  // If this file belongs to a DOMAIN RECORD, that record must point at the
+  // optimized object BEFORE the original is removed — otherwise there would be a
+  // window in which the record's own URL is dead. A failure here abandons the
+  // optimization and keeps the original, which the record still points at.
+  const owningKind = record.source?.kind;
+  if (owningKind && owningKind !== 'standalone') {
+    const repointed = await applyOptimizedRecord(record, {
       storageKey: optimizedKey,
       fileUrl: storage.publicObjectUrl(optimizedKey),
       storedSize: candidateSize,
       storedFileId: record._id,
+      storageProvider: record.storageProvider,
     }).catch((err) => {
-      logger.error(err, { source: 'processPipeline.materialSync', meta: { fileId: String(record._id) } });
+      logger.error(err, { source: 'processPipeline.recordSync', meta: { fileId: String(record._id) } });
       return false;
     });
 
     if (!repointed) {
       await storage.deleteObject(optimizedKey).catch(() => null);
-      logger.warn(`[uploads] ${record._id}: could not repoint the material, keeping the original`, {
+      logger.warn(`[uploads] ${record._id}: could not repoint the ${owningKind}, keeping the original`, {
         source: 'processPipeline',
       });
-      return { ...base, processingMethod: 'none', reason: 'material-sync-failed' };
+      return { ...base, processingMethod: 'none', reason: 'record-sync-failed' };
     }
   }
 

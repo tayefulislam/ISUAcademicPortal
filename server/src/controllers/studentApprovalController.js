@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import User from '../models/User.js';
 import { isSuperAdminTier } from '../models/Role.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -9,6 +10,7 @@ import {
   deleteStudentIdImage,
   deletePrivateImage,
 } from '../services/storage/storageService.js';
+import { recordDomainOptimization } from '../services/uploads/metadata/recordBridge.js';
 import { getSettings } from '../models/Settings.js';
 import { getEffectiveCourseIds } from '../services/courseAccessService.js';
 import { logger } from '../utils/logger.js';
@@ -255,8 +257,12 @@ export const submitStudentId = asyncHandler(async (req, res) => {
   const isResubmission = student.approvalStatus === 'rejected';
   const settings = await getSettings();
   // Upload first — if this throws (invalid image, storage failure), nothing
-  // below runs and the student's existing DB state is untouched.
-  const newImage = await uploadStudentIdImage(req.file.buffer, req.file.originalname, req.file.mimetype, settings.studentIdStorageProvider);
+  // below runs and the student's existing DB state is untouched. The photo is a
+  // small, bounded image, so it is read once from the spool file the streaming
+  // intake produced rather than buffered by multer for the whole request.
+  const buffer = await fs.readFile(req.file.path);
+  await fs.rm(req.file.path, { force: true }).catch(() => null);
+  const newImage = await uploadStudentIdImage(buffer, req.file.originalname, req.file.mimetype, settings.studentIdStorageProvider);
 
   const oldImage = student.studentIdImage?.key ? { ...student.studentIdImage.toObject() } : null;
   const oldLegacyKey = !oldImage ? student.studentIdImageKey : '';
@@ -275,6 +281,28 @@ export const submitStudentId = asyncHandler(async (req, res) => {
     // leave the student's previous state exactly as it was.
     await deleteStudentIdImage(newImage).catch(() => {});
     throw err;
+  }
+
+  // The pipeline can only optimize an object it can pull back, so an S3-backed
+  // photo is queued for optimization; an ImgBB one is already served optimized
+  // and is deliberately left alone.
+  if (newImage.provider === 's3' && newImage.key) {
+    await recordDomainOptimization({
+      ownerId: student._id,
+      kind: 'student-id',
+      recordId: student._id,
+      purpose: 'student-id',
+      items: [
+        {
+          field: 'studentIdImage',
+          storageProvider: 's3',
+          storageRef: newImage.key,
+          mimeType: req.file.mimetype,
+          originalName: req.file.originalname,
+          fileSize: newImage.size,
+        },
+      ],
+    }).catch(() => null);
   }
 
   // Only now, after the new image is durably the one on record, remove the

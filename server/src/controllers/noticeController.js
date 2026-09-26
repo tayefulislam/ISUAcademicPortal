@@ -1,8 +1,10 @@
+import fs from 'node:fs/promises';
 import Notice from '../models/Notice.js';
 import { isAdminTierRole } from '../models/Role.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { storeUploadedFile, deleteStoredFile } from '../services/storage/storageService.js';
+import { storeUploadedFileFromPath, deleteStoredFile } from '../services/storage/storageService.js';
+import { recordDomainOptimization } from '../services/uploads/metadata/recordBridge.js';
 import { getEffectiveCourseIds } from '../services/courseAccessService.js';
 import { emit } from '../services/notifications/notificationService.js';
 import { resolveNoticeRecipients } from '../services/notifications/recipientResolver.js';
@@ -71,8 +73,9 @@ export const createNotice = asyncHandler(async (req, res) => {
   if (req.user.role === 'faculty') assertFacultyTargetingScope(targeting, req.user);
 
   let attachment = { attachmentUrl: '', attachmentName: '', storageProvider: '', storageRef: '' };
+  let stored = null;
   if (req.file) {
-    const stored = await storeUploadedFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+    stored = await storeStoredAttachment(req);
     attachment = {
       attachmentUrl: stored.fileUrl,
       attachmentName: req.file.originalname,
@@ -93,9 +96,45 @@ export const createNotice = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  if (stored) await queueAttachmentOptimization(notice, stored, req);
+
   if (notice.status === 'published') notifyNotice(notice, req.user, 'NOTICE_CREATED');
   res.status(201).json({ success: true, data: notice });
 });
+
+/**
+ * Stores a spooled notice attachment without buffering it in the heap, and
+ * reclaims the spool copy immediately.
+ */
+async function storeStoredAttachment(req) {
+  const stored = await storeUploadedFileFromPath(req.file.path, req.file.originalname, req.file.mimetype, {
+    purpose: 'notice',
+    ownerId: String(req.user._id),
+    size: req.file.size,
+  });
+  await fs.rm(req.file.path, { force: true }).catch(() => null);
+  return stored;
+}
+
+/** Records the notice's attachment with the pipeline so it is optimized async. */
+async function queueAttachmentOptimization(notice, stored, req) {
+  await recordDomainOptimization({
+    ownerId: req.user._id,
+    kind: 'notice',
+    recordId: notice._id,
+    purpose: 'notice',
+    items: [
+      {
+        field: 'attachment',
+        storageProvider: stored.storageProvider,
+        storageRef: stored.storageRef,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+        fileSize: stored.size || req.file.size,
+      },
+    ],
+  }).catch(() => null);
+}
 
 export const updateNotice = asyncHandler(async (req, res) => {
   const notice = await Notice.findById(req.params.id);
@@ -114,9 +153,10 @@ export const updateNotice = asyncHandler(async (req, res) => {
     notice.targeting = targeting;
   }
 
+  let stored = null;
   if (req.file) {
     if (notice.storageRef) await deleteStoredFile(notice).catch(() => null);
-    const stored = await storeUploadedFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+    stored = await storeStoredAttachment(req);
     notice.attachmentUrl = stored.fileUrl;
     notice.attachmentName = req.file.originalname;
     notice.storageProvider = stored.storageProvider;
@@ -124,6 +164,8 @@ export const updateNotice = asyncHandler(async (req, res) => {
   }
 
   await notice.save();
+
+  if (stored) await queueAttachmentOptimization(notice, stored, req);
 
   if (!wasPublished && notice.status === 'published') notifyNotice(notice, req.user, 'NOTICE_CREATED');
   else if (wasPublished && notice.status === 'published') notifyNotice(notice, req.user, 'NOTICE_UPDATED');

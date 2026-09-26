@@ -209,6 +209,45 @@ export async function saveAsset(buffer, originalName) {
 }
 
 /**
+ * The streaming twin of {@link saveAsset}, for a file the universal intake
+ * spooled to disk. The asset library lives on the local filesystem (deliberately
+ * outside the served upload root), so this copies the spool file into place
+ * rather than buffering it; the caller removes the spool afterwards.
+ *
+ * @returns {Promise<{name:string,size:number,mimeType:string,kind:string,source:'uploaded'}>}
+ */
+export async function saveAssetFromPath(filePath, originalName) {
+  const safe = sanitizeAssetName(originalName);
+  if (!safe) throw new ApiError(400, 'Only PNG, JPG, WEBP, GIF or PDF files can be uploaded');
+
+  await fs.mkdir(UPLOAD_ROOT, { recursive: true });
+
+  const ext = path.extname(safe);
+  const stem = safe.slice(0, -ext.length);
+  let name = safe;
+  let attempt = 1;
+  // eslint-disable-next-line no-await-in-loop
+  while (await assetExists(name)) {
+    name = `${stem}-${attempt}${ext}`;
+    attempt += 1;
+    if (attempt > 500) throw new ApiError(409, 'Could not find a free name for that file');
+  }
+
+  const target = path.join(UPLOAD_ROOT, name);
+  const stat = await fs.stat(filePath);
+  if (!stat.size) throw new ApiError(400, 'That file is empty');
+  await fs.copyFile(filePath, target);
+
+  return {
+    name,
+    size: stat.size,
+    mimeType: assetMimeType(name),
+    kind: assetKind(name),
+    source: 'uploaded',
+  };
+}
+
+/**
  * Removes one UPLOADED asset. The bundled repository files are not deletable
  * from the UI — a delete of one simply finds nothing in the upload folder.
  */
@@ -257,5 +296,6 @@ export default {
   assetKind,
   sanitizeAssetName,
   saveAsset,
+  saveAssetFromPath,
   deleteAsset,
 };

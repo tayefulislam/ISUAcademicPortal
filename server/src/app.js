@@ -213,6 +213,20 @@ async function start() {
           .ensureUploadCleanupSchedule()
           .catch((err) => console.error('[uploads] could not schedule the cleanup sweep:', err.message));
 
+        // Say plainly whether optimization can actually run. Without this the
+        // whole pipeline degrades to "stores every upload unoptimized" and
+        // nothing in the log says why — the exact failure this exists to end.
+        const health = await queueModule.checkFileQueueHealth();
+        if (!health.reachable) {
+          console.error(
+            `[uploads] WARNING: the file-processing queue is unreachable (${health.error}) — uploads WILL BE STORED UNOPTIMIZED until Redis is reachable at ${env.redisUrl}`
+          );
+        } else {
+          console.log(
+            `[uploads] queue reachable (waiting=${health.counts?.waiting ?? 0}, active=${health.counts?.active ?? 0}, failed=${health.counts?.failed ?? 0})`
+          );
+        }
+
         if (env.uploads.worker.inProcess) {
           const { startFileProcessingWorker } = await import('./workers/fileProcessingWorker.js');
           startFileProcessingWorker();

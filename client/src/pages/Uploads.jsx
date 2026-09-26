@@ -12,6 +12,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { uploadApi } from '../api/endpoints.js';
+import { useUpload } from '../hooks/useUpload.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatBytes, formatDate } from '../utils/format.js';
 import UploadStatusBadge, { isActiveStatus } from '../components/uploads/UploadStatusBadge.jsx';
@@ -219,10 +220,10 @@ export default function Uploads() {
   const [purpose, setPurpose] = useState('');
   const [pdfProfile, setPdfProfile] = useState('BALANCED');
   const [submitting, setSubmitting] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [currentName, setCurrentName] = useState('');
-  const [progress, setProgress] = useState(0);
   const [results, setResults] = useState([]);
+  // Progress and the current file come from the shared upload engine — the same
+  // one every upload surface uses.
+  const { progress, currentIndex, currentName, uploadMany } = useUpload();
   const [busyId, setBusyId] = useState('');
   const [page, setPage] = useState(1);
 
@@ -271,41 +272,13 @@ export default function Uploads() {
 
     setSubmitting(true);
     setResults([]);
-    const outcomes = [];
 
-    // One request per file: the API takes a single file, and uploading them
-    // sequentially gives each one an honest, monotonic progress bar instead of
-    // a bar that jumps around between parallel transfers.
-    for (let i = 0; i < files.length; i += 1) {
-      const file = files[i];
-      setCurrentIndex(i);
-      setCurrentName(file.name);
-      setProgress(0);
+    // The shared engine uploads them sequentially and returns one outcome per
+    // file, so a partial batch is reported accurately.
+    const outcomes = await uploadMany(files, { purpose, pdfProfile });
 
-      const fd = new FormData();
-      fd.append('file', file);
-      if (purpose.trim()) fd.append('purpose', purpose.trim());
-      fd.append('pdfProfile', pdfProfile);
-
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const res = await uploadApi.create(fd, (evt) => {
-          if (evt.total) setProgress(Math.round((evt.loaded * 100) / evt.total));
-        });
-        outcomes.push({ name: file.name, ok: true, record: res.data, duplicates: res.duplicates, warnings: res.warnings });
-      } catch (err) {
-        outcomes.push({
-          name: file.name,
-          ok: false,
-          message: err.response?.data?.message || 'Upload failed',
-        });
-      }
-      setResults([...outcomes]);
-    }
-
+    setResults(outcomes);
     setSubmitting(false);
-    setCurrentName('');
-    setProgress(0);
     setFiles([]);
 
     const failed = outcomes.filter((o) => !o.ok);
