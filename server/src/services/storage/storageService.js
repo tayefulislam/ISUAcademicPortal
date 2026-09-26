@@ -10,6 +10,15 @@ import {
   uploadPrivateLocal,
   getPrivateLocalPath,
   deletePrivateLocal,
+  uploadStreamLocal,
+  downloadStreamLocal,
+  headObjectLocal,
+  deleteObjectLocal,
+  createMultipartUploadLocal,
+  writePartLocal,
+  completeMultipartUploadLocal,
+  abortMultipartUploadLocal,
+  listStaleMultipartUploadsLocal,
 } from './localStorage.js';
 import { uploadImageToImgbb, deleteImageFromImgbb } from './imgbbStorage.js';
 import {
@@ -20,6 +29,14 @@ import {
   putObjectS3,
   getSignedDownloadUrlS3,
   deleteObjectS3Strict,
+  uploadStreamS3,
+  downloadStreamS3,
+  headObjectS3,
+  createMultipartUploadS3,
+  presignUploadPartS3,
+  completeMultipartUploadS3,
+  abortMultipartUploadS3,
+  listStaleMultipartUploadsS3,
 } from './s3Storage.js';
 import { deleteFromUploadcare } from './uploadcareStorage.js';
 
@@ -427,4 +444,128 @@ export async function deleteTemplateSource(key) {
   } catch {
     // best-effort, as above
   }
+}
+
+// ---------------------------------------------------------------------------
+// Universal upload pipeline — the provider-agnostic streaming surface.
+//
+// Every function above this line takes or returns a Buffer. That is fine for a
+// cover page and impossible for a 5 GB recording, so the upload pipeline talks
+// to storage exclusively through the functions below, which stream in both
+// directions and expose multipart for the client-driven large-file path.
+//
+// The single rule this module enforces: NOTHING outside services/storage may
+// branch on `env.fileStorageProvider`. Callers ask for a stream, a metadata
+// probe, or a part URL, and the provider is an implementation detail.
+// ---------------------------------------------------------------------------
+
+/** True when the configured provider is object storage rather than local disk. */
+export function isRemoteStorage() {
+  return env.fileStorageProvider === 's3';
+}
+
+/**
+ * Streams a body to `<key>`. The caller owns the key (the pipeline builds a
+ * namespaced, collision-free one), so nothing here generates a name.
+ * @returns {Promise<{storageRef:string, etag:string}>}
+ */
+export async function uploadStream(key, stream, mimeType, opts = {}) {
+  if (isRemoteStorage()) return uploadStreamS3(key, stream, mimeType, opts);
+  return uploadStreamLocal(key, stream);
+}
+
+/**
+ * Streams an object back for processing or proxying.
+ * @returns {Promise<{stream:import('stream').Readable, contentType:string, contentLength:number, etag:string}>}
+ */
+export async function downloadStream(key, opts = {}) {
+  if (isRemoteStorage()) return downloadStreamS3(key, opts);
+  return downloadStreamLocal(key, opts);
+}
+
+/** Objects are stored under the private root locally, so `private` is the default there. */
+function objectScope(opts = {}) {
+  return { private: opts.private ?? !isRemoteStorage() };
+}
+
+export async function getObjectMetadata(key, opts = {}) {
+  if (isRemoteStorage()) return headObjectS3(key);
+  return headObjectLocal(key, objectScope(opts));
+}
+
+export async function objectExists(key, opts = {}) {
+  const meta = await getObjectMetadata(key, opts);
+  return Boolean(meta.exists);
+}
+
+export async function deleteObject(key, opts = {}) {
+  if (!key) return undefined;
+  if (isRemoteStorage()) return deleteDocumentS3(key);
+  return deleteObjectLocal(key, objectScope(opts));
+}
+
+/** Begins a client-driven multipart upload. */
+export async function createMultipartUpload(key, mimeType) {
+  if (isRemoteStorage()) return createMultipartUploadS3(key, mimeType);
+  return createMultipartUploadLocal(key, mimeType);
+}
+
+/**
+ * A URL the CLIENT can PUT exactly one part to.
+ *
+ * With S3 this is a presigned URL straight to the bucket — the bytes never
+ * reach this process. The local provider has no bucket to sign for, so it
+ * reports `viaApi: true` and the caller proxies the part through our own API
+ * instead (see POST /api/uploads/:id/part).
+ *
+ * @returns {Promise<{url:string, viaApi:boolean}>}
+ */
+export async function presignUploadPart(key, uploadId, partNumber, opts = {}) {
+  if (isRemoteStorage()) {
+    const url = await presignUploadPartS3(key, uploadId, partNumber, opts.ttlSeconds);
+    return { url, viaApi: false };
+  }
+  return { url: '', viaApi: true };
+}
+
+/** Writes a part received by our own API (local provider only). */
+export async function writeMultipartPart(uploadId, partNumber, stream) {
+  if (isRemoteStorage()) {
+    throw new ApiError(400, 'Direct part upload is only used by the local storage provider');
+  }
+  return writePartLocal(uploadId, partNumber, stream);
+}
+
+export async function completeMultipartUpload(key, uploadId, parts) {
+  if (isRemoteStorage()) return completeMultipartUploadS3(key, uploadId, parts);
+  return completeMultipartUploadLocal(key, uploadId, parts);
+}
+
+export async function abortMultipartUpload(key, uploadId) {
+  if (isRemoteStorage()) return abortMultipartUploadS3(key, uploadId);
+  return abortMultipartUploadLocal(uploadId);
+}
+
+/**
+ * Incomplete multipart uploads older than `olderThanMs`. An abandoned upload is
+ * billed for every part it left behind, so the cleanup sweep aborts these — on
+ * both providers.
+ */
+export async function listStaleMultipartUploads(olderThanMs, prefix = '') {
+  if (isRemoteStorage()) return listStaleMultipartUploadsS3(prefix, olderThanMs);
+  return listStaleMultipartUploadsLocal(olderThanMs);
+}
+
+/**
+ * A download URL for a stored object.
+ *
+ * With S3 it is presigned and short-lived — minted per request, never persisted,
+ * so a database dump can never leak a working link. With local disk there is no
+ * signature to mint, so it points at the authenticated proxy route instead.
+ */
+export async function getObjectDownloadUrl(key, { ttlSeconds = env.uploads.signedUrlTtlSeconds, downloadName = '', fileId = '' } = {}) {
+  if (isRemoteStorage()) {
+    return { url: await getSignedDownloadUrlS3(key, ttlSeconds, downloadName), provider: 's3' };
+  }
+  return { url: `/api/uploads/${fileId}/content`, provider: 'local' };
 }

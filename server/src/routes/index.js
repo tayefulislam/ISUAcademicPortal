@@ -39,6 +39,8 @@ import examRoutes from './examRoutes.js';
 import eventsRoutes from './eventsRoutes.js';
 import reminderRoutes from './reminderRoutes.js';
 import documentRoutes from './documentRoutes.js';
+import uploadRoutes from './uploadRoutes.js';
+import adminStorageRoutes from './adminStorageRoutes.js';
 import documentTemplateRoutes from './documentTemplateRoutes.js';
 import documentCategoryRoutes from './documentCategoryRoutes.js';
 import adminDocumentRoutes from './adminDocumentRoutes.js';
@@ -85,6 +87,11 @@ router.use('/admin/document-assets', adminDocumentAssetRoutes);
 router.use('/document-categories', documentCategoryRoutes);
 router.use('/document-templates', documentTemplateRoutes);
 router.use('/documents', documentRoutes);
+
+// Universal file upload / processing / storage. Its own admin surface is
+// mounted before the generic /admin router for the same reason as above.
+router.use('/uploads', uploadRoutes);
+router.use('/admin/storage', adminStorageRoutes);
 
 // Write Application. The /admin/... routers are mounted BEFORE the generic
 // /admin router so their paths are matched first and never swallowed by it.

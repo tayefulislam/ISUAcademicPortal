@@ -17,19 +17,15 @@ const initialState = {
   chapterId: '',
   topicId: '',
   keywords: '',
-  // '' = no semester filter (every reachable course, exactly as before). A
-  // concrete value is a Semester.name and matches Course.semester.
-  semester: '',
-  // Optional batch targeting — the batches of the selected department. Empty is
-  // the normal case and means "no batch", exactly the record this form created
-  // before the picker existed. Targeting only: it groups/filters the material
-  // and never grants access, which stays the reviewer's decision.
-  batches: [],
   visibility: 'login_required',
   uploadType: UPLOAD_TYPE_FILE,
   externalUrl: '',
 };
 
+// Batch and semester are deliberately absent from the form state: both are
+// derived server-side from the submitter's own profile
+// (fileController.js's resolveSubmitterScope) and are only DISPLAYED here, so
+// there is nothing for this form to hold or send.
 const MAX_FILES = 10;
 
 // Simplified upload form for students (and a "CR"-tier admin account acting
@@ -37,9 +33,9 @@ const MAX_FILES = 10;
 // Everything submitted here lands as approvalStatus:'pending' and is invisible
 // to everyone else until an Admin/Super Admin/Faculty reviewer approves it.
 //
-// Course options depend on BOTH the selected Department and the selected
-// Semester: only courses that belong to the chosen semester are offered, and a
-// course with a different (or no) semester is hidden once one is picked.
+// Batch and semester are NOT choosable: both come from the submitter's profile
+// and are applied server-side, so they are shown locked. Course options depend
+// on the chosen Department only.
 //
 // Department/Course are NOT freely pickable — only courses the submitter can
 // actually reach (via GET /courses/mine) are offered. The server enforces the
@@ -76,45 +72,17 @@ export default function StudentSubmitMaterial() {
     return typeof user?.semester === 'object' ? user.semester?.name || '' : '';
   }, [semesters, mySemesterId, user]);
 
-  // Only the semesters that actually hold a course this user can reach, so the
-  // picker can never offer an empty filter. Ordered by the Semester collection
-  // (1st → 8th) where the labels line up with it.
-  const semesterOptions = useMemo(() => {
-    const names = new Set();
-    for (const c of allMyCourses) {
-      if (c.semester) names.add(c.semester);
-    }
-    const order = (semesters?.data || []).map((s) => s.name);
-    return [...names].sort((a, b) => {
-      const ia = order.indexOf(a);
-      const ib = order.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
-  }, [allMyCourses, semesters]);
+  // Semester and batch are the submitter's OWN, taken from their profile — not
+  // choices. They are shown locked, and the server derives both itself, so this
+  // form never sends either.
+  //
+  // Every reachable course is listed. Filtering by semester made sense while the
+  // semester was choosable; now that it is fixed to the student's own, filtering
+  // by it would hide exactly the courses a retake or an extra enrolment makes
+  // reachable — a course belonging to a different semester.
+  const semesterCourses = allMyCourses;
 
-  // Scope the form to the user's own semester by default — the same "running"
-  // courses My Courses shows — falling back to the first available semester, and
-  // to no filter at all when none of the reachable courses declares one.
-  useEffect(() => {
-    if (!myCourses) return;
-    setForm((f) => {
-      if (f.semester && semesterOptions.includes(f.semester)) return f;
-      const next = semesterOptions.includes(userSemesterName) ? userSemesterName : (semesterOptions[0] || '');
-      return next === f.semester ? f : { ...f, semester: next, departmentId: '', courseIdRef: '', chapterId: '', topicId: '', batches: [] };
-    });
-  }, [myCourses, semesterOptions, userSemesterName]);
-
-  // Courses belonging to the selected semester. With no semester chosen this is
-  // the full reachable set — the pre-existing behaviour, unchanged.
-  const semesterCourses = useMemo(
-    () => (form.semester ? allMyCourses.filter((c) => c.semester === form.semester) : allMyCourses),
-    [allMyCourses, form.semester]
-  );
-
-  // Departments derived from the (semester-filtered) reachable course list, so
+  // Departments derived from the reachable course list, so
   // the Department dropdown never offers a department with no selectable course.
   const myDepartments = useMemo(() => {
     const byId = new Map();
@@ -131,7 +99,7 @@ export default function StudentSubmitMaterial() {
     if (!myCourses || form.departmentId) return;
     const own = myDepartments.find((d) => String(d._id) === String(myDepartmentId));
     const pick = own?._id || myDepartments[0]?._id || '';
-    if (pick) setForm((f) => ({ ...f, departmentId: pick, courseIdRef: '', chapterId: '', topicId: '', batches: [] }));
+    if (pick) setForm((f) => ({ ...f, departmentId: pick, courseIdRef: '', chapterId: '', topicId: '' }));
   }, [myCourses, myDepartments, myDepartmentId, form.departmentId]);
 
   const coursesInSelectedDept = useMemo(
@@ -140,16 +108,28 @@ export default function StudentSubmitMaterial() {
   );
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoryApi.list, enabled });
-  // The batches of the selected department, for the optional targeting picker.
-  // Department-scoped rather than course-scoped: a Batch belongs to a department
-  // (the server checks the chosen one belongs to the course's department), and
-  // the course-scoped endpoint only returns the most recent eight — which would
-  // hide a student's own batch on a course that has run for years.
+  // The batches of the student's own department — fetched only to put a NAME to
+  // the submitter's own batch in the locked field below, since their profile
+  // carries a bare ObjectId. Nothing here is selectable, and nothing is sent.
+  // Department-scoped rather than course-scoped because a Batch belongs to a
+  // department, and the course-scoped endpoint would only return the most recent
+  // eight — which could hide the student's own batch.
   const { data: batches } = useQuery({
     queryKey: ['batches', form.departmentId],
     queryFn: () => batchApi.list({ department: form.departmentId }),
     enabled: enabled && !!form.departmentId,
   });
+
+  // The user's own batch, NAMED from the Batch collection for the same reason as
+  // the semester above: the cached session user carries a bare ObjectId, and the
+  // Batch record is what holds the readable name. Read-only — the server files
+  // the material under this batch itself.
+  const myBatchId = user?.batch && typeof user.batch === 'object' ? user.batch._id : user?.batch;
+  const userBatchLabel = useMemo(() => {
+    const match = (batches?.data || []).find((b) => String(b._id) === String(myBatchId));
+    if (match) return match.name || match.code || '';
+    return typeof user?.batch === 'object' ? user.batch?.name || '' : '';
+  }, [batches, myBatchId, user]);
   const { data: chapters } = useQuery({
     queryKey: ['chapters', form.courseIdRef],
     queryFn: () => chapterApi.list({ course: form.courseIdRef }),
@@ -162,12 +142,6 @@ export default function StudentSubmitMaterial() {
   });
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
-
-  const toggleBatch = (id) =>
-    setForm((f) => ({
-      ...f,
-      batches: f.batches.includes(id) ? f.batches.filter((x) => x !== id) : [...f.batches, id],
-    }));
 
   const addFiles = (fileList) => {
     const incoming = Array.from(fileList || []);
@@ -205,12 +179,12 @@ export default function StudentSubmitMaterial() {
     try {
       const fd = new FormData();
       if (!isExternal) files.forEach((f) => fd.append('files', f));
-      // `batches` is the one array field — appended once per id so the server
-      // reads it back as an array, the same way the admin/faculty upload forms
-      // send theirs. Everything else is a plain scalar.
-      const { batches: selectedBatches, ...fields } = form;
-      Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
-      (selectedBatches || []).forEach((id) => fd.append('batches', id));
+      // Every remaining field is a plain scalar, so the form maps straight onto
+      // the request. Batch and semester are deliberately not among them — the
+      // server derives both from the submitter's own profile
+      // (fileController.js's resolveSubmitterScope), so sending them would imply
+      // a choice the submitter does not have.
+      Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       const res = await fileApi.submit(fd, (evt) => setProgress(Math.round((evt.loaded * 100) / evt.total)));
       toast(res.message || 'Submitted for review', 'success');
       setForm(initialState);
@@ -323,13 +297,15 @@ export default function StudentSubmitMaterial() {
           <input value={form.title} onChange={(e) => set('title')(e.target.value)} className="input" placeholder="e.g. My Lecture Notes" />
         </Field>
 
-        <Field label="Semester" hint="Only courses belonging to the selected semester are listed">
+        {/* Locked: the semester is the submitter's own, taken from their profile.
+            The server applies it itself, so this is a display, not a control. */}
+        <Field label="Semester" hint="From your profile — not selectable">
           <SearchableSelect
-            value={form.semester}
-            onChange={(v) => setForm((f) => ({ ...f, semester: v, departmentId: '', courseIdRef: '', chapterId: '', topicId: '', batches: [] }))}
-            placeholder="Select"
-            searchPlaceholder="Search semesters..."
-            options={semesterOptions.map((name) => ({ value: name, label: name }))}
+            value={userSemesterName}
+            onChange={() => {}}
+            disabled
+            placeholder="Not set on your profile"
+            options={userSemesterName ? [{ value: userSemesterName, label: userSemesterName }] : []}
           />
         </Field>
 
@@ -338,7 +314,7 @@ export default function StudentSubmitMaterial() {
             <SearchableSelect
               required
               value={form.departmentId}
-              onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '', batches: [] }))}
+              onChange={(v) => setForm((f) => ({ ...f, departmentId: v, courseIdRef: '', chapterId: '', topicId: '' }))}
               placeholder="Select"
               searchPlaceholder="Search departments..."
               options={myDepartments.map((d) => ({ value: d._id, label: `${d.name} (${d.code})` }))}
@@ -365,36 +341,13 @@ export default function StudentSubmitMaterial() {
           </Field>
         </div>
 
-        {/* Optional, and never a permission: the batch just files the material
-            under that cohort for later filtering. Leaving every chip unselected
-            keeps the record exactly as it was before this picker existed. */}
-        <Field label="Batch" hint="Optional — leave empty to not file it under a specific batch">
-          <div className="flex flex-wrap gap-2">
-            {(batches?.data || []).map((b) => (
-              <button
-                type="button"
-                key={b._id}
-                onClick={() => toggleBatch(b._id)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  form.batches.includes(b._id)
-                    ? 'bg-brand-600 text-white border-brand-600'
-                    : 'border-slate-300 text-slate-600 hover:border-brand-400'
-                }`}
-              >
-                {b.name}
-              </button>
-            ))}
-          </div>
-          {form.departmentId && (batches?.data || []).length === 0 && (
-            <p className="text-xs text-slate-400 mt-1">No batches found for this department.</p>
-          )}
+        {/* Locked, like the semester: the submitter's own batch, applied
+            server-side. Never a permission, and never a choice. */}
+        <Field label="Batch" hint="From your profile — not selectable">
+          <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 text-slate-700 border border-slate-200">
+            {userBatchLabel || 'Not set on your profile'}
+          </span>
         </Field>
-
-        {form.semester && semesterCourses.length === 0 && (
-          <p className="text-sm text-amber-600">
-            You don't have any reachable course in {form.semester}. Pick a different semester.
-          </p>
-        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Chapter">

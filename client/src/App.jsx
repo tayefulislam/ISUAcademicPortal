@@ -45,6 +45,7 @@ import PublicExamAttempt from './pages/public/PublicExamAttempt.jsx';
 import PublicExamResult from './pages/public/PublicExamResult.jsx';
 import FeedbackForm from './pages/FeedbackForm.jsx';
 import Documents from './pages/Documents.jsx';
+import Uploads from './pages/Uploads.jsx';
 import DocumentGenerate from './pages/DocumentGenerate.jsx';
 import DocumentDetail from './pages/DocumentDetail.jsx';
 import WriteApplication from './pages/WriteApplication.jsx';
@@ -74,6 +75,7 @@ import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard.jsx';
 import SuperAdminUsers from './pages/superadmin/SuperAdminUsers.jsx';
 import SuperAdminFaculty from './pages/superadmin/SuperAdminFaculty.jsx';
 import SuperAdminFiles from './pages/superadmin/SuperAdminFiles.jsx';
+import SuperAdminStorage from './pages/superadmin/SuperAdminStorage.jsx';
 import SuperAdminSystem from './pages/superadmin/SuperAdminSystem.jsx';
 import SuperAdminDeletions from './pages/superadmin/SuperAdminDeletions.jsx';
 import SuperAdminFeedback from './pages/superadmin/SuperAdminFeedback.jsx';
@@ -267,6 +269,19 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* Universal uploads — any signed-in user. Uploads any file, then
+              follows it from upload through background processing, showing what
+              optimizing it actually saved. Distinct from the material flow
+              (/submit-material, /admin/upload), which publishes searchable
+              content; this is the storage pipeline itself. */}
+          <Route
+            path="/uploads"
+            element={
+              <ProtectedRoute>
+                <Uploads />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/assignments"
             element={
@@ -401,6 +416,7 @@ export default function App() {
           <Route path="approvals" element={<AdminStudentApprovals />} />
           <Route path="faculty" element={<SuperAdminFaculty />} />
           <Route path="files" element={<SuperAdminFiles />} />
+          <Route path="storage" element={<SuperAdminStorage />} />
           <Route path="system" element={<SuperAdminSystem />} />
           <Route path="account-deletions" element={<SuperAdminDeletions />} />
           <Route path="feedback" element={<SuperAdminFeedback />} />
