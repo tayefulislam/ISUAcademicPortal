@@ -227,7 +227,11 @@ export default function App() {
           <Route
             path="/submit-material"
             element={
-              <ProtectedRoute roles={['student']} orScopedAdminTier>
+              // `orAdminTier` (not `orScopedAdminTier`): Super Admin and
+              // Administrator must reach this too. The scoped variant excluded
+              // them, which redirected straight to /403. Same opening as
+              // /my-courses above, and the server now accepts them here.
+              <ProtectedRoute roles={['student']} orAdminTier>
                 <StudentSubmitMaterial />
               </ProtectedRoute>
             }
