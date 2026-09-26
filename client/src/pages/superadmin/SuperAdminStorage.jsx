@@ -228,8 +228,8 @@ export default function SuperAdminStorage() {
 
       {d.totalFiles === 0 && (
         <p className="text-sm text-slate-400">
-          This dashboard counts files uploaded through the universal upload pipeline. Files uploaded through the older
-          material flow are not included until they are migrated.
+          Nothing has been recorded yet. Material uploaded through Upload Material or Submit Material is counted here
+          as well, once it has been through the pipeline.
         </p>
       )}
     </div>

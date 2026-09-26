@@ -141,6 +141,18 @@ const storedFileSchema = new mongoose.Schema(
     // flow. Lets the dashboard group, and lets a caller query "my uploads".
     purpose: { type: String, default: 'general' },
 
+    // Where this file came from, when something other than the upload screen owns
+    // it. A material upload (Submit Material / Upload Material) records the exact
+    // File and attachment, so the worker can repoint THAT attachment at the
+    // optimized object once one exists — see materialBridge.
+    //
+    // 'standalone' is the upload screen's own file, which nothing else references.
+    source: {
+      kind: { type: String, enum: ['standalone', 'material'], default: 'standalone' },
+      fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', default: null },
+      attachmentId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    },
+
     uploadMode: { type: String, enum: UPLOAD_MODES, default: 'direct' },
     multipart: { type: multipartSchema, default: () => ({}) },
 

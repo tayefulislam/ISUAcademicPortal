@@ -73,6 +73,7 @@ export async function createStoredFile(data) {
     batches: data.batches || [],
     allowedRoles: data.allowedRoles || [],
     purpose: data.purpose || 'general',
+    source: data.source || undefined,
     checksum: data.checksum || '',
     pageCount: data.pageCount || 0,
     width: data.width || 0,

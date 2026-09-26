@@ -51,7 +51,23 @@ export function getFileQueue() {
 // opposite of "return immediately with a file id".
 const ENQUEUE_TIMEOUT_MS = Number(process.env.UPLOAD_ENQUEUE_TIMEOUT_MS) || 5000;
 
-/** Adds one processing job. The job id is the StoredFile id, so a retry replaces rather than duplicates. */
+/**
+ * The job id for one file's processing.
+ *
+ * <p>Stable, so re-enqueueing (a manual retry) upserts the pending job instead of
+ * racing a second copy of it.
+ *
+ * <p>Colon-free ON PURPOSE, and exported so that is pinned by a test. BullMQ
+ * refuses a custom job id containing a colon — it throws from `add()`, which the
+ * caller catches as "the queue is unavailable". That failure is invisible: the
+ * upload still succeeds, it is just silently never optimized. This was exactly
+ * the bug when the id was `upload:${fileId}`.
+ */
+export function fileJobId(fileId) {
+  return `upload-${fileId}`;
+}
+
+/** Adds one processing job. */
 export async function enqueueFileProcessing(fileId, { timeoutMs = ENQUEUE_TIMEOUT_MS } = {}) {
   const q = getFileQueue();
 
@@ -62,13 +78,7 @@ export async function enqueueFileProcessing(fileId, { timeoutMs = ENQUEUE_TIMEOU
 
   try {
     return await Promise.race([
-      q.add(
-        FILE_PROCESS_JOB,
-        { fileId: String(fileId) },
-        // A stable jobId makes a re-enqueue (a manual retry) an upsert of the
-        // pending job rather than a second one racing the first.
-        { jobId: `upload:${fileId}` }
-      ),
+      q.add(FILE_PROCESS_JOB, { fileId: String(fileId) }, { jobId: fileJobId(fileId) }),
       timeout,
     ]);
   } finally {
@@ -113,6 +123,7 @@ export default {
   FILE_CLEANUP_JOB,
   FILE_CLEANUP_SCHEDULE_ID,
   getFileQueue,
+  fileJobId,
   enqueueFileProcessing,
   ensureUploadCleanupSchedule,
   closeFileQueue,

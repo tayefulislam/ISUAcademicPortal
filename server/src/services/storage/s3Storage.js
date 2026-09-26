@@ -48,7 +48,14 @@ function safeFileName(originalName) {
   return `${Date.now()}_${unique}_${base}.${ext}`;
 }
 
-function publicUrlFor(key) {
+/**
+ * The public URL for a stored key.
+ *
+ * <p>Exported because a caller that must PERSIST a URL — the academic-material
+ * model keeps a `fileUrl` on every attachment — needs to derive one for a key
+ * the upload pipeline chose, not only for the one its own upload returned.
+ */
+export function publicUrlForKey(key) {
   const base = env.s3.publicUrl || `${env.s3.endpoint.replace(/\/$/, '')}/${env.s3.bucket}`;
   return `${base.replace(/\/$/, '')}/${key}`;
 }
@@ -72,7 +79,7 @@ export async function uploadDocumentS3(buffer, originalName, subDir, mimeType) {
     })
   );
 
-  return { fileUrl: publicUrlFor(key), fileName, storageRef: key };
+  return { fileUrl: publicUrlForKey(key), fileName, storageRef: key };
 }
 
 /**
