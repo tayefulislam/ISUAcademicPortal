@@ -181,6 +181,41 @@ async function start() {
         console.error('[documents] worker did not start — documents will queue until it does');
       });
   }
+
+  // The upload-processing worker. Same topology as the document worker above:
+  // it runs in this process by default, or in a dedicated one when
+  // UPLOAD_WORKER_IN_PROCESS=false. Started after the listener and never
+  // awaited — Redis being down must only mean uploads stay queued, never that
+  // the API fails to serve.
+  if (env.uploads.worker.enabled) {
+    Promise.all([
+      import('./services/uploads/cleanup/tempSweeper.js'),
+      import('./services/queue/fileProcessingQueue.js'),
+    ])
+      .then(async ([sweeper, queueModule]) => {
+        await sweeper
+          .ensureTempDirs()
+          .catch((err) => console.error('[uploads] could not create the temp directories:', err.message));
+
+        // Registered by scheduler id, so a restart re-asserts the schedule
+        // rather than adding a second copy of it.
+        await queueModule
+          .ensureUploadCleanupSchedule()
+          .catch((err) => console.error('[uploads] could not schedule the cleanup sweep:', err.message));
+
+        if (env.uploads.worker.inProcess) {
+          const { startFileProcessingWorker } = await import('./workers/fileProcessingWorker.js');
+          startFileProcessingWorker();
+        }
+
+        // Catch-up for anything that expired while this process was down.
+        sweeper.cleanupUploads().catch((err) => console.error('[uploads] startup sweep failed:', err.message));
+      })
+      .catch((err) => {
+        logger.error(err, { source: 'app:fileWorker' });
+        console.error('[uploads] worker did not start — uploads will queue until it does');
+      });
+  }
 }
 
 /**

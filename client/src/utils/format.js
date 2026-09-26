@@ -1,7 +1,10 @@
 export function formatBytes(bytes) {
   if (!bytes) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  // The units run to TB because the storage dashboard reports institution-wide
+  // totals, which reach that scale — without it, a terabyte total rendered as
+  // "2.8 undefined".
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 

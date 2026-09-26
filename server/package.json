@@ -8,6 +8,7 @@
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
     "worker": "node src/worker.js",
+    "worker:files": "node src/fileWorker.js",
     "seed": "node src/utils/seed.js",
     "seed:applications": "node src/utils/seedApplicationTypes.js",
     "documents:purge": "node src/utils/purgeRemovedDocuments.js",
@@ -18,9 +19,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/lib-storage": "^3.1127.0",
     "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^6.3.8",
+    "busboy": "^1.6.0",
     "cors": "^2.8.5",
     "docx": "^9.7.1",
     "dotenv": "^16.4.5",
@@ -37,6 +40,7 @@
     "morgan": "^1.10.0",
     "multer": "^2.3.0",
     "nodemailer": "^10.0.0",
+    "pdf-lib": "^1.17.1",
     "playwright": "^1.63.0",
     "sharp": "^0.35.4",
     "web-push": "^3.6.7"

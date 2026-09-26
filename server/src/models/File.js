@@ -31,8 +31,17 @@ const attachmentSchema = new mongoose.Schema(
     fileSize: { type: Number, required: true }, // bytes
     fileUrl: { type: String, required: true },
     storageProvider: { type: String, enum: STORAGE_PROVIDERS, required: true },
-    // ImgBB delete token, or S3 object key — used for clean deletion. Never exposed to the client.
+    // ImgBB delete token, or S3 object key â€” used for clean deletion. Never exposed to the client.
     storageRef: { type: String, default: '' },
+    // Optional link to the universal upload pipeline's metadata record.
+    //
+    // ADDITIVE and deliberately nullable: every attachment created before the
+    // pipeline existed (and every one still created through the legacy
+    // storeUploadedFile path) simply has no StoredFile, and nothing reads this
+    // unless it is set. This is what lets a material's optimization details —
+    // original vs stored size, what was done, thumbnails — be surfaced later
+    // without a migration or a change to any existing write path.
+    storedFileId: { type: mongoose.Schema.Types.ObjectId, ref: 'StoredFile', default: null },
   },
   { _id: true }
 );

@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users, HelpCircle, UserCheck, CalendarDays, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, FileStack, ClipboardCheck, BookOpen, Upload, Megaphone, ClipboardList, BookMarked, GraduationCap, MessageCircle, Mail, Layers, Layers3, Users, HelpCircle, UserCheck, CalendarDays, CalendarClock, UploadCloud } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 
 const links = [
@@ -10,6 +10,10 @@ const links = [
   { to: '/faculty/routine', label: 'Routine Manager', icon: CalendarDays, flag: 'routineSystemEnabled' },
   { to: '/routine', label: 'My Calendar', icon: CalendarClock, flag: 'routineSystemEnabled' },
   { to: '/faculty/upload', label: 'Upload Material', icon: Upload },
+  // The universal upload pipeline — any file type, optimized in the background,
+  // with what it saved shown per file. Separate from "Upload Material" above,
+  // which publishes a searchable material.
+  { to: '/uploads', label: 'Uploads', icon: UploadCloud },
   { to: '/faculty/reviews', label: 'Review Submissions', icon: ClipboardCheck },
   { to: '/faculty/student-id-approvals', label: 'Student ID Approvals', icon: UserCheck },
   { to: '/faculty/files', label: 'Assigned Materials', icon: FileStack },

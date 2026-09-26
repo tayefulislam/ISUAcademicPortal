@@ -728,3 +728,76 @@ export const adminDocumentApi = {
   sourceUrl: (id, version) =>
     api.get(`/admin/document-templates/${id}/versions/${version}/source`, { responseType: 'blob' }).then((r) => URL.createObjectURL(r.data)),
 };
+
+// ----- Universal file uploads (the streaming/optimization pipeline) -----
+//
+// Separate from `fileApi`/`adminApi` above, which drive the LEGACY material
+// upload (multer → storeUploadedFile). This is the pipeline described in
+// docs/FILE_UPLOAD_SYSTEM.md: a file is accepted, its real type is verified from
+// its magic bytes, it is optimized off the request path, and the response comes
+// back as an id and a status to poll — never as a finished file.
+//
+// `create` is the web path: the bytes stream through the API to a spool file
+// (so a large upload does not block the request), and axios' onUploadProgress
+// drives a real byte-level bar. `init`/`partUrl`/`complete` are the multipart
+// path, used by a client that can PUT to a presigned URL directly — the Android
+// app — because a browser would need the bucket's CORS configured first.
+export const uploadApi = {
+  create: (formData, onProgress) =>
+    api
+      .post('/uploads', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: onProgress,
+      })
+      .then((r) => r.data),
+  mine: (params) => api.get('/uploads/mine', { params }).then((r) => r.data),
+  get: (id) => api.get(`/uploads/${id}`).then((r) => r.data),
+  remove: (id) => api.delete(`/uploads/${id}`).then((r) => r.data),
+  retry: (id) => api.post(`/uploads/${id}/retry`).then((r) => r.data),
+
+  // Multipart upload (Path B). `partUrl` returns { url, viaApi, apiPath }: for
+  // S3/R2 the client PUTs the part straight to `url`; for the local provider
+  // there is no bucket to sign for, so it PUTs to `apiPath` instead.
+  init: (data) => api.post('/uploads/init', data).then((r) => r.data),
+  partUrl: (id, partNumber) => api.post(`/uploads/${id}/part-url`, { partNumber }).then((r) => r.data),
+  complete: (id, parts) => api.post(`/uploads/${id}/complete`, { parts }).then((r) => r.data),
+  abort: (id) => api.post(`/uploads/${id}/abort`).then((r) => r.data),
+
+  // A download URL for one file. With S3 this is a short-lived presigned URL the
+  // browser can open directly; a compressed file has no direct URL that serves
+  // usable bytes, so the server answers with its own authenticated proxy route
+  // instead. `downloadToDisk` below handles both, the same way
+  // applicationApi.downloadExport does.
+  download: (id) => api.get(`/uploads/${id}/download`).then((r) => r.data),
+
+  downloadToDisk: async (id, fileName = 'download') => {
+    const res = await api.get(`/uploads/${id}/download`);
+    const info = res.data?.data || {};
+    if (info.provider === 's3' && info.url) {
+      window.open(info.url, '_blank', 'noopener');
+      return;
+    }
+    // The local provider (and any compressed file) streams through the
+    // authenticated route, which a plain <a href> cannot authenticate.
+    const blob = await api.get(`/uploads/${id}/content`, { responseType: 'blob' });
+    const url = URL.createObjectURL(blob.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  // Generated image derivatives. Fetched as blobs because these are private,
+  // authenticated routes — never public URLs — which is the same reason the
+  // Student ID photo and template source use this pattern.
+  derivativeUrl: (id, which) =>
+    api.get(`/uploads/${id}/${which}`, { responseType: 'blob' }).then((r) => URL.createObjectURL(r.data)),
+};
+
+// ----- Storage dashboard (Super Admin) -----
+export const storageAdminApi = {
+  dashboard: () => api.get('/admin/storage/dashboard').then((r) => r.data),
+};

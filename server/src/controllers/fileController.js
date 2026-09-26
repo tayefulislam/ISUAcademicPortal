@@ -3,6 +3,7 @@ import File from '../models/File.js';
 import Department from '../models/Department.js';
 import Course from '../models/Course.js';
 import Batch from '../models/Batch.js';
+import Semester from '../models/Semester.js';
 import Category from '../models/Category.js';
 import Chapter from '../models/Chapter.js';
 import Topic from '../models/Topic.js';
@@ -191,6 +192,75 @@ async function resolveUploadMetadata(body) {
   };
 
   return { department, course, category, chapter, topic, batches, batchCodes, allBatches, keywordList, visibility, restrictions };
+}
+
+/**
+ * The batch and semester a Student/CR submission is filed under, taken from the
+ * submitter's OWN profile rather than from the request.
+ *
+ * <p>A student does not choose which batch or semester they are in, so the
+ * submission form does not ask and this derives both. Doing it server-side —
+ * rather than trusting whatever the form happens to send — is the point: a
+ * crafted request cannot file material under a batch or semester that is not the
+ * submitter's. Both clients therefore stopped sending these fields entirely.
+ *
+ * <p>Two fallbacks, so this can never block a legitimate submission:
+ * <ul>
+ *   <li>A batch that does not belong to the submitted course's department is
+ *       DROPPED rather than rejected. A student taking a course from another
+ *       department (an approved retake or extra enrolment) legitimately has their
+ *       own batch, but it is not a batch of that course — so the material is
+ *       filed without batch targeting, exactly as an un-picked batch always was.</li>
+ *   <li>No batch on the profile leaves no batch on the record, which reads as
+ *       "applies to all batches" — the shape this endpoint produced before the
+ *       batch picker existed.</li>
+ * </ul>
+ *
+ * @returns {Promise<{batchIds: Array, batchCodes: string[], allBatches: boolean, semester: string}>}
+ */
+async function resolveSubmitterScope(user, course) {
+  const batch = user.batch ? await Batch.findById(user.batch) : null;
+  const semester = user.semester ? await Semester.findById(user.semester) : null;
+  return submissionScope(batch, semester, course);
+}
+
+/**
+ * The rule itself, given the records rather than their ids.
+ *
+ * <p>Split out from the lookups above so it can be tested without a database —
+ * this decides what a submission is filed under, so it is worth pinning
+ * directly rather than only through a controller that needs a fixture of
+ * Department, Course, Batch, Semester and User documents to run at all.
+ *
+ * @param {object|null} batch    the submitter's own Batch record
+ * @param {object|null} semester the submitter's own Semester record
+ * @param {object} course        the course being submitted to
+ */
+export function submissionScope(batch, semester, course) {
+  const scope = { batchIds: [], batchCodes: [], allBatches: false, semester: '' };
+
+  // Only a batch of the course's own department is used. Anything else is
+  // dropped, not rejected: a student taking a course from another department
+  // legitimately has their own batch, but it is not a batch of that course.
+  //
+  // Both sides must be SET as well as equal. `String(null) === String(null)`, so
+  // without the presence checks a department-agnostic batch would appear to match
+  // a course that also had none — and the submission would be filed under a batch
+  // nobody asked for. An unset department on either side means no match, which
+  // fails toward LESS targeting.
+  if (batch && batch.department && course.department
+      && String(batch.department) === String(course.department)) {
+    scope.batchIds = [batch._id];
+    scope.batchCodes = [batch.code];
+  }
+
+  // The File's `semester` is the Semester's NAME, because that is what
+  // Course.semester holds and what every filter compares against.
+  if (semester && semester.name) {
+    scope.semester = semester.name;
+  }
+
+  return scope;
 }
 
 // The selected course must belong to the selected semester. Course.semester is
@@ -454,14 +524,29 @@ export const submitStudentFile = asyncHandler(async (req, res) => {
   const files = req.files && req.files.length ? req.files : req.file ? [req.file] : [];
   const isExternal = req.body.uploadType === 'external';
 
-  const { title, description, semester, academicYear } = req.body;
+  const { title, description, academicYear } = req.body;
   const meta = await resolveUploadMetadata(req.body);
 
   const effectiveCourseIds = await getEffectiveCourseIds(req.user);
   if (!effectiveCourseIds.includes(String(meta.course._id))) {
     throw new ApiError(403, 'You can only submit material for a course in your own department or one you are enrolled in', null, 'FORBIDDEN');
   }
-  assertSemesterMatchesCourse(meta.course, semester);
+
+  // The batch and the semester are the SUBMITTER's own, derived from their
+  // profile — so `batch`/`semester` in the request body are ignored here, and
+  // both clients have stopped sending them. See resolveSubmitterScope.
+  //
+  // assertSemesterMatchesCourse is deliberately NOT applied to the derived
+  // semester. It exists to catch a client choosing a semester that contradicts
+  // the course, and there is no choice here to get wrong — whereas applying it
+  // would block a student enrolled in a course from another semester (an
+  // approved retake) outright, even though the reachability check above has just
+  // established that they may submit to it.
+  const scope = await resolveSubmitterScope(req.user, meta.course);
+  meta.batches = scope.batchIds;
+  meta.batchCodes = scope.batchCodes;
+  meta.allBatches = scope.allBatches;
+  const semester = scope.semester;
 
   // The submitter now chooses the access setting (Public / Login Required), so
   // it is honoured here rather than forced — but the submission still lands
