@@ -11,6 +11,7 @@ import { describeRedis } from './services/queue/redis.js';
 import { connectDB } from './config/db.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
+import { makeCorsOrigin } from './utils/corsOrigin.js';
 import Course from './models/Course.js';
 import Notification from './models/Notification.js';
 import Question from './models/Question.js';
@@ -37,12 +38,9 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // dev convenience; it's harmless in production since CORS is enforced by
 // the browser against the page's real origin, not spoofable by a remote
 // attacker.
-function corsOrigin(origin, callback) {
-  if (!origin) return callback(null, true); // same-origin / curl / server-to-server
-  if (/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return callback(null, true);
-  if (env.clientUrls.includes(origin.replace(/\/$/, ''))) return callback(null, true);
-  callback(new Error(`Not allowed by CORS: ${origin}`));
-}
+// The rule itself (and its reasoning) lives in utils/corsOrigin.js, so it can be
+// tested without booting a server.
+const corsOrigin = makeCorsOrigin();
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
@@ -141,6 +139,18 @@ async function start() {
   // effective transport is announced once at boot - otherwise "emails aren't
   // sending" is invisible from outside the process.
   console.log(`[email] provider=${describeEmailProvider()}`);
+
+  // Same reasoning as the email line above: the browser can only say "blocked by
+  // CORS policy", so the origins this process will actually accept are announced
+  // once at boot. A frontend origin missing from this list is by far the most
+  // common reason an upload fails in production while working locally.
+  if (env.clientUrls.length === 0 || env.clientUrls.every((u) => u.includes('localhost'))) {
+    console.warn(
+      '[cors] CLIENT_URL still points only at localhost — set it to the deployed frontend origin(s), '
+        + 'or every browser request from the real site will be refused'
+    );
+  }
+  console.log(`[cors] allowing: ${env.clientUrls.join(', ') || '(none)'} (+ any localhost port)`);
 
   app.listen(env.port, () => {
     console.log(`[server] listening on port ${env.port} (${env.nodeEnv})`);
