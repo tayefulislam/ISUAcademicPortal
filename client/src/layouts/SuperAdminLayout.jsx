@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users2, UserCheck, UserX, FileStack, Settings, GraduationCap, MessageSquareText, Flag, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles, HardDrive, Upload } from 'lucide-react';
+import { LayoutDashboard, Users2, UserCheck, UserX, FileStack, Settings, GraduationCap, MessageSquareText, Flag, MessageCircle, Mail, Layers3, Bell, HelpCircle, AlertTriangle, CalendarDays, CalendarClock, FileText, PenSquare, Sparkles, HardDrive, Upload, UploadCloud } from 'lucide-react';
 import DashboardShell from './DashboardShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -12,6 +12,10 @@ const links = [
   // implicitly (the check always passes for them), so `files` is their way in
   // without switching to the Admin panel.
   { to: '/super-admin/upload', label: 'Upload File', icon: Upload, permission: 'files' },
+  // The student submission flow, as a second way to publish material. Super
+  // Admin/Administrator reach every course (courseAccessService), so the form's
+  // department/course pickers are fully populated.
+  { to: '/submit-material', label: 'Submit Material', icon: UploadCloud, flag: 'studentUploadEnabled' },
   // The universal pipeline's institution-wide storage figures.
   { to: '/super-admin/storage', label: 'Storage', icon: HardDrive },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquareText },

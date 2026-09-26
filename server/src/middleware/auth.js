@@ -85,6 +85,10 @@ export const requireRoles = requireRole;
 // GET /courses/mine and fileController.js's submitStudentFile.
 export const requireStudentOrScopedAdminTier = asyncHandler(async (req, res, next) => {
   if (!req.user) throw new ApiError(401, 'Authentication required', null, 'UNAUTHORIZED');
+  // Super Admin / Administrator are unrestricted, so the student submission
+  // flow is open to them too — it is a second way to publish material, not a
+  // privilege they should be denied.
+  if (req.user.role === 'super_admin' || req.user.role === 'administrator') return next();
   if (req.user.role === 'student') return next();
   if (req.user.role !== 'admin' && (await isAdminTierRole(req.user.role))) return next();
   throw new ApiError(403, 'Insufficient permissions', null, 'FORBIDDEN');

@@ -1,6 +1,7 @@
 import Course from '../models/Course.js';
 import CourseEnrollment, { ACCESS_GRANTING_STATUSES } from '../models/CourseEnrollment.js';
 import { getSettings } from '../models/Settings.js';
+import { isSuperAdminTier } from '../models/Role.js';
 
 /**
  * Single source of truth for "which courses can this student reach" —
@@ -17,6 +18,16 @@ import { getSettings } from '../models/Settings.js';
  */
 export async function getEffectiveCourseIds(user) {
   if (!user) return [];
+
+  // Super Admin / Administrator are unrestricted: they reach EVERY active
+  // course, not a department's. Without this they have no department — and
+  // therefore no reachable course at all — which is what left them unable to
+  // use Submit Material, whose course picker and reachability check both come
+  // from this list.
+  if (isSuperAdminTier(user.role)) {
+    const all = await Course.find({ status: 'active' }).distinct('_id');
+    return all.map(String);
+  }
 
   const deptCourseIds = user.department ? await Course.find({ department: user.department }).distinct('_id') : [];
   const enrolledCourseIds = await CourseEnrollment.find({
